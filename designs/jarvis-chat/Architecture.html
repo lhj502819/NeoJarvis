@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh" data-screen-label="jarvis-architecture">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jarvis v0.1 — 系统架构图</title>
+  <style>
+    :root {
+      --bg-deep: oklch(10% 0.02 240);
+      --bg-surface: oklch(15% 0.025 240);
+      --bg-card: oklch(18% 0.03 240);
+      --bg-card-hover: oklch(20% 0.035 240);
+      --border: oklch(25% 0.03 240);
+      --border-glow: oklch(55% 0.15 220);
+      --accent: oklch(70% 0.18 220);
+      --accent-dim: oklch(50% 0.12 220);
+      --accent-glow: oklch(65% 0.2 220 / 0.25);
+      --green: oklch(70% 0.16 155);
+      --green-dim: oklch(40% 0.08 155);
+      --yellow: oklch(75% 0.14 85);
+      --yellow-dim: oklch(40% 0.07 85);
+      --purple: oklch(65% 0.18 300);
+      --purple-dim: oklch(35% 0.08 300);
+      --text: oklch(92% 0.01 240);
+      --text-secondary: oklch(65% 0.02 240);
+      --text-muted: oklch(45% 0.02 240);
+      --font: -apple-system, "SF Pro Text", "PingFang SC", system-ui, sans-serif;
+      --font-mono: "SF Mono", "Menlo", monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg-deep);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 40px;
+      line-height: 1.5;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(oklch(22% 0.03 240 / 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, oklch(22% 0.03 240 / 0.08) 1px, transparent 1px);
+      background-size: 50px 50px;
+      pointer-events: none;
+    }
+
+    .arch {
+      width: 1360px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .arch-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .arch-title {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+
+    .arch-subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .arch-subtitle span {
+      color: var(--accent);
+      font-family: var(--font-mono);
+    }
+
+    .arch-body {
+      display: grid;
+      grid-template-columns: 1fr 200px;
+      gap: 24px;
+    }
+
+    .arch-main {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .arch-side {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding-top: 60px;
+    }
+
+    /* Layer card */
+    .layer {
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      padding: 20px 24px;
+      background: var(--bg-surface);
+      position: relative;
+    }
+
+    .layer-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .layer-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+    }
+
+    .layer-title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .layer-tech {
+      margin-left: auto;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: oklch(25% 0.03 240);
+      color: var(--text-muted);
+    }
+
+    /* Layer 1 */
+    .layer-1 { border-color: oklch(55% 0.15 220 / 0.3); }
+    .layer-1 .layer-badge { background: var(--accent); color: oklch(12% 0.02 240); }
+    .layer-1 .layer-title { color: var(--accent); }
+
+    /* Layer 2 */
+    .layer-2 { border-color: oklch(60% 0.14 155 / 0.3); }
+    .layer-2 .layer-badge { background: var(--green); color: oklch(12% 0.02 240); }
+    .layer-2 .layer-title { color: var(--green); }
+
+    /* Layer 3 */
+    .layer-3 { border-color: oklch(65% 0.12 85 / 0.3); }
+    .layer-3 .layer-badge { background: var(--yellow); color: oklch(12% 0.02 240); }
+    .layer-3 .layer-title { color: var(--yellow); }
+
+    .layer-content {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    /* Module cards */
+    .module {
+      padding: 12px 16px;
+      border-radius: 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      flex: 1;
+      min-width: 160px;
+    }
+
+    .module-name {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: var(--text);
+    }
+
+    .module-desc {
+      font-size: 11px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .module-tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+
+    .tool-tag {
+      font-size: 10px;
+      font-family: var(--font-mono);
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: oklch(25% 0.03 240);
+      color: var(--text-muted);
+      border: 1px solid oklch(28% 0.03 240);
+    }
+
+    .future-tag {
+      font-size: 9px;
+      font-family: var(--font-mono);
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: oklch(30% 0.06 300 / 0.2);
+      color: var(--purple);
+      border: 1px solid oklch(45% 0.1 300 / 0.3);
+      margin-left: 6px;
+    }
+
+    /* Connector arrows between layers */
+    .connector {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 4px 0;
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    .connector-line {
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border), transparent);
+    }
+
+    .connector-arrow {
+      font-size: 16px;
+      color: var(--accent-dim);
+    }
+
+    .connector-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    /* Side modules */
+    .side-module {
+      padding: 14px 16px;
+      border-radius: 10px;
+      background: var(--bg-card);
+      border: 1px dashed oklch(45% 0.1 300 / 0.4);
+    }
+
+    .side-module-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+
+    .side-module-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--purple);
+    }
+
+    .side-module-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Side connector */
+    .side-connector {
+      position: absolute;
+      right: -24px;
+      top: 50%;
+      width: 24px;
+      height: 1px;
+      background: oklch(45% 0.1 300 / 0.4);
+    }
+
+    .side-connector::after {
+      content: '→';
+      position: absolute;
+      right: -4px;
+      top: -8px;
+      color: var(--purple);
+      font-size: 12px;
+    }
+
+    /* Tech stack footer */
+    .arch-footer {
+      margin-top: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-surface);
+    }
+
+    .tech-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .tech-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
+    .tech-dot.blue { background: var(--accent); }
+    .tech-dot.green { background: var(--green); }
+    .tech-dot.yellow { background: var(--yellow); }
+    .tech-dot.purple { background: var(--purple); }
+  </style>
+</head>
+<body>
+  <div class="arch">
+    <div class="arch-header">
+      <div class="arch-title">Jarvis v0.1 — 系统架构</div>
+      <div class="arch-subtitle">三层管理架构 · 基于 <span>Claude Agent SDK</span> · TypeScript + Node.js</div>
+    </div>
+
+    <div class="arch-body">
+      <div class="arch-main">
+        <!-- Layer 1: 交互层 -->
+        <div class="layer layer-1">
+          <div class="layer-header">
+            <div class="layer-badge">L1</div>
+            <div class="layer-title">交互层 — 你（用户）</div>
+            <div class="layer-tech">index.ts</div>
+          </div>
+          <div class="layer-content">
+            <div class="module">
+              <div class="module-name">CLI 终端</div>
+              <div class="module-desc">readline 交互，实时流式输出</div>
+              <div class="module-tools">
+                <span class="tool-tag">当前</span>
+              </div>
+            </div>
+            <div class="module">
+              <div class="module-name">Web UI <span class="future-tag">future</span></div>
+              <div class="module-desc">对话 + 任务面板</div>
+            </div>
+            <div class="module">
+              <div class="module-name">Telegram / 微信 <span class="future-tag">future</span></div>
+              <div class="module-desc">移动端随时触达</div>
+            </div>
+            <div class="module">
+              <div class="module-name">手机 / 手表 <span class="future-tag">future</span></div>
+              <div class="module-desc">通过 OpenClaw 节点接入</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Connector -->
+        <div class="connector">
+          <div class="connector-line"></div>
+          <div class="connector-arrow">↕</div>
+          <div class="connector-label">双向对话 · 下达指令 · 询问进展</div>
+          <div class="connector-arrow">↕</div>
+          <div class="connector-line"></div>
+        </div>
+
+        <!-- Layer 2: Jarvis Core -->
+        <div class="layer layer-2" style="position:relative;">
+          <div class="layer-header">
+            <div class="layer-badge">L2</div>
+            <div class="layer-title">Jarvis Core — 管理层（大脑）</div>
+            <div class="layer-tech">Claude Agent SDK · query()</div>
+          </div>
+          <div class="layer-content">
+            <div class="module">
+              <div class="module-name">主 Agent</div>
+              <div class="module-desc">意图理解 · 任务规划 · 决策判断</div>
+              <div class="module-tools">
+                <span class="tool-tag">System Prompt</span>
+                <span class="tool-tag">人格定义</span>
+              </div>
+            </div>
+            <div class="module">
+              <div class="module-name">任务管理器</div>
+              <div class="module-desc">状态机流转 · 依赖编排 · 异常策略</div>
+              <div class="module-tools">
+                <span class="tool-tag">pending</span>
+                <span class="tool-tag">running</span>
+                <span class="tool-tag">blocked</span>
+                <span class="tool-tag">done</span>
+                <span class="tool-tag">failed</span>
+              </div>
+            </div>
+            <div class="module">
+              <div class="module-name">持久化存储</div>
+              <div class="module-desc">任务状态 · 执行记录</div>
+              <div class="module-tools">
+                <span class="tool-tag">data/tasks.json</span>
+              </div>
+            </div>
+          </div>
+          <div class="side-connector"></div>
+        </div>
+
+        <!-- Connector -->
+        <div class="connector">
+          <div class="connector-line"></div>
+          <div class="connector-arrow">↓</div>
+          <div class="connector-label">派发任务 · 返回结果 · 上报异常</div>
+          <div class="connector-arrow">↑</div>
+          <div class="connector-line"></div>
+        </div>
+
+        <!-- Layer 3: 执行层 -->
+        <div class="layer layer-3">
+          <div class="layer-header">
+            <div class="layer-badge">L3</div>
+            <div class="layer-title">执行层 — 子 Agent</div>
+            <div class="layer-tech">Claude Code Binary · Sub-agents</div>
+          </div>
+          <div class="layer-content">
+            <div class="module">
+              <div class="module-name">搜索 Agent</div>
+              <div class="module-desc">信息检索 · 网页抓取</div>
+              <div class="module-tools">
+                <span class="tool-tag">WebSearch</span>
+                <span class="tool-tag">WebFetch</span>
+              </div>
+            </div>
+            <div class="module">
+              <div class="module-name">编码 Agent</div>
+              <div class="module-desc">代码编写 · 文件操作 · 命令执行</div>
+              <div class="module-tools">
+                <span class="tool-tag">Read</span>
+                <span class="tool-tag">Write</span>
+                <span class="tool-tag">Edit</span>
+                <span class="tool-tag">Bash</span>
+              </div>
+            </div>
+            <div class="module">
+              <div class="module-name">分析 Agent</div>
+              <div class="module-desc">代码分析 · 文件搜索 · 模式匹配</div>
+              <div class="module-tools">
+                <span class="tool-tag">Grep</span>
+                <span class="tool-tag">Glob</span>
+                <span class="tool-tag">Read</span>
+              </div>
+            </div>
+            <div class="module">
+              <div class="module-name">更多 Agent... <span class="future-tag">可扩展</span></div>
+              <div class="module-desc">邮件 · 日历 · 智能家居 · API 调用</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Side: Future modules -->
+      <div class="arch-side">
+        <div class="side-module">
+          <div class="side-module-header">
+            <div class="side-module-name">记忆系统</div>
+            <span class="future-tag">future</span>
+          </div>
+          <div class="side-module-desc">
+            EverOS 长期记忆<br>
+            用户画像 · 偏好<br>
+            历史对话摘要<br>
+            语义检索
+          </div>
+        </div>
+
+        <div class="side-module">
+          <div class="side-module-header">
+            <div class="side-module-name">多端接入</div>
+            <span class="future-tag">future</span>
+          </div>
+          <div class="side-module-desc">
+            OpenClaw Gateway<br>
+            iOS / Android 节点<br>
+            macOS 菜单栏<br>
+            WhatsApp / Telegram
+          </div>
+        </div>
+
+        <div class="side-module">
+          <div class="side-module-header">
+            <div class="side-module-name">通知系统</div>
+            <span class="future-tag">future</span>
+          </div>
+          <div class="side-module-desc">
+            主动推送<br>
+            异常告警<br>
+            任务完成通知
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer: Tech stack -->
+    <div class="arch-footer">
+      <div class="tech-item"><div class="tech-dot blue"></div>TypeScript + Node.js 22</div>
+      <div class="tech-item"><div class="tech-dot green"></div>Claude Agent SDK 0.3.x</div>
+      <div class="tech-item"><div class="tech-dot yellow"></div>Claude Code Binary</div>
+      <div class="tech-item"><div class="tech-dot purple"></div>EverOS + OpenClaw (future)</div>
+    </div>
+  </div>
+</body>
+</html>

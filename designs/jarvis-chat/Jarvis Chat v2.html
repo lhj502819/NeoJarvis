@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="zh" data-screen-label="jarvis-v0.1-main">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jarvis — 个人主管</title>
+  <style>
+    :root {
+      --bg-deep: oklch(12% 0.02 240);
+      --bg-surface: oklch(16% 0.02 240);
+      --bg-elevated: oklch(20% 0.025 240);
+      --bg-sidebar: oklch(14% 0.02 240);
+      --bg-card: oklch(18% 0.025 240);
+      --border-subtle: oklch(25% 0.03 240);
+      --border-glow: oklch(55% 0.15 220);
+      --accent: oklch(70% 0.18 220);
+      --accent-dim: oklch(50% 0.12 220);
+      --accent-glow: oklch(65% 0.2 220 / 0.3);
+      --green: oklch(70% 0.18 150);
+      --green-dim: oklch(55% 0.12 150);
+      --yellow: oklch(75% 0.15 85);
+      --yellow-dim: oklch(55% 0.1 85);
+      --red: oklch(65% 0.2 25);
+      --red-dim: oklch(45% 0.12 25);
+      --text-primary: oklch(92% 0.01 240);
+      --text-secondary: oklch(65% 0.02 240);
+      --text-muted: oklch(45% 0.02 240);
+      --user-bubble: oklch(22% 0.03 260);
+      --jarvis-bubble-bg: oklch(18% 0.04 220 / 0.6);
+      --jarvis-bubble-border: oklch(50% 0.12 220 / 0.5);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --font-sans: -apple-system, "SF Pro Text", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-mono: "SF Mono", "Menlo", monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
+      line-height: 1.7;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(oklch(25% 0.03 240 / 0.12) 1px, transparent 1px),
+        linear-gradient(90deg, oklch(25% 0.03 240 / 0.12) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      grid-template-rows: 56px 1fr;
+      height: 100vh;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ─── Header ─── */
+    .header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-surface);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), oklch(60% 0.2 200));
+      display: grid;
+      place-items: center;
+      font-family: var(--font-mono);
+      font-weight: 500;
+      font-size: 14px;
+      color: oklch(15% 0.02 240);
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    .logo-text {
+      font-family: var(--font-mono);
+      font-weight: 500;
+      font-size: 16px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-primary);
+    }
+
+    .header-status {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-left: 12px;
+      padding-left: 12px;
+      border-left: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s ease infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .header-btn:hover {
+      border-color: var(--accent-dim);
+      color: var(--accent);
+      background: oklch(55% 0.15 220 / 0.08);
+    }
+
+    .header-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .task-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 9px;
+      background: var(--accent);
+      color: oklch(15% 0.02 240);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    /* ─── Chat area (left) ─── */
+    .chat-area {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid var(--border-subtle);
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .messages::-webkit-scrollbar { width: 5px; }
+    .messages::-webkit-scrollbar-track { background: transparent; }
+    .messages::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 3px; }
+
+    .message {
+      display: flex;
+      gap: 12px;
+      max-width: 680px;
+      animation: messageIn 0.3s ease;
+    }
+
+    @keyframes messageIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message.jarvis { align-self: flex-start; }
+    .message.user { align-self: flex-end; flex-direction: row-reverse; }
+
+    .avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 500;
+      margin-top: 2px;
+    }
+
+    .avatar.jarvis-avatar {
+      background: linear-gradient(135deg, var(--accent), oklch(60% 0.2 200));
+      color: oklch(15% 0.02 240);
+      font-family: var(--font-mono);
+      box-shadow: 0 0 8px var(--accent-glow);
+    }
+
+    .avatar.user-avatar {
+      background: oklch(30% 0.04 280);
+      color: var(--text-secondary);
+    }
+
+    .bubble {
+      padding: 12px 16px;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .message.jarvis .bubble {
+      background: var(--jarvis-bubble-bg);
+      border: 1px solid var(--jarvis-bubble-border);
+      backdrop-filter: blur(8px);
+    }
+
+    .message.user .bubble {
+      background: var(--user-bubble);
+      border: 1px solid oklch(30% 0.04 260);
+    }
+
+    .bubble .sender {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+      color: var(--accent);
+    }
+
+    .message.user .bubble .sender {
+      color: var(--text-muted);
+      text-align: right;
+    }
+
+    /* Task reference in chat */
+    .task-ref {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 8px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: oklch(55% 0.15 220 / 0.1);
+      border: 1px solid oklch(55% 0.15 220 / 0.2);
+      font-size: 12px;
+      color: var(--accent);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .task-ref:hover {
+      background: oklch(55% 0.15 220 / 0.18);
+    }
+
+    .task-ref svg { width: 12px; height: 12px; }
+
+    /* Alert in chat */
+    .alert-bubble {
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      background: oklch(65% 0.2 25 / 0.08);
+      border: 1px solid oklch(65% 0.2 25 / 0.3);
+      font-size: 13px;
+      color: oklch(80% 0.12 25);
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .alert-bubble svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; }
+
+    /* ─── Input area ─── */
+    .input-area {
+      padding: 14px 32px 20px;
+      border-top: 1px solid var(--border-subtle);
+      background: var(--bg-surface);
+    }
+
+    .input-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-elevated);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .input-wrapper:focus-within {
+      border-color: var(--accent-dim);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .input-wrapper input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      font-family: var(--font-sans);
+      font-size: 14px;
+      color: var(--text-primary);
+    }
+
+    .input-wrapper input::placeholder { color: var(--text-muted); }
+
+    .send-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: none;
+      background: var(--accent);
+      color: oklch(15% 0.02 240);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .send-btn:hover {
+      background: oklch(75% 0.2 220);
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    .send-btn svg { width: 15px; height: 15px; }
+
+    /* ─── Task Panel (right) ─── */
+    .task-panel {
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-sidebar);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: 0.5px;
+    }
+
+    .panel-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .task-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .task-list::-webkit-scrollbar { width: 4px; }
+    .task-list::-webkit-scrollbar-track { background: transparent; }
+    .task-list::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 2px; }
+
+    /* Task card */
+    .task-card {
+      padding: 14px 16px;
+      border-radius: var(--radius-md);
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .task-card:hover {
+      border-color: var(--accent-dim);
+      background: oklch(20% 0.03 240);
+    }
+
+    .task-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .task-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .task-status.running {
+      background: oklch(70% 0.18 220 / 0.12);
+      color: var(--accent);
+      border: 1px solid oklch(70% 0.18 220 / 0.25);
+    }
+
+    .task-status.warning {
+      background: oklch(75% 0.15 85 / 0.12);
+      color: var(--yellow);
+      border: 1px solid oklch(75% 0.15 85 / 0.25);
+    }
+
+    .task-status.done {
+      background: oklch(70% 0.18 150 / 0.12);
+      color: var(--green);
+      border: 1px solid oklch(70% 0.18 150 / 0.25);
+    }
+
+    .task-status-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+    }
+
+    .task-status.running .task-status-dot {
+      background: var(--accent);
+      animation: pulse 1.5s ease infinite;
+    }
+
+    .task-status.warning .task-status-dot { background: var(--yellow); }
+    .task-status.done .task-status-dot { background: var(--green); }
+
+    .task-time {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .task-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+
+    .task-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin-bottom: 10px;
+    }
+
+    .task-agents {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .agent-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: oklch(25% 0.03 240);
+      border: 1px solid var(--border-subtle);
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .agent-tag svg { width: 10px; height: 10px; }
+
+    .task-progress {
+      margin-top: 10px;
+      height: 3px;
+      border-radius: 2px;
+      background: oklch(25% 0.03 240);
+      overflow: hidden;
+    }
+
+    .task-progress-bar {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.5s ease;
+    }
+
+    .task-progress-bar.blue { background: var(--accent); }
+    .task-progress-bar.green { background: var(--green); }
+    .task-progress-bar.yellow { background: var(--yellow); }
+
+    /* ─── Architecture diagram ─── */
+    .arch-section {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .arch-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+    }
+
+    .arch-layers {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .arch-layer {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+
+    .arch-layer.l1 {
+      background: oklch(55% 0.15 220 / 0.08);
+      border: 1px solid oklch(55% 0.15 220 / 0.2);
+      color: var(--accent);
+    }
+
+    .arch-layer.l2 {
+      background: oklch(70% 0.18 150 / 0.08);
+      border: 1px solid oklch(70% 0.18 150 / 0.2);
+      color: var(--green);
+    }
+
+    .arch-layer.l3 {
+      background: oklch(75% 0.15 85 / 0.08);
+      border: 1px solid oklch(75% 0.15 85 / 0.2);
+      color: var(--yellow);
+    }
+
+    .arch-layer-icon {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      display: grid;
+      place-items: center;
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .arch-layer.l1 .arch-layer-icon { background: var(--accent); color: oklch(15% 0.02 240); }
+    .arch-layer.l2 .arch-layer-icon { background: var(--green); color: oklch(15% 0.02 240); }
+    .arch-layer.l3 .arch-layer-icon { background: var(--yellow); color: oklch(15% 0.02 240); }
+
+    .arch-arrow {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 10px;
+      line-height: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">J</div>
+        <span class="logo-text">Jarvis</span>
+        <div class="header-status">
+          <div class="status-dot"></div>
+          <span>在线 · 3 个任务运行中</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <button class="header-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a7 7 0 0 1 7 7c0 3-1.5 5.5-4 7v2H9v-2c-2.5-1.5-4-4-4-7a7 7 0 0 1 7-7z"></path>
+            <path d="M9 21h6"></path>
+          </svg>
+          记忆
+        </button>
+        <button class="header-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
+          </svg>
+          设置
+        </button>
+      </div>
+    </header>
+
+    <!-- Chat Area (left) -->
+    <main class="chat-area">
+      <div class="messages">
+        <!-- Jarvis greeting -->
+        <div class="message jarvis">
+          <div class="avatar jarvis-avatar">J</div>
+          <div class="bubble">
+            <div class="sender">Jarvis</div>
+            晚上好，Sir。目前有 3 个任务正在执行中，一切顺利。有什么新的指示吗？
+          </div>
+        </div>
+
+        <!-- User assigns a task -->
+        <div class="message user">
+          <div class="avatar user-avatar">H</div>
+          <div class="bubble">
+            <div class="sender">你</div>
+            帮我调研一下市面上主流的 AI Agent 框架，对比 LangChain、CrewAI、AutoGen 的优缺点，整理成表格。
+          </div>
+        </div>
+
+        <!-- Jarvis confirms and acts -->
+        <div class="message jarvis">
+          <div class="avatar jarvis-avatar">J</div>
+          <div class="bubble">
+            <div class="sender">Jarvis</div>
+            明白，Sir。我来安排这个任务。计划如下：
+            <br><br>
+            1. 启动一个搜索 Agent 收集三个框架的最新资料<br>
+            2. 启动一个分析 Agent 从架构、易用性、社区生态、性能四个维度对比<br>
+            3. 最终整理成结构化表格给您
+            <br><br>
+            预计 15 分钟内完成。我会实时监控进度。
+            <div class="task-ref">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                <path d="M9 12l2 2 4-4"></path>
+              </svg>
+              已创建任务：AI Agent 框架调研
+            </div>
+          </div>
+        </div>
+
+        <!-- User asks about another task -->
+        <div class="message user">
+          <div class="avatar user-avatar">H</div>
+          <div class="bubble">
+            <div class="sender">你</div>
+            之前让你写的周报写完了吗？
+          </div>
+        </div>
+
+        <!-- Jarvis reports status -->
+        <div class="message jarvis">
+          <div class="avatar jarvis-avatar">J</div>
+          <div class="bubble">
+            <div class="sender">Jarvis</div>
+            周报已经完成了，Sir。我根据您本周的代码提交、会议记录和任务完成情况整理了一份。要我发给您过目，还是直接提交？
+            <div class="task-ref">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <path d="M22 4L12 14.01l-3-3"></path>
+              </svg>
+              任务已完成：本周工作周报
+            </div>
+          </div>
+        </div>
+
+        <!-- Jarvis proactive alert -->
+        <div class="message jarvis">
+          <div class="avatar jarvis-avatar">J</div>
+          <div class="bubble">
+            <div class="sender">Jarvis</div>
+            Sir，有一个情况需要您注意——
+            <div class="alert-bubble">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+              <div>
+                <strong>竞品分析任务遇到问题</strong><br>
+                搜索 Agent 报告：部分竞品官网有反爬限制，已切换备用数据源。进度从 60% 回退到 45%，预计延后 5 分钟完成。
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- User response -->
+        <div class="message user">
+          <div class="avatar user-avatar">H</div>
+          <div class="bubble">
+            <div class="sender">你</div>
+            知道了，不着急，确保数据准确就行。
+          </div>
+        </div>
+
+        <div class="message jarvis">
+          <div class="avatar jarvis-avatar">J</div>
+          <div class="bubble">
+            <div class="sender">Jarvis</div>
+            收到，Sir。我会让 Agent 优先确保数据质量，完成后第一时间通知您。
+          </div>
+        </div>
+      </div>
+
+      <!-- Input -->
+      <div class="input-area">
+        <div class="input-wrapper">
+          <input type="text" placeholder="给 Jarvis 下达指令或询问进展...">
+          <button class="send-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M22 2L11 13"></path>
+              <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Task Panel (right) -->
+    <aside class="task-panel">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">任务面板</div>
+          <div class="panel-subtitle">当前活跃 3 · 今日完成 5</div>
+        </div>
+        <span class="task-count">3</span>
+      </div>
+
+      <div class="task-list">
+        <!-- Task 1: Running -->
+        <div class="task-card">
+          <div class="task-card-header">
+            <div class="task-status running">
+              <div class="task-status-dot"></div>
+              执行中
+            </div>
+            <div class="task-time">2 分钟前</div>
+          </div>
+          <div class="task-name">AI Agent 框架调研</div>
+          <div class="task-desc">对比 LangChain、CrewAI、AutoGen 的优缺点</div>
+          <div class="task-agents">
+            <div class="agent-tag">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="M21 21l-4.35-4.35"></path></svg>
+              搜索 Agent
+            </div>
+            <div class="agent-tag">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"></path></svg>
+              分析 Agent
+            </div>
+          </div>
+          <div class="task-progress">
+            <div class="task-progress-bar blue" style="width: 35%"></div>
+          </div>
+        </div>
+
+        <!-- Task 2: Warning -->
+        <div class="task-card">
+          <div class="task-card-header">
+            <div class="task-status warning">
+              <div class="task-status-dot"></div>
+              有问题
+            </div>
+            <div class="task-time">20 分钟前</div>
+          </div>
+          <div class="task-name">竞品功能分析</div>
+          <div class="task-desc">分析三家竞品的核心功能差异点</div>
+          <div class="task-agents">
+            <div class="agent-tag">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="M21 21l-4.35-4.35"></path></svg>
+              爬虫 Agent
+            </div>
+          </div>
+          <div class="task-progress">
+            <div class="task-progress-bar yellow" style="width: 45%"></div>
+          </div>
+        </div>
+
+        <!-- Task 3: Running -->
+        <div class="task-card">
+          <div class="task-card-header">
+            <div class="task-status running">
+              <div class="task-status-dot"></div>
+              执行中
+            </div>
+            <div class="task-time">1 小时前</div>
+          </div>
+          <div class="task-name">技术方案文档撰写</div>
+          <div class="task-desc">Jarvis 项目 v0.1 技术架构设计文档</div>
+          <div class="task-agents">
+            <div class="agent-tag">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>
+              写作 Agent
+            </div>
+          </div>
+          <div class="task-progress">
+            <div class="task-progress-bar blue" style="width: 72%"></div>
+          </div>
+        </div>
+
+        <!-- Task 4: Done -->
+        <div class="task-card" style="opacity: 0.7;">
+          <div class="task-card-header">
+            <div class="task-status done">
+              <div class="task-status-dot"></div>
+              已完成
+            </div>
+            <div class="task-time">30 分钟前</div>
+          </div>
+          <div class="task-name">本周工作周报</div>
+          <div class="task-desc">根据本周活动记录整理周报</div>
+          <div class="task-agents">
+            <div class="agent-tag">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path></svg>
+              写作 Agent
+            </div>
+          </div>
+          <div class="task-progress">
+            <div class="task-progress-bar green" style="width: 100%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Architecture mini-diagram -->
+      <div class="arch-section">
+        <div class="arch-label">系统架构</div>
+        <div class="arch-layers">
+          <div class="arch-layer l1">
+            <div class="arch-layer-icon">你</div>
+            指挥层 — 下达任务、做决策
+          </div>
+          <div class="arch-arrow">↕</div>
+          <div class="arch-layer l2">
+            <div class="arch-layer-icon">J</div>
+            管理层 — 拆解、调度、监控
+          </div>
+          <div class="arch-arrow">↕</div>
+          <div class="arch-layer l3">
+            <div class="arch-layer-icon">A</div>
+            执行层 — Agent 执行具体任务
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</body>
+</html>
