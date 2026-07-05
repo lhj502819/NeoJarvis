@@ -1,5 +1,5 @@
 import express from 'express'
-import { v4 as uuidv4 } from 'uuid'
+import { randomUUID } from 'crypto'
 import type { AgentCard, Message, TaskStatusUpdateEvent } from '@a2a-js/sdk'
 import {
   AgentExecutor,
@@ -11,7 +11,13 @@ import {
 import { agentCardHandler, jsonRpcHandler, restHandler, UserBuilder } from '@a2a-js/sdk/server/express'
 import { config } from '../shared/config.js'
 import { think } from './brain.js'
-import { getTaskSummary } from '../task/manager.js'
+import { getTaskSummary, listTasks } from '../task/manager.js'
+import { getState } from './state.js'
+import { listAllRunningTasks } from '../a2a/registry.js'
+import { listAgentSessions } from '../a2a/history.js'
+import { listRecipes } from '../team/registry.js'
+import { bus } from '../a2a/bus.js'
+import { interruptAgent, closeAgent } from '../a2a/client.js'
 
 type SSEClient = {
   id: string
@@ -71,7 +77,7 @@ class JarvisExecutor implements AgentExecutor {
 
     const responseMessage: Message = {
       kind: 'message',
-      messageId: uuidv4(),
+      messageId: randomUUID(),
       role: 'agent',
       parts: [{ kind: 'text', text: response }],
       contextId: requestContext.contextId,
@@ -95,6 +101,13 @@ class JarvisExecutor implements AgentExecutor {
 export function startJarvisServer(): express.Express {
   const app = express()
   app.use(express.json())
+  app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+    if (req.method === 'OPTIONS') { res.status(204).end(); return }
+    next()
+  })
 
   const executor = new JarvisExecutor()
   const requestHandler = new DefaultRequestHandler(jarvisCard, new InMemoryTaskStore(), executor)
@@ -152,7 +165,74 @@ export function startJarvisServer(): express.Express {
 
   // ─── 任务状态查询端点 ───
   app.get('/tasks', (req, res) => {
-    res.json({ summary: getTaskSummary() })
+    res.json({ summary: getTaskSummary(), tasks: listTasks() })
+  })
+
+  // ─── Dashboard API ───
+  app.get('/api/state', (req, res) => {
+    res.json(getState())
+  })
+
+  app.get('/api/agents', (req, res) => {
+    res.json(listAllRunningTasks())
+  })
+
+  app.get('/api/history', (req, res) => {
+    res.json(listAgentSessions())
+  })
+
+  app.get('/api/recipes', (req, res) => {
+    res.json(listRecipes())
+  })
+
+  // ─── Agent 通信端点（走 MessageBus）───
+  app.post('/api/agent/send', (req, res) => {
+    const { subtaskId, message } = req.body
+    if (!subtaskId || !message) {
+      res.status(400).json({ error: 'subtaskId and message required' })
+      return
+    }
+    if (!bus.isRegistered(subtaskId)) {
+      res.json({ success: false, error: 'agent not running' })
+      return
+    }
+    bus.notify('jarvis', subtaskId, subtaskId, message)
+    res.json({ success: true })
+  })
+
+  app.post('/api/agent/interrupt', async (req, res) => {
+    const { subtaskId } = req.body
+    if (!subtaskId) {
+      res.status(400).json({ error: 'subtaskId required' })
+      return
+    }
+    const ok = await interruptAgent(subtaskId)
+    res.json({ success: ok })
+  })
+
+  app.post('/api/agent/close', (req, res) => {
+    const { subtaskId } = req.body
+    if (!subtaskId) {
+      res.status(400).json({ error: 'subtaskId required' })
+      return
+    }
+    const ok = closeAgent(subtaskId)
+    res.json({ success: ok })
+  })
+
+  // ─── Bus 状态端点 ───
+  app.get('/api/bus/agents', (req, res) => {
+    res.json(bus.listAgents())
+  })
+
+  app.get('/api/bus/conversations', (req, res) => {
+    res.json(bus.getAllConversations())
+  })
+
+  app.get('/api/bus/conversations/:contextId', (req, res) => {
+    const conv = bus.getConversation(req.params.contextId)
+    if (!conv) { res.status(404).json({ error: 'not found' }); return }
+    res.json(conv)
   })
 
   app.listen(config.jarvisPort, () => {

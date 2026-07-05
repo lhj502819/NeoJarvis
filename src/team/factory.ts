@@ -1,5 +1,5 @@
 import express from 'express'
-import { v4 as uuidv4 } from 'uuid'
+import { randomUUID } from 'crypto'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { execSync } from 'child_process'
 import type { AgentCard, Message, TaskStatusUpdateEvent } from '@a2a-js/sdk'
@@ -12,10 +12,20 @@ import {
 } from '@a2a-js/sdk/server'
 import { agentCardHandler, jsonRpcHandler, restHandler, UserBuilder } from '@a2a-js/sdk/server/express'
 import type { AgentRecipe } from '../shared/types.js'
+import { config } from '../shared/config.js'
 
 import { homedir } from 'os'
 
-const CLAUDE_PATH = execSync('which claude', { encoding: 'utf-8' }).trim()
+function findClaudePath(): string {
+  try {
+    return execSync('which claude', { encoding: 'utf-8' }).trim()
+  } catch {
+    console.error('错误: 找不到 claude CLI，请确保已安装并在 PATH 中')
+    process.exit(1)
+  }
+}
+
+const CLAUDE_PATH = findClaudePath()
 const HOME_DIR = homedir()
 
 class RecipeExecutor implements AgentExecutor {
@@ -66,7 +76,7 @@ class RecipeExecutor implements AgentExecutor {
 
       const responseMessage: Message = {
         kind: 'message',
-        messageId: uuidv4(),
+        messageId: randomUUID(),
         role: 'agent',
         parts: [{ kind: 'text', text: result }],
         contextId: requestContext.contextId,
@@ -108,7 +118,7 @@ interface AgentInstance {
 }
 
 const activeInstances: Map<string, AgentInstance> = new Map()
-let nextPort = 3001
+let nextPort = config.agentBasePort
 
 export function startAgentServer(recipe: AgentRecipe): AgentInstance {
   const existing = activeInstances.get(recipe.id)

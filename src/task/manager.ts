@@ -121,6 +121,20 @@ export function getNextRunnableSubTask(taskId: string): SubTask | undefined {
   })
 }
 
+export function getAllRunnableSubTasks(taskId: string): SubTask[] {
+  const task = getTask(taskId)
+  if (!task) return []
+
+  return task.subtasks.filter(st => {
+    if (st.status !== 'pending') return false
+    if (!st.dependsOn || st.dependsOn.length === 0) return true
+    return st.dependsOn.every(depId => {
+      const dep = task.subtasks.find(d => d.id === depId)
+      return dep?.status === 'completed'
+    })
+  })
+}
+
 export function getTaskSummary(): string {
   const tasks = load()
   if (tasks.length === 0) return '当前没有任何任务。'

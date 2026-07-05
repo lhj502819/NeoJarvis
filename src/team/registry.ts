@@ -13,22 +13,7 @@ function save(recipes: AgentRecipe[]) {
 }
 
 function getBuiltinRecipes(): AgentRecipe[] {
-  return [
-    {
-      id: 'general',
-      name: '通用助手',
-      description: '通用任务执行，能搜索信息、读写文件、运行命令',
-      systemPrompt: '你是一个通用任务执行者。认真完成分配给你的任务，遇到问题及时汇报。返回详细的执行结果。',
-      tools: ['Read', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch'],
-      model: 'sonnet',
-      context: {},
-      persistent: true,
-      usageCount: 0,
-      createdBy: 'builtin',
-      createdAt: new Date().toISOString(),
-      lastUsedAt: '',
-    },
-  ]
+  return []
 }
 
 export function listRecipes(): AgentRecipe[] {
@@ -41,7 +26,10 @@ export function getRecipe(id: string): AgentRecipe | undefined {
 
 export function findMatchingRecipe(description: string): AgentRecipe | undefined {
   const recipes = load()
-  return recipes.find(r => r.persistent)
+  const lower = description.toLowerCase()
+  return recipes.find(r =>
+    r.persistent && r.description.toLowerCase().split(/\W+/).some(word => word.length >= 2 && lower.includes(word))
+  )
 }
 
 export function createRecipe(params: {

@@ -1,7 +1,9 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
-import { join } from 'path'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
 
-const DATA_DIR = join(process.cwd(), 'data')
+const PROJECT_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
+const DATA_DIR = join(PROJECT_ROOT, 'data')
 
 function ensureDataDir() {
   if (!existsSync(DATA_DIR)) {
