@@ -25,7 +25,7 @@ export function CredentialsModal({ open, onClose }: Props) {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { if (open) { refresh(); setEditing(null) } }, [open])
+  useEffect(() => { if (open) { refresh(); setEditing(null); setForm(EMPTY_FORM); setKeyChanged(false) } }, [open])
 
   if (!open) return null
 
@@ -43,6 +43,8 @@ export function CredentialsModal({ open, onClose }: Props) {
         if (!form.label || !form.apiKey || !form.baseUrl || !form.model) { setError('请填写所有必填项'); return }
         await createCredential(form)
       } else if (editing) {
+        // 编辑：点了"更换"但没填新 key，拦截
+        if (keyChanged && !form.apiKey) { setError('请输入新的 API Key'); return }
         // 编辑：未点"更换"则不提交 apiKey
         const body: any = { label: form.label, tier: form.tier, baseUrl: form.baseUrl, model: form.model, isDefault: form.isDefault }
         if (keyChanged && form.apiKey) body.apiKey = form.apiKey
