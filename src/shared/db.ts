@@ -152,6 +152,21 @@ CREATE TABLE IF NOT EXISTS jarvis_agent_messages (
   metadata TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_jarvis_agent_messages_thread ON jarvis_agent_messages(thread_id);
+
+-- ═══ 用户凭证表（BYOK：API Key/Base URL/模型名，支持多凭证 + 能力档位）═══
+CREATE TABLE IF NOT EXISTS jarvis_user_credentials (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL,
+  label       TEXT NOT NULL,
+  tier        TEXT NOT NULL DEFAULT 'standard',
+  api_key_enc TEXT NOT NULL,
+  base_url    TEXT NOT NULL,
+  model       TEXT NOT NULL,
+  is_default  INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_user_credentials_user ON jarvis_user_credentials(user_id);
 `)
 
 export default db
