@@ -14,7 +14,7 @@ import { bus } from '../a2a/bus.js'
 import { broadcast } from './agent.js'
 import { searchMemory, addMemory } from '../memory/everos.js'
 import { onMessageHandled, onTaskCompleted, onTaskFailed } from './state.js'
-import { agentEnv } from '../shared/config.js'
+import { buildUserEnv } from '../shared/user-env.js'
 import db from '../shared/db.js'
 
 const CLAUDE_PATH = execSync('which claude', { encoding: 'utf-8' }).trim()
@@ -124,7 +124,7 @@ async function rawLlmCall(userId: string, systemPrompt: string, prompt: string, 
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       settingSources: [],
-      env: agentEnv,
+      env: buildUserEnv(userId),
       maxTurns: 99999,
       ...(mcpServers && { mcpServers }),
     },

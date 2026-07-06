@@ -5,7 +5,7 @@ import { getPeerAgents } from './registry.js'
 import { getRecipe } from '../team/registry.js'
 import { recordAgentSession } from './history.js'
 import { bus } from './bus.js'
-import { agentEnv } from '../shared/config.js'
+import { buildUserEnv } from '../shared/user-env.js'
 
 const DEBUG = process.env.JARVIS_DEBUG === '1' || process.argv.includes('--debug')
 function debug(...args: any[]) {
@@ -124,7 +124,7 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,
     settingSources: [],
-    env: agentEnv,
+    env: buildUserEnv(userId),
     maxTurns: 99999,
   }
 
