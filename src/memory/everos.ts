@@ -1,6 +1,5 @@
 const EVEROS_BASE = 'https://api.evermind.ai/api/v1'
 const EVEROS_API_KEY = process.env.EVEROS_API_KEY || 'd66c8be1-7f5c-400e-ab37-beba229bf028'
-const USER_ID = 'hongjian'
 
 interface MemoryMessage {
   role: 'user' | 'assistant'
@@ -30,11 +29,11 @@ async function everosFetch(path: string, body: Record<string, unknown>): Promise
   return res.json()
 }
 
-export async function addMemory(sessionId: string, messages: MemoryMessage[]): Promise<void> {
+export async function addMemory(userId: string, sessionId: string, messages: MemoryMessage[]): Promise<void> {
   if (!EVEROS_API_KEY) return
 
   await everosFetch('/memories', {
-    user_id: USER_ID,
+    user_id: userId,
     session_id: sessionId,
     messages: messages.map(m => ({
       role: m.role,
@@ -44,21 +43,21 @@ export async function addMemory(sessionId: string, messages: MemoryMessage[]): P
   })
 }
 
-export async function flushMemory(sessionId: string): Promise<void> {
+export async function flushMemory(userId: string, sessionId: string): Promise<void> {
   if (!EVEROS_API_KEY) return
 
   await everosFetch('/memories/flush', {
-    user_id: USER_ID,
+    user_id: userId,
     session_id: sessionId,
   })
 }
 
-export async function searchMemory(query: string, topK = 5): Promise<string> {
+export async function searchMemory(userId: string, query: string, topK = 5): Promise<string> {
   if (!EVEROS_API_KEY) return ''
 
   try {
     const result = await everosFetch('/memories/search', {
-      filters: { user_id: USER_ID },
+      filters: { user_id: userId },
       query,
       method: 'hybrid',
       top_k: topK,
@@ -80,12 +79,12 @@ export async function searchMemory(query: string, topK = 5): Promise<string> {
   }
 }
 
-export async function getMemories(): Promise<string> {
+export async function getMemories(userId: string): Promise<string> {
   if (!EVEROS_API_KEY) return ''
 
   try {
     const result = await everosFetch('/memories/get', {
-      filters: { user_id: USER_ID },
+      filters: { user_id: userId },
       memory_type: 'episodic_memory',
     }) as { data?: { episodes?: Array<{ episode?: string }> } }
 

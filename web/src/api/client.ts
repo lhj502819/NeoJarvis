@@ -9,6 +9,7 @@ export async function* streamChat(message: string): AsyncGenerator<ChatEvent> {
   const res = await fetch(`${BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ message }),
   })
 
@@ -39,7 +40,7 @@ export async function* streamChat(message: string): AsyncGenerator<ChatEvent> {
 }
 
 export async function fetchJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`)
+  const res = await fetch(`${BASE}${path}`, { credentials: 'include' })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
@@ -48,6 +49,7 @@ export async function postJSON<T>(path: string, body: Record<string, unknown>): 
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(body),
   })
   return res.json()

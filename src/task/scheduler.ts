@@ -1,40 +1,40 @@
 import type { SubTask, SubTaskStatus } from '../shared/types.js'
 import { getTask, updateSubTask, getNextRunnableSubTask, getAllRunnableSubTasks, updateTask } from './manager.js'
 
-export function scheduleNext(taskId: string): SubTask | undefined {
-  const task = getTask(taskId)
+export function scheduleNext(userId: string, taskId: string): SubTask | undefined {
+  const task = getTask(userId, taskId)
   if (!task) return undefined
   if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
     return undefined
   }
 
-  const next = getNextRunnableSubTask(taskId)
+  const next = getNextRunnableSubTask(userId, taskId)
   if (next) {
-    updateSubTask(taskId, next.id, { status: 'running' })
-    updateTask(taskId, { status: 'executing' })
+    updateSubTask(userId, taskId, next.id, { status: 'running' })
+    updateTask(userId, taskId, { status: 'executing' })
     return { ...next, status: 'running' }
   }
 
-  checkTaskCompletion(taskId)
+  checkTaskCompletion(userId, taskId)
   return undefined
 }
 
-export function scheduleAllRunnable(taskId: string): SubTask[] {
-  const task = getTask(taskId)
+export function scheduleAllRunnable(userId: string, taskId: string): SubTask[] {
+  const task = getTask(userId, taskId)
   if (!task || ['completed', 'failed', 'cancelled'].includes(task.status)) return []
 
-  const runnables = getAllRunnableSubTasks(taskId)
+  const runnables = getAllRunnableSubTasks(userId, taskId)
   for (const st of runnables) {
-    updateSubTask(taskId, st.id, { status: 'running' })
+    updateSubTask(userId, taskId, st.id, { status: 'running' })
   }
   if (runnables.length > 0) {
-    updateTask(taskId, { status: 'executing' })
+    updateTask(userId, taskId, { status: 'executing' })
   }
   return runnables.map(st => ({ ...st, status: 'running' as SubTaskStatus }))
 }
 
-export function checkTaskCompletion(taskId: string): boolean {
-  const task = getTask(taskId)
+export function checkTaskCompletion(userId: string, taskId: string): boolean {
+  const task = getTask(userId, taskId)
   if (!task) return false
 
   const allDone = task.subtasks.every(st => st.status === 'completed')
@@ -42,21 +42,21 @@ export function checkTaskCompletion(taskId: string): boolean {
     const results = task.subtasks
       .map(st => `## ${st.name}\n${st.result || '(无结果)'}`)
       .join('\n\n')
-    updateTask(taskId, { status: 'completed', result: results })
+    updateTask(userId, taskId, { status: 'completed', result: results })
     return true
   }
   return false
 }
 
-export function handleSubTaskComplete(taskId: string, subtaskId: string, result: string) {
-  updateSubTask(taskId, subtaskId, { status: 'completed', result })
+export function handleSubTaskComplete(userId: string, taskId: string, subtaskId: string, result: string) {
+  updateSubTask(userId, taskId, subtaskId, { status: 'completed', result })
 }
 
-export function handleSubTaskFailed(taskId: string, subtaskId: string, error: string) {
-  updateSubTask(taskId, subtaskId, { status: 'failed', error })
+export function handleSubTaskFailed(userId: string, taskId: string, subtaskId: string, error: string) {
+  updateSubTask(userId, taskId, subtaskId, { status: 'failed', error })
 }
 
-export function handleSubTaskBlocked(taskId: string, subtaskId: string, reason: string) {
-  updateSubTask(taskId, subtaskId, { status: 'input-required', blockedReason: reason })
-  updateTask(taskId, { status: 'blocked' })
+export function handleSubTaskBlocked(userId: string, taskId: string, subtaskId: string, reason: string) {
+  updateSubTask(userId, taskId, subtaskId, { status: 'input-required', blockedReason: reason })
+  updateTask(userId, taskId, { status: 'blocked' })
 }

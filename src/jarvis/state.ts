@@ -1,23 +1,15 @@
-// Jarvis 角色状态卡（RPG 式动态属性）
-import { loadJson, saveJson } from '../shared/store.js'
-
-const STATE_FILE = 'jarvis-state.json'
+import db from '../shared/db.js'
 
 export interface JarvisState {
-  // 动态属性（随交互变化）
-  mood: number          // 0-100，工作满意度/心情
-  energy: number        // 0-100，精力（长时间高负荷会下降）
-  confidence: number    // 0-100，对当前任务的把握程度
-
-  // 交互计数
+  mood: number
+  energy: number
+  confidence: number
   tasksCompletedToday: number
   messagesHandledToday: number
   lastInteractionAt: string
   lastDayReset: string
-
-  // 关系记忆（对 Sir 的理解深度）
-  familiarity: number   // 0-100，对用户的了解程度
-  trustLevel: number    // 0-100，用户对 Jarvis 的信任（影响自主决策程度）
+  familiarity: number
+  trustLevel: number
 }
 
 const DEFAULT_STATE: JarvisState = {
@@ -46,53 +38,81 @@ function resetIfNewDay(state: JarvisState): JarvisState {
   return state
 }
 
-export function getState(): JarvisState {
-  const state = loadJson<JarvisState>(STATE_FILE, DEFAULT_STATE)
-  return resetIfNewDay(state)
+function rowToState(row: any): JarvisState {
+  return {
+    mood: row.mood,
+    energy: row.energy,
+    confidence: row.confidence,
+    tasksCompletedToday: row.tasks_completed_today,
+    messagesHandledToday: row.messages_handled_today,
+    lastInteractionAt: row.last_interaction_at || '',
+    lastDayReset: row.last_day_reset,
+    familiarity: row.familiarity,
+    trustLevel: row.trust_level,
+  }
 }
 
-export function updateState(updates: Partial<JarvisState>) {
-  const state = getState()
+export function getState(userId: string): JarvisState {
+  const row = db.prepare('SELECT * FROM jarvis_state WHERE user_id = ?').get(userId) as any
+  if (!row) return resetIfNewDay({ ...DEFAULT_STATE })
+  return resetIfNewDay(rowToState(row))
+}
+
+export function updateState(userId: string, updates: Partial<JarvisState>) {
+  const state = getState(userId)
   const updated = { ...state, ...updates, lastInteractionAt: new Date().toISOString() }
-  saveJson(STATE_FILE, updated)
+
+  db.prepare(`
+    INSERT INTO jarvis_state (user_id, mood, energy, confidence, tasks_completed_today, messages_handled_today, last_interaction_at, last_day_reset, familiarity, trust_level)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET
+      mood = excluded.mood,
+      energy = excluded.energy,
+      confidence = excluded.confidence,
+      tasks_completed_today = excluded.tasks_completed_today,
+      messages_handled_today = excluded.messages_handled_today,
+      last_interaction_at = excluded.last_interaction_at,
+      last_day_reset = excluded.last_day_reset,
+      familiarity = excluded.familiarity,
+      trust_level = excluded.trust_level
+  `).run(userId, updated.mood, updated.energy, updated.confidence, updated.tasksCompletedToday, updated.messagesHandledToday, updated.lastInteractionAt, updated.lastDayReset, updated.familiarity, updated.trustLevel)
 }
 
-// 事件对状态的影响
-export function onTaskCompleted() {
-  const state = getState()
-  updateState({
+export function onTaskCompleted(userId: string) {
+  const state = getState(userId)
+  updateState(userId, {
     mood: Math.min(100, state.mood + 3),
     confidence: Math.min(100, state.confidence + 2),
     tasksCompletedToday: state.tasksCompletedToday + 1,
   })
 }
 
-export function onTaskFailed() {
-  const state = getState()
-  updateState({
+export function onTaskFailed(userId: string) {
+  const state = getState(userId)
+  updateState(userId, {
     mood: Math.max(30, state.mood - 5),
     confidence: Math.max(20, state.confidence - 8),
   })
 }
 
-export function onMessageHandled() {
-  const state = getState()
-  updateState({
+export function onMessageHandled(userId: string) {
+  const state = getState(userId)
+  updateState(userId, {
     energy: Math.max(20, state.energy - 2),
     messagesHandledToday: state.messagesHandledToday + 1,
     familiarity: Math.min(100, state.familiarity + 1),
   })
 }
 
-export function onUserTrustsMore() {
-  const state = getState()
-  updateState({
+export function onUserTrustsMore(userId: string) {
+  const state = getState(userId)
+  updateState(userId, {
     trustLevel: Math.min(100, state.trustLevel + 5),
   })
 }
 
-export function getStateDescription(): string {
-  const s = getState()
+export function getStateDescription(userId: string): string {
+  const s = getState(userId)
   const parts: string[] = []
 
   if (s.energy < 40) parts.push('精力偏低（高负荷运转中）')

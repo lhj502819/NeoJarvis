@@ -120,19 +120,19 @@ async function testConversationHistory() {
 async function testTaskManagement() {
   console.log('\n═══ 测试 6: 任务管理 + 子任务 ═══')
 
-  const task = createTask('测试任务', '验证多子任务并行')
+  const task = createTask('test-user', '测试任务', '验证多子任务并行')
   assert(task.id.length > 0, '任务创建成功')
 
-  const sub1 = addSubTask(task.id, { name: '子任务1', description: '调研 SDK', assignee: 'general' })
-  const sub2 = addSubTask(task.id, { name: '子任务2', description: '调研协议', assignee: 'general' })
+  const sub1 = addSubTask('test-user', task.id, { name: '子任务1', description: '调研 SDK', assignee: 'general' })
+  const sub2 = addSubTask('test-user', task.id, { name: '子任务2', description: '调研协议', assignee: 'general' })
   assert(sub1.id !== sub2.id, '子任务 ID 不同')
 
-  updateTask(task.id, { status: 'executing' })
-  const updated = getTask(task.id)
+  updateTask('test-user', task.id, { status: 'executing' })
+  const updated = getTask('test-user', task.id)
   assert(updated?.status === 'executing', '任务状态更新成功')
 
-  updateSubTask(task.id, sub1.id, { progress: '回合 3 | 已执行 5 步' })
-  const t = getTask(task.id)
+  updateSubTask('test-user', task.id, sub1.id, { progress: '回合 3 | 已执行 5 步' })
+  const t = getTask('test-user', task.id)
   const s1 = t?.subtasks.find(s => s.id === sub1.id)
   assert(s1?.progress === '回合 3 | 已执行 5 步', '子任务进度更新成功')
 }
@@ -140,10 +140,10 @@ async function testTaskManagement() {
 async function testRunningTaskRegistry() {
   console.log('\n═══ 测试 7: 运行中任务注册表 ═══')
 
-  registerRunningTask('task-x', 'sub-1', 'general', '调研任务')
-  registerRunningTask('task-x', 'sub-2', 'general', '写报告')
+  registerRunningTask('test-user', 'task-x', 'sub-1', 'general', '调研任务')
+  registerRunningTask('test-user', 'task-x', 'sub-2', 'general', '写报告')
 
-  const running = listAllRunningTasks()
+  const running = listAllRunningTasks('test-user')
   assert(running.length >= 2, '注册了 2 个运行中任务')
   assert(running.some(r => r.subtaskId === 'sub-1'), 'sub-1 在列表中')
 

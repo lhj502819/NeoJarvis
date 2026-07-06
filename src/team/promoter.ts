@@ -5,11 +5,11 @@ import { basename } from 'path'
 
 const PROMOTION_THRESHOLD = 3
 
-export function evaluatePromotion(): void {
-  const sessions = listAgentSessions()
+export function evaluatePromotion(userId: string): void {
+  const sessions = listAgentSessions(userId)
   if (sessions.length < PROMOTION_THRESHOLD) return
 
-  const existingRecipes = listRecipes()
+  const existingRecipes = listRecipes(userId)
   // 已沉淀的领域（专家的身份是领域，不是路径）
   const existingDomains = new Set(
     existingRecipes.map(r => r.context.domain as string).filter(Boolean)
@@ -25,7 +25,7 @@ export function evaluatePromotion(): void {
     // 门牌号辅料：若该领域的任务集中在某个仓库（开发类），带上 cwd 当上下文；纯调研类为空
     const cwd = dominantCwd(cluster)
 
-    const recipe = createRecipe({
+    const recipe = createRecipe(userId, {
       name: `${domain}专家`,
       description: buildExpertDescription(domain, cwd),
       systemPrompt: buildDomainExpertPrompt(domain, cwd, cluster),
@@ -35,7 +35,7 @@ export function evaluatePromotion(): void {
     })
 
     const where = cwd ? `（主战场：${basename(cwd)}）` : ''
-    broadcast('progress', `🎓 新小弟入队：「${domain}专家」${where} — 该领域已执行 ${cluster.taskCount} 次任务，沉淀为专属 agent`)
+    broadcast('progress', `🎓 新小弟入队：「${domain}专家」${where} — 该领域已执行 ${cluster.taskCount} 次任务，沉淀为专属 agent`, userId)
     return
   }
 }

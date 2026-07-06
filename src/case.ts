@@ -274,7 +274,7 @@ async function run() {
   console.log('\x1b[2m        无幽灵任务 | 任务端点\x1b[0m')
   console.log()
 
-  cleanupStaleTasks()
+  cleanupStaleTasks('test-user')
   startJarvisServer()
   await new Promise(resolve => setTimeout(resolve, 1000))
 

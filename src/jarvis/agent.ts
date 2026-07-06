@@ -1,4 +1,5 @@
 import express from 'express'
+import cookieParser from 'cookie-parser'
 import { randomUUID } from 'crypto'
 import type { AgentCard, Message, TaskStatusUpdateEvent } from '@a2a-js/sdk'
 import {
@@ -10,7 +11,7 @@ import {
 } from '@a2a-js/sdk/server'
 import { agentCardHandler, jsonRpcHandler, restHandler, UserBuilder } from '@a2a-js/sdk/server/express'
 import { config } from '../shared/config.js'
-import { loadJson } from '../shared/store.js'
+import db from '../shared/db.js'
 import { think } from './brain.js'
 import { getTaskSummary, listTasks } from '../task/manager.js'
 import { getState } from './state.js'
@@ -19,23 +20,27 @@ import { listAgentSessions } from '../a2a/history.js'
 import { listRecipes } from '../team/registry.js'
 import { bus } from '../a2a/bus.js'
 import { interruptAgent, closeAgent } from '../a2a/client.js'
+import { authRouter } from '../auth/auth.js'
+import { authMiddleware } from '../auth/middleware.js'
 
 type SSEClient = {
   id: string
+  userId: string
   res: express.Response
 }
 
 const sseClients: SSEClient[] = []
 
-export function broadcast(type: string, content: string) {
+export function broadcast(type: string, content: string, userId?: string) {
   const data = JSON.stringify({ type, content, timestamp: new Date().toISOString() })
-  for (const client of sseClients) {
+  const targets = userId ? sseClients.filter(c => c.userId === userId) : sseClients
+  for (const client of targets) {
     client.res.write(`data: ${data}\n\n`)
   }
 }
 
-function addSSEClient(id: string, res: express.Response) {
-  sseClients.push({ id, res })
+function addSSEClient(id: string, userId: string, res: express.Response) {
+  sseClients.push({ id, userId, res })
   res.on('close', () => {
     const idx = sseClients.findIndex(c => c.id === id)
     if (idx >= 0) sseClients.splice(idx, 1)
@@ -72,7 +77,7 @@ class JarvisExecutor implements AgentExecutor {
     }
     eventBus.publish(statusUpdate)
 
-    const response = await think(userText, (progress) => {
+    const response = await think('system', userText, (progress) => {
       broadcast('progress', progress)
     })
 
@@ -102,13 +107,18 @@ class JarvisExecutor implements AgentExecutor {
 export function startJarvisServer(): express.Express {
   const app = express()
   app.use(express.json())
+  app.use(cookieParser())
   app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+    res.setHeader('Access-Control-Allow-Credentials', 'true')
     if (req.method === 'OPTIONS') { res.status(204).end(); return }
     next()
   })
+
+  // Auth routes (no auth required)
+  app.use(authRouter())
 
   const executor = new JarvisExecutor()
   const requestHandler = new DefaultRequestHandler(jarvisCard, new InMemoryTaskStore(), executor)
@@ -118,6 +128,9 @@ export function startJarvisServer(): express.Express {
   app.use('/a2a/jsonrpc', jsonRpcHandler({ requestHandler, userBuilder: UserBuilder.noAuthentication }))
   app.use('/a2a/rest', restHandler({ requestHandler, userBuilder: UserBuilder.noAuthentication }))
 
+  // All routes below require auth
+  app.use(authMiddleware)
+
   // ─── SSE 实时事件流（后台任务进度、告警等）───
   app.get('/events', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream')
@@ -126,7 +139,7 @@ export function startJarvisServer(): express.Express {
     res.flushHeaders()
 
     const clientId = `cli-${Date.now()}`
-    addSSEClient(clientId, res)
+    addSSEClient(clientId, req.userId!, res)
     res.write(`data: ${JSON.stringify({ type: 'connected', content: '已连接 Jarvis 事件流' })}\n\n`)
   })
 
@@ -151,7 +164,7 @@ export function startJarvisServer(): express.Express {
     sendEvent('thinking', '正在思考...')
 
     try {
-      const response = await think(message, (progress) => {
+      const response = await think(req.userId!, message, (progress) => {
         sendEvent('progress', progress)
       }, (delta) => {
         sendEvent('delta', delta)
@@ -168,30 +181,32 @@ export function startJarvisServer(): express.Express {
 
   // ─── 任务状态查询端点 ───
   app.get('/tasks', (req, res) => {
-    res.json({ summary: getTaskSummary(), tasks: listTasks() })
+    res.json({ summary: getTaskSummary(req.userId!), tasks: listTasks(req.userId!) })
   })
 
   // ─── 对话历史 ───
   app.get('/api/conversation', (req, res) => {
-    const turns = loadJson('conversation.json', [])
-    res.json(turns)
+    const session = db.prepare('SELECT id FROM user_jarvis_sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1').get(req.userId!) as any
+    if (!session) { res.json([]); return }
+    const rows = db.prepare('SELECT role, content, timestamp FROM user_jarvis_messages WHERE session_id = ? ORDER BY timestamp ASC').all(session.id)
+    res.json(rows)
   })
 
   // ─── Dashboard API ───
   app.get('/api/state', (req, res) => {
-    res.json(getState())
+    res.json(getState(req.userId!))
   })
 
   app.get('/api/agents', (req, res) => {
-    res.json(listAllRunningTasks())
+    res.json(listAllRunningTasks(req.userId!))
   })
 
   app.get('/api/history', (req, res) => {
-    res.json(listAgentSessions())
+    res.json(listAgentSessions(req.userId!))
   })
 
   app.get('/api/recipes', (req, res) => {
-    res.json(listRecipes())
+    res.json(listRecipes(req.userId!))
   })
 
   // ─── Agent 通信端点（走 MessageBus）───
