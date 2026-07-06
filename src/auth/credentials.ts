@@ -104,7 +104,7 @@ export function updateCredential(userId: string, id: string, p: {
   `).run(
     p.label ?? row.label,
     p.tier ?? row.tier,
-    p.apiKey !== undefined ? encrypt(p.apiKey) : row.api_key_enc,  // apiKey 未传则保留原值
+    p.apiKey ? encrypt(p.apiKey) : row.api_key_enc,  // 空串与 undefined 都视为"不更新"，防止空串覆盖真实 key
     p.baseUrl ?? row.base_url,
     p.model ?? row.model,
     p.isDefault === true ? 1 : row.is_default,
