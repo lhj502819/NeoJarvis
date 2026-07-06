@@ -58,7 +58,12 @@ export function resolveCredential(userId: string, tier?: string): ResolvedCreden
     ).get(userId)
   }
   if (!row) return null
-  return { apiKey: decrypt(row.api_key_enc), baseUrl: row.base_url, model: row.model }
+  try {
+    return { apiKey: decrypt(row.api_key_enc), baseUrl: row.base_url, model: row.model }
+  } catch {
+    console.warn(`[credentials] resolveCredential: 解密失败，userId=${userId}，凭证已损坏或密钥已轮换，回退到平台默认 key`)
+    return null
+  }
 }
 
 function clearDefault(userId: string) {
@@ -80,7 +85,7 @@ export function addCredential(userId: string, p: {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, userId, p.label, p.tier, encrypt(p.apiKey), p.baseUrl, p.model, makeDefault ? 1 : 0, now, now)
 
-  return rowToCredential(db.prepare('SELECT * FROM jarvis_user_credentials WHERE id = ?').get(id))
+  return rowToCredential(db.prepare('SELECT id, user_id, label, tier, base_url, model, is_default, created_at, updated_at FROM jarvis_user_credentials WHERE id = ?').get(id))
 }
 
 export function updateCredential(userId: string, id: string, p: {
@@ -105,7 +110,7 @@ export function updateCredential(userId: string, id: string, p: {
     p.isDefault === true ? 1 : row.is_default,
     now, id, userId
   )
-  return rowToCredential(db.prepare('SELECT * FROM jarvis_user_credentials WHERE id = ?').get(id))
+  return rowToCredential(db.prepare('SELECT id, user_id, label, tier, base_url, model, is_default, created_at, updated_at FROM jarvis_user_credentials WHERE id = ?').get(id))
 }
 
 export function deleteCredential(userId: string, id: string): boolean {
@@ -116,7 +121,7 @@ export function deleteCredential(userId: string, id: string): boolean {
   // 删的是默认且还有其它凭证 → 自动指定最早创建的为新默认
   if (row.is_default === 1) {
     const next = db.prepare('SELECT id FROM jarvis_user_credentials WHERE user_id = ? ORDER BY created_at ASC LIMIT 1').get(userId) as any
-    if (next) db.prepare('UPDATE jarvis_user_credentials SET is_default = 1 WHERE id = ?').run(next.id)
+    if (next) db.prepare('UPDATE jarvis_user_credentials SET is_default = 1 WHERE id = ? AND user_id = ?').run(next.id, userId)
   }
   return true
 }
