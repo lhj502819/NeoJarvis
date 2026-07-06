@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { listCredentials, createCredential, updateCredential, deleteCredential, type Credential } from '../api/credentials'
+import { listCredentials, createCredential, updateCredential, deleteCredential, type Credential, type CredentialInput } from '../api/credentials'
 
 interface Props {
   open: boolean
@@ -41,12 +41,12 @@ export function CredentialsModal({ open, onClose }: Props) {
     try {
       if (editing === 'new') {
         if (!form.label || !form.apiKey || !form.baseUrl || !form.model) { setError('请填写所有必填项'); return }
-        await createCredential(form)
+        await createCredential({ ...form, tier: form.tier as CredentialInput['tier'] })
       } else if (editing) {
         // 编辑：点了"更换"但没填新 key，拦截
         if (keyChanged && !form.apiKey) { setError('请输入新的 API Key'); return }
         // 编辑：未点"更换"则不提交 apiKey
-        const body: any = { label: form.label, tier: form.tier, baseUrl: form.baseUrl, model: form.model, isDefault: form.isDefault }
+        const body: Partial<CredentialInput> = { label: form.label, tier: form.tier as CredentialInput['tier'], baseUrl: form.baseUrl, model: form.model, isDefault: form.isDefault }
         if (keyChanged && form.apiKey) body.apiKey = form.apiKey
         await updateCredential(editing, body)
       }

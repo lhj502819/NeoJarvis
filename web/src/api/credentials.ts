@@ -13,7 +13,7 @@ export interface Credential {
 
 export interface CredentialInput {
   label: string
-  tier: string
+  tier: 'fast' | 'standard' | 'strong'
   apiKey?: string
   baseUrl: string
   model: string

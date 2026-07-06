@@ -5,7 +5,8 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
-    "case": "tsx src/case.ts"
+    "case": "tsx src/case.ts",
+    "test:user-env": "tsx src/test-user-env.ts"
   },
   "dependencies": {
     "@a2a-js/sdk": "^0.3.13",
