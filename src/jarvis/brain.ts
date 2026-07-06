@@ -94,9 +94,9 @@ function parseAction(text: string): ActionResponse | null {
   return null
 }
 
-async function llmCall(prompt: string): Promise<string> {
+async function llmCall(prompt: string, onDelta?: (text: string) => void): Promise<string> {
   const systemPrompt = buildSystemPrompt()
-  return withBrainLock(() => rawLlmCall(systemPrompt, prompt))
+  return withBrainLock(() => rawLlmCall(systemPrompt, prompt, onDelta))
 }
 
 const DEBUG = process.env.JARVIS_DEBUG === '1' || process.argv.includes('--debug')
@@ -105,9 +105,12 @@ function debug(...args: any[]) {
   if (DEBUG) console.log('\x1b[2m[debug]\x1b[0m', ...args)
 }
 
-async function rawLlmCall(systemPrompt: string, prompt: string): Promise<string> {
+async function rawLlmCall(systemPrompt: string, prompt: string, onDelta?: (text: string) => void): Promise<string> {
+  const t0 = Date.now()
   debug('rawLlmCall start, prompt length:', prompt.length)
+  console.log(`[perf] rawLlmCall start, system prompt: ${systemPrompt.length} chars, user prompt: ${prompt.length} chars`)
   let result = ''
+  let firstTokenTime = 0
   for await (const message of query({
     prompt,
     options: {
@@ -123,9 +126,14 @@ async function rawLlmCall(systemPrompt: string, prompt: string): Promise<string>
   })) {
     debug('msg:', message.type, (message as any).subtype || '', (message as any).message?.content?.map((b: any) => b.type).join(',') || '')
     if (message.type === 'assistant' && message.message?.content) {
+      if (!firstTokenTime) {
+        firstTokenTime = Date.now()
+        console.log(`[perf] first token: ${firstTokenTime - t0}ms`)
+      }
       for (const block of message.message.content) {
         if ('text' in block && block.text) {
           result += block.text
+          onDelta?.(block.text)
         }
         if ('type' in block && block.type === 'tool_use') {
           const toolName = (block as any).name || 'tool'
@@ -146,10 +154,11 @@ async function rawLlmCall(systemPrompt: string, prompt: string): Promise<string>
     }
   }
   debug('rawLlmCall done, result length:', result.length)
+  console.log(`[perf] rawLlmCall done: ${Date.now() - t0}ms total, result: ${result.length} chars`)
   return result
 }
 
-async function executeSubTask(taskId: string, subtaskId: string, description: string, assignee: string, signal: AbortSignal, resumeSession?: string): Promise<string> {
+async function executeSubTask(taskId: string, subtaskId: string, description: string, assignee: string, signal: AbortSignal, resumeSession?: string, domain?: string, cwd?: string): Promise<string> {
   if (signal.aborted) throw new Error('任务已取消')
 
   const recipe = getRecipe(assignee)
@@ -164,6 +173,8 @@ async function executeSubTask(taskId: string, subtaskId: string, description: st
     const result = await dispatchToAgent(assignee, description, {
       taskId,
       subtaskId,
+      domain,
+      cwd,
       signal,
       resumeSession,
       onProgress: (progress) => {
@@ -180,7 +191,7 @@ async function executeSubTask(taskId: string, subtaskId: string, description: st
   }
 }
 
-function executeTaskInBackground(taskId: string, subtasks: Array<{ name: string; description: string; assignee?: string; resumeSession?: string }>) {
+function executeTaskInBackground(taskId: string, subtasks: Array<{ name: string; description: string; assignee?: string; resumeSession?: string; domain?: string; cwd?: string }>) {
   ;(async () => {
     const task = getTask(taskId)
     if (!task) return
@@ -189,12 +200,16 @@ function executeTaskInBackground(taskId: string, subtasks: Array<{ name: string;
     const signal = controller.signal
 
     const resumeMap = new Map<string, string>()
+    const domainMap = new Map<string, string>()
+    const cwdMap = new Map<string, string>()
     for (const st of subtasks) {
       const assignee = st.assignee || 'general'
-      const sub = addSubTask(taskId, { name: st.name, description: st.description, assignee })
+      const sub = addSubTask(taskId, { name: st.name, description: st.description, assignee, domain: st.domain, cwd: st.cwd })
       if (st.resumeSession) {
         resumeMap.set(sub.id, st.resumeSession)
       }
+      if (st.domain) domainMap.set(sub.id, st.domain)
+      if (st.cwd) cwdMap.set(sub.id, st.cwd)
     }
     updateTask(taskId, { status: 'executing' })
 
@@ -216,7 +231,7 @@ function executeTaskInBackground(taskId: string, subtasks: Array<{ name: string;
       }
 
       const results = await Promise.allSettled(
-        runnables.map(st => executeSubTask(taskId, st.id, st.description, st.assignee, signal, resumeMap.get(st.id)))
+        runnables.map(st => executeSubTask(taskId, st.id, st.description, st.assignee, signal, resumeMap.get(st.id), domainMap.get(st.id), cwdMap.get(st.id)))
       )
 
       if (signal.aborted) break
@@ -268,7 +283,8 @@ function executeTaskInBackground(taskId: string, subtasks: Array<{ name: string;
   })
 }
 
-export async function think(userMessage: string, onProgress?: (text: string) => void): Promise<string> {
+export async function think(userMessage: string, onProgress?: (text: string) => void, onDelta?: (text: string) => void): Promise<string> {
+  const t0 = Date.now()
   debug('think() called:', userMessage.slice(0, 50))
   addToBuffer('user', userMessage)
 
@@ -279,7 +295,9 @@ export async function think(userMessage: string, onProgress?: (text: string) => 
   // 从 EverOS 检索相关记忆
   debug('searching memory...')
   onProgress?.('正在回忆相关信息...')
+  const t1 = Date.now()
   const memories = await searchMemory(userMessage, 5)
+  console.log(`[perf] searchMemory: ${Date.now() - t1}ms`)
   debug('memory done, length:', memories.length)
 
   const recentConvo = getRecentConversation()
@@ -298,7 +316,22 @@ ${recentConvo || '(刚开始对话)'}
 ${userMessage}`
 
   onProgress?.('正在分析你的需求...')
-  const llmResponse = await llmCall(contextualPrompt)
+  const t2 = Date.now()
+  console.log(`[perf] prompt built, length: ${contextualPrompt.length} chars`)
+  let accum = ''
+  let codeBlockHit = false
+  const filteredDelta = onDelta ? (text: string) => {
+    if (codeBlockHit) return
+    accum += text
+    if (accum.includes('```')) {
+      codeBlockHit = true
+      return
+    }
+    onDelta(text)
+  } : undefined
+  const llmResponse = await llmCall(contextualPrompt, filteredDelta)
+  console.log(`[perf] llmCall: ${Date.now() - t2}ms`)
+  console.log(`[perf] total think(): ${Date.now() - t0}ms`)
 
   const action = parseAction(llmResponse)
 
@@ -318,7 +351,7 @@ ${userMessage}`
       const { name, description, subtasks } = action.data as {
         name: string
         description: string
-        subtasks?: Array<{ name: string; description: string; assignee?: string }>
+        subtasks?: Array<{ name: string; description: string; assignee?: string; resumeSession?: string; domain?: string; cwd?: string }>
       }
       const task = createTask(name, description)
       updateTask(task.id, { status: 'planning' })

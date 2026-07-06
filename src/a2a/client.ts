@@ -18,6 +18,8 @@ const HOME_DIR = homedir()
 export interface DispatchContext {
   taskId: string
   subtaskId: string
+  domain?: string
+  cwd?: string
   signal?: AbortSignal
   resumeSession?: string
   onProgress?: (progress: string) => void
@@ -82,7 +84,11 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
   const agentName = recipe?.name || recipeId
   const systemPrompt = recipe?.systemPrompt || adhocPrompt
   const tools = recipe?.tools || ['Read', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch']
-  const workDir = (recipe?.context?.cwd as string) || HOME_DIR
+  // 门牌号：小弟 recipe 自带 cwd > 本次任务指定 cwd（开发类）。纯调研类无门牌号。
+  const recordedCwd = (recipe?.context?.cwd as string) || context?.cwd || ''
+  // 执行工作目录：有门牌号就用，否则兜底 HOME（但兜底值不写进 history）
+  const workDir = recordedCwd || HOME_DIR
+  const domain = context?.domain || ''
 
   let enrichedDescription = taskDescription
 
@@ -207,8 +213,9 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
   }
 
   const finalSessionId = sessionId || `auto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  recordAgentSession(finalSessionId, recipeId, taskDescription, workDir)
-  debug('recorded agent session:', finalSessionId)
+  // 聚类主键是 domain（语义领域），cwd 仅作开发类任务的门牌号辅料（纯调研为空）
+  recordAgentSession(finalSessionId, recipeId, taskDescription, domain, recordedCwd)
+  debug('recorded agent session:', finalSessionId, 'domain:', domain)
 
   return result || '(无结果)'
 }

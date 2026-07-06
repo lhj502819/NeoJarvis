@@ -37,6 +37,10 @@ export interface SubTask {
   name: string
   description: string
   assignee: string
+  /** 语义领域标签（聚类主键）——如「技术调研」「差旅出行」「jarvis开发」。专家按此维度沉淀。 */
+  domain?: string
+  /** 门牌号辅料——仅开发/改代码类任务需要，标明去哪个仓库干活。 */
+  cwd?: string
   status: SubTaskStatus
   progress?: string
   result?: string

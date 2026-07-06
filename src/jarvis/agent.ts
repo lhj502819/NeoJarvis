@@ -10,6 +10,7 @@ import {
 } from '@a2a-js/sdk/server'
 import { agentCardHandler, jsonRpcHandler, restHandler, UserBuilder } from '@a2a-js/sdk/server/express'
 import { config } from '../shared/config.js'
+import { loadJson } from '../shared/store.js'
 import { think } from './brain.js'
 import { getTaskSummary, listTasks } from '../task/manager.js'
 import { getState } from './state.js'
@@ -152,6 +153,8 @@ export function startJarvisServer(): express.Express {
     try {
       const response = await think(message, (progress) => {
         sendEvent('progress', progress)
+      }, (delta) => {
+        sendEvent('delta', delta)
       })
       sendEvent('response', response)
     } catch (err) {
@@ -166,6 +169,12 @@ export function startJarvisServer(): express.Express {
   // ─── 任务状态查询端点 ───
   app.get('/tasks', (req, res) => {
     res.json({ summary: getTaskSummary(), tasks: listTasks() })
+  })
+
+  // ─── 对话历史 ───
+  app.get('/api/conversation', (req, res) => {
+    const turns = loadJson('conversation.json', [])
+    res.json(turns)
   })
 
   // ─── Dashboard API ───

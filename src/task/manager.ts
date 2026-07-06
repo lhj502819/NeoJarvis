@@ -38,7 +38,7 @@ export function updateTask(taskId: string, updates: Partial<Pick<Task, 'status' 
   return task
 }
 
-export function addSubTask(taskId: string, params: { name: string; description: string; assignee: string; dependsOn?: string[] }): SubTask {
+export function addSubTask(taskId: string, params: { name: string; description: string; assignee: string; domain?: string; cwd?: string; dependsOn?: string[] }): SubTask {
   const tasks = load()
   const task = tasks.find(t => t.id === taskId)
   if (!task) throw new Error(`Task ${taskId} not found`)
@@ -49,6 +49,8 @@ export function addSubTask(taskId: string, params: { name: string; description: 
     name: params.name,
     description: params.description,
     assignee: params.assignee,
+    domain: params.domain,
+    cwd: params.cwd,
     status: 'pending',
     dependsOn: params.dependsOn,
     createdAt: new Date().toISOString(),

@@ -5,6 +5,9 @@ const HISTORY_FILE = 'agent-history.json'
 export interface AgentSession {
   sessionId: string
   recipeId: string
+  /** 语义领域标签（聚类主键）——专家按此维度沉淀，而非物理路径。 */
+  domain: string
+  /** 门牌号辅料——仅开发类任务有值。 */
   cwd: string
   topics: string[]
   lastTaskDescription: string
@@ -20,7 +23,7 @@ function save(sessions: AgentSession[]) {
   saveJson(HISTORY_FILE, sessions)
 }
 
-export function recordAgentSession(sessionId: string, recipeId: string, description: string, cwd?: string) {
+export function recordAgentSession(sessionId: string, recipeId: string, description: string, domain?: string, cwd?: string) {
   const sessions = load()
   const keywords = extractKeywords(description)
 
@@ -30,11 +33,13 @@ export function recordAgentSession(sessionId: string, recipeId: string, descript
     existing.lastTaskDescription = description
     existing.completedAt = new Date().toISOString()
     existing.taskCount++
+    if (domain && !existing.domain) existing.domain = domain
     if (cwd && !existing.cwd) existing.cwd = cwd
   } else {
     sessions.push({
       sessionId,
       recipeId,
+      domain: domain || '',
       cwd: cwd || '',
       topics: keywords,
       lastTaskDescription: description,
@@ -77,8 +82,8 @@ export function listAgentSessions(): AgentSession[] {
   return load()
 }
 
-export function getSessionsByProject(cwd: string): AgentSession[] {
-  return load().filter(s => s.cwd === cwd)
+export function getSessionsByDomain(domain: string): AgentSession[] {
+  return load().filter(s => s.domain === domain)
 }
 
 function extractKeywords(text: string): string[] {
