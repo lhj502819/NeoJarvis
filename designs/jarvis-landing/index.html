@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Jarvis Landing Page — Design Variants</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    body { margin: 0; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="variant-a.jsx"></script>
+  <script type="text/babel" src="variant-b.jsx"></script>
+
+  <script type="text/babel">
+    const { DesignCanvas, DCSection, DCArtboard, DCPostIt } = window;
+    const { VariantA, VariantB } = window;
+
+    function App() {
+      return (
+        <DesignCanvas>
+          <DCSection id="landing" title="Jarvis Landing Page" subtitle="两种视觉方向对比 — 深色科幻风">
+            <DCArtboard id="variant-a" label="A · Hologram HUD" width={1440} height={4200}>
+              <div style={{width: 1440, minHeight: 4200, background: 'var(--j-bg, #06060f)', color: '#fff', fontFamily: '-apple-system, system-ui, sans-serif'}}>
+                <VariantA />
+              </div>
+            </DCArtboard>
+            <DCArtboard id="variant-b" label="B · Orbital Command" width={1440} height={5900}>
+              <div style={{width: 1440, minHeight: 5900, background: 'var(--j-bg, #06060f)', color: '#fff', fontFamily: '-apple-system, system-ui, sans-serif'}}>
+                <VariantB />
+              </div>
+            </DCArtboard>
+          </DCSection>
+          <DCPostIt top={20} left={60} rotate={-1.5} width={240}>
+            方向 A：粒子 + 打字机 + 逐行终端动画，更有"AI在工作"的沉浸感。
+            方向 B：轨道图 + 编号列表 + 水平流程，更简洁克制，信息架构更清晰。
+          </DCPostIt>
+        </DesignCanvas>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
