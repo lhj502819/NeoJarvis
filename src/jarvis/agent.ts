@@ -18,6 +18,7 @@ import { getState } from './state.js'
 import { listAllRunningTasks } from '../a2a/registry.js'
 import { listAgentSessions } from '../a2a/history.js'
 import { listRecipes } from '../team/registry.js'
+import { listCredentials, addCredential, updateCredential, deleteCredential } from '../auth/credentials.js'
 import { bus } from '../a2a/bus.js'
 import { interruptAgent, closeAgent } from '../a2a/client.js'
 import { authRouter } from '../auth/auth.js'
@@ -207,6 +208,34 @@ export function startJarvisServer(): express.Express {
 
   app.get('/api/recipes', (req, res) => {
     res.json(listRecipes(req.userId!))
+  })
+
+  // ─── 用户凭证管理（BYOK）───
+  app.get('/api/credentials', (req, res) => {
+    res.json(listCredentials(req.userId!))
+  })
+
+  app.post('/api/credentials', (req, res) => {
+    const { label, tier, apiKey, baseUrl, model, isDefault } = req.body
+    if (!label || !tier || !apiKey || !baseUrl || !model) {
+      res.status(400).json({ error: 'label、tier、apiKey、baseUrl、model 均为必填' })
+      return
+    }
+    const cred = addCredential(req.userId!, { label, tier, apiKey, baseUrl, model, isDefault })
+    res.json(cred)
+  })
+
+  app.put('/api/credentials/:id', (req, res) => {
+    const { label, tier, apiKey, baseUrl, model, isDefault } = req.body
+    const cred = updateCredential(req.userId!, req.params.id, { label, tier, apiKey, baseUrl, model, isDefault })
+    if (!cred) { res.status(404).json({ error: '凭证不存在' }); return }
+    res.json(cred)
+  })
+
+  app.delete('/api/credentials/:id', (req, res) => {
+    const ok = deleteCredential(req.userId!, req.params.id)
+    if (!ok) { res.status(404).json({ error: '凭证不存在' }); return }
+    res.json({ ok: true })
   })
 
   // ─── Agent 通信端点（走 MessageBus）───
