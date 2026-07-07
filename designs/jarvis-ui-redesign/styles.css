@@ -1,0 +1,147 @@
+/* Jarvis UI Redesign — Design Tokens
+   调性：奶油暖白 + 管家笔记本 + Notion 气质
+   Logo：古典素描管家肖像（米白底、铅笔画）
+*/
+:root {
+  /* 底色 */
+  --bg: #faf8f5;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #f3f0eb;
+  --bg-hover: #ede9e3;
+  --bg-active: #e8e3dc;
+
+  /* 文字 */
+  --text: #2c2a27;
+  --text-secondary: #6b6560;
+  --text-muted: #9e9790;
+  --text-on-accent: #ffffff;
+
+  /* 边框 */
+  --border: #e8e3dc;
+  --border-light: #f0ece6;
+  --border-focus: #b8a48a;
+
+  /* 品牌色 */
+  --accent: #8b6b3d;
+  --accent-light: #f5ede2;
+  --accent-hover: #7a5d34;
+
+  /* 状态色 */
+  --green: #3d8b5a;
+  --green-bg: #edf7f1;
+  --yellow: #8b7a3d;
+  --yellow-bg: #f7f4ed;
+  --red: #8b3d3d;
+  --red-bg: #f7eded;
+
+  /* 圆角 */
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-xs: 4px;
+  --radius-full: 9999px;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px rgba(44, 42, 39, 0.04);
+  --shadow: 0 2px 8px rgba(44, 42, 39, 0.06), 0 1px 3px rgba(44, 42, 39, 0.04);
+  --shadow-lg: 0 8px 32px rgba(44, 42, 39, 0.1), 0 2px 8px rgba(44, 42, 39, 0.05);
+
+  /* 字体 */
+  --font: "Noto Sans SC", -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --font-display: "Newsreader", "Songti SC", Georgia, serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+
+  /* 间距 */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 40px;
+  --space-2xl: 64px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 排版 */
+.text-display { font-family: var(--font-display); font-weight: 400; letter-spacing: -0.01em; }
+.text-mono { font-family: var(--font-mono); font-size: 0.9em; }
+
+/* 按钮 */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px;
+  font: inherit; font-size: 14px; font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer; transition: all 0.15s;
+  border: none; text-decoration: none;
+}
+.btn-primary {
+  background: var(--accent); color: var(--text-on-accent);
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-ghost {
+  background: transparent; color: var(--text-secondary); border: 1px solid var(--border);
+}
+.btn-ghost:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-focus); }
+.btn-text {
+  background: transparent; color: var(--accent); padding: 4px 8px;
+}
+.btn-text:hover { background: var(--accent-light); }
+
+/* 输入框 */
+.input {
+  width: 100%; padding: 10px 14px;
+  font: inherit; font-size: 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input::placeholder { color: var(--text-muted); }
+.input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-light); }
+
+/* 卡片 */
+.card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 标签 */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px;
+  font-size: 11px; font-weight: 500;
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle); color: var(--text-secondary);
+}
+.badge-accent { background: var(--accent-light); color: var(--accent); }
+.badge-green { background: var(--green-bg); color: var(--green); }
+
+/* 分割线 */
+.divider { border: none; border-top: 1px solid var(--border-light); margin: var(--space-md) 0; }
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* 遮罩层 */
+.overlay {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(44, 42, 39, 0.3);
+  backdrop-filter: blur(4px);
+}
