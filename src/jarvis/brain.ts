@@ -15,6 +15,8 @@ import { broadcast } from './agent.js'
 import { searchMemory, addMemory } from '../memory/everos.js'
 import { onMessageHandled, onTaskCompleted, onTaskFailed } from './state.js'
 import { buildUserEnv } from '../shared/user-env.js'
+import { buildUserMcpServers } from '../shared/user-mcp.js'
+import { redactSecrets } from '../shared/redact.js'
 import db from '../shared/db.js'
 
 const CLAUDE_PATH = execSync('which claude', { encoding: 'utf-8' }).trim()
@@ -99,7 +101,10 @@ function parseAction(text: string): ActionResponse | null {
 
 async function llmCall(userId: string, prompt: string, onDelta?: (text: string) => void): Promise<string> {
   const systemPrompt = buildSystemPrompt(userId)
-  const mcpServers = { 'jarvis-system': createJarvisTools(userId) }
+  const mcpServers: Record<string, McpServerConfig> = {
+    'jarvis-system': createJarvisTools(userId),
+    ...buildUserMcpServers(userId),
+  }
   return withBrainLock(userId, () => rawLlmCall(userId, systemPrompt, prompt, onDelta, mcpServers))
 }
 
@@ -503,16 +508,18 @@ function getRecentConversation(userId: string): string {
   `).all(sessionId) as any[]
 
   if (rows.length === 0) return ''
+  // 喂给 LLM 前 redact 敏感 token —— db 里原文保留供用户回看
   return rows
-    .map((t: any) => `${t.role === 'user' ? 'Sir' : 'Jarvis'}: ${t.content}`)
+    .map((t: any) => `${t.role === 'user' ? 'Sir' : 'Jarvis'}: ${redactSecrets(t.content)}`)
     .join('\n')
 }
 
 function saveConversation(userId: string, userMessage: string, jarvisResponse: string) {
   const sessionId = `jarvis-${userId}`
   const now = Date.now()
+  // 发去 EverOS 长记忆前 redact 敏感 token —— db 聊天表里原文保留
   addMemory(userId, sessionId, [
-    { role: 'user', timestamp: now, content: userMessage },
-    { role: 'assistant', timestamp: now + 100, content: jarvisResponse },
+    { role: 'user', timestamp: now, content: redactSecrets(userMessage) },
+    { role: 'assistant', timestamp: now + 100, content: redactSecrets(jarvisResponse) },
   ]).catch(() => {})
 }

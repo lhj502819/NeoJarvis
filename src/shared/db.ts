@@ -167,6 +167,23 @@ CREATE TABLE IF NOT EXISTS jarvis_user_credentials (
   updated_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_jarvis_user_credentials_user ON jarvis_user_credentials(user_id);
+
+-- ═══ 用户 MCP servers 表（全局共享给该用户所有小弟，按需使用）═══
+CREATE TABLE IF NOT EXISTS jarvis_user_mcp_servers (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL,
+  name         TEXT NOT NULL,           -- 用户可见名，Jarvis 按此增删改
+  transport    TEXT NOT NULL,           -- 'stdio' | 'sse' | 'http'
+  command      TEXT,                    -- stdio: 可执行命令
+  args_json    TEXT,                    -- stdio: JSON 数组字符串
+  url          TEXT,                    -- sse/http: 端点 URL
+  env_enc      TEXT,                    -- 加密 JSON，含 token 等敏感 env
+  description  TEXT,
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jarvis_user_mcp_name ON jarvis_user_mcp_servers(user_id, name);
 `)
 
 export default db

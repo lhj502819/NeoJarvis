@@ -6,6 +6,7 @@ import { getRecipe } from '../team/registry.js'
 import { recordAgentSession } from './history.js'
 import { bus } from './bus.js'
 import { buildUserEnv } from '../shared/user-env.js'
+import { buildUserMcpServers } from '../shared/user-mcp.js'
 
 const DEBUG = process.env.JARVIS_DEBUG === '1' || process.argv.includes('--debug')
 function debug(...args: any[]) {
@@ -116,16 +117,22 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
 
   debug('dispatch start:', recipeId, 'task:', taskDescription.slice(0, 50), resumeSessionId ? `(resume: ${resumeSessionId.slice(0, 8)})` : '(new)')
 
+  const userMcpServers = buildUserMcpServers(userId)
+  // 把 MCP servers 的工具通配符加进 allowedTools（bypassPermissions 模式下这是白名单）
+  const mcpToolNames = Object.keys(userMcpServers).map(name => `mcp__${name}__*`)
+  const allowedTools = [...tools, ...mcpToolNames]
+
   const queryOptions: Record<string, any> = {
     systemPrompt,
     pathToClaudeCodeExecutable: CLAUDE_PATH,
-    allowedTools: tools,
+    allowedTools,
     cwd: workDir,
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,
     settingSources: [],
     env: buildUserEnv(userId),
     maxTurns: 99999,
+    ...(Object.keys(userMcpServers).length > 0 && { mcpServers: userMcpServers }),
   }
 
   if (resumeSessionId) {
