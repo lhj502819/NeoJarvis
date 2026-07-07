@@ -34,69 +34,75 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-950">
-      <div className="w-full max-w-sm p-8 bg-gray-900 rounded-2xl border border-gray-800">
-        <div className="text-center mb-8">
-          <img src="/jarvis-logo.png" alt="Jarvis" className="w-16 h-16 rounded-full object-cover mx-auto mb-3 border border-gray-700" />
-          <h1 className="text-xl font-semibold text-white">Jarvis</h1>
-          <p className="text-gray-400 text-sm mt-1">
-            {isRegister ? '创建你的管家账号' : '欢迎回来，Sir'}
-          </p>
-        </div>
+    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
+      <div className="j-card" style={{ width: 380, padding: '48px 40px', textAlign: 'center' }}>
+        <img
+          src="/jarvis-logo.png"
+          alt="Jarvis"
+          style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border)', display: 'block', margin: '0 auto' }}
+        />
+        <h1 className="text-display" style={{ fontSize: 28, marginTop: 20, marginBottom: 4, color: 'var(--text)' }}>
+          Jarvis
+        </h1>
+        <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 32 }}>
+          {isRegister ? '创建你的管家账号' : '欢迎回来，Sir'}
+        </p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <input
+            className="j-input"
             type="text"
             placeholder="用户名"
             value={username}
             onChange={e => setUsername(e.target.value)}
-            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
             required
           />
           <input
+            className="j-input"
             type="password"
             placeholder="密码"
             value={password}
             onChange={e => setPassword(e.target.value)}
-            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
             required
           />
           {isRegister && (
             <>
               <input
+                className="j-input"
                 type="text"
                 placeholder="显示名称（可选）"
                 value={displayName}
                 onChange={e => setDisplayName(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
               />
               <input
+                className="j-input"
                 type="text"
                 placeholder="邀请码"
                 value={inviteCode}
                 onChange={e => setInviteCode(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
                 required
               />
             </>
           )}
 
-          {error && <p className="text-red-400 text-sm">{error}</p>}
+          {error && <p style={{ fontSize: 13, color: 'var(--red)', textAlign: 'left', marginTop: 4 }}>{error}</p>}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-white font-medium transition-colors"
+            className="j-btn j-btn-primary"
+            style={{ width: '100%', justifyContent: 'center', marginTop: 8, padding: '12px 16px' }}
           >
             {loading ? '...' : isRegister ? '注册' : '登录'}
           </button>
         </form>
 
-        <p className="text-center text-gray-500 text-sm mt-6">
+        <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', marginTop: 24 }}>
           {isRegister ? '已有账号？' : '还没有账号？'}
           <button
+            type="button"
             onClick={() => { setIsRegister(!isRegister); setError('') }}
-            className="text-blue-400 hover:text-blue-300 ml-1"
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--accent)', marginLeft: 4, fontFamily: 'inherit', fontSize: 12 }}
           >
             {isRegister ? '去登录' : '注册'}
           </button>

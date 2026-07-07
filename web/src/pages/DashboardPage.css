@@ -1,34 +1,35 @@
 :root {
-  --dash-bg: #fafbfc;
-  --dash-bg-card: #ffffff;
-  --dash-bg-hover: #f4f5f7;
-  --dash-border: #e4e7eb;
-  --dash-border-light: #f0f2f5;
-  --dash-text: #1a1d23;
-  --dash-text-secondary: #6b7280;
-  --dash-text-muted: #9ca3af;
-  --dash-accent: #5b5bf7;
-  --dash-accent-light: #ededff;
-  --dash-green: #22c55e;
-  --dash-green-bg: #ecfdf5;
-  --dash-yellow: #eab308;
-  --dash-yellow-bg: #fefce8;
-  --dash-red: #ef4444;
-  --dash-red-bg: #fef2f2;
-  --dash-blue: #3b82f6;
-  --dash-blue-bg: #eff6ff;
-  --dash-radius: 10px;
-  --dash-radius-sm: 6px;
-  --dash-shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
-  --dash-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --dash-font: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
-  --dash-mono: "SF Mono", "JetBrains Mono", monospace;
+  /* Dashboard tokens 对齐全站 Jarvis Design (index.css) */
+  --dash-bg: var(--bg);
+  --dash-bg-card: var(--bg-elevated);
+  --dash-bg-hover: var(--bg-hover);
+  --dash-border: var(--border);
+  --dash-border-light: var(--border-light);
+  --dash-text: var(--text);
+  --dash-text-secondary: var(--text-secondary);
+  --dash-text-muted: var(--text-muted);
+  --dash-accent: var(--accent);
+  --dash-accent-light: var(--accent-light);
+  --dash-green: var(--green);
+  --dash-green-bg: var(--green-bg);
+  --dash-yellow: var(--yellow);
+  --dash-yellow-bg: var(--yellow-bg);
+  --dash-red: var(--red);
+  --dash-red-bg: var(--red-bg);
+  /* 蓝色语义在暖色系里替换成 accent（原本用于「运行中/进行中」的强调） */
+  --dash-blue: var(--accent);
+  --dash-blue-bg: var(--accent-light);
+  --dash-radius: var(--radius-sm);
+  --dash-radius-sm: var(--radius-xs);
+  --dash-shadow-sm: var(--shadow-sm);
+  --dash-shadow: var(--shadow);
+  --dash-font: var(--font);
+  --dash-mono: var(--font-mono);
 }
 
 .dash-app {
-  display: grid;
-  grid-template-columns: 1fr 340px;
-  grid-template-rows: 56px 1fr;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
   font-family: var(--dash-font);
@@ -36,6 +37,19 @@
   color: var(--dash-text);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+/* dash-app 下的 main + sidebar 组成第二行 grid */
+.dash-app > main + aside,
+.dash-app > main {
+  /* 保底：确保内容区能撑开 */
+}
+
+.dash-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  overflow: hidden;
 }
 
 /* Header */
@@ -150,7 +164,7 @@
 
 .dash-card:hover {
   box-shadow: var(--dash-shadow);
-  border-color: #d1d5db;
+  border-color: var(--border-focus);
 }
 
 /* Task cards */
@@ -344,7 +358,7 @@
 .dash-stat-fill.energy { background: var(--dash-green); }
 .dash-stat-fill.confidence { background: var(--dash-blue); }
 .dash-stat-fill.familiarity { background: var(--dash-yellow); }
-.dash-stat-fill.trust { background: #ec4899; }
+.dash-stat-fill.trust { background: var(--yellow); }
 
 /* Empty state */
 .dash-empty-state {
@@ -392,7 +406,7 @@
 
 /* Responsive */
 @media (max-width: 900px) {
-  .dash-app {
+  .dash-body {
     grid-template-columns: 1fr;
   }
   .dash-sidebar {

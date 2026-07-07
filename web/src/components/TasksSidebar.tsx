@@ -15,24 +15,14 @@ interface Props {
   data: { summary: string; tasks: Task[] } | null
 }
 
-const statusColors: Record<string, string> = {
-  executing: 'text-blue-400',
-  completed: 'text-green-400',
-  failed: 'text-red-400',
-  cancelled: 'text-gray-500',
-  planning: 'text-yellow-400',
-  pending: 'text-gray-400',
-  running: 'text-blue-400',
-}
-
-const statusIcons: Record<string, string> = {
-  executing: '⚡',
-  completed: '✅',
-  failed: '❌',
-  cancelled: '⊘',
-  planning: '📋',
-  pending: '○',
-  running: '●',
+const statusStyles: Record<string, { color: string; icon: string }> = {
+  executing: { color: 'var(--accent)', icon: '⚡' },
+  running: { color: 'var(--accent)', icon: '●' },
+  completed: { color: 'var(--green)', icon: '✓' },
+  failed: { color: 'var(--red)', icon: '✕' },
+  cancelled: { color: 'var(--text-muted)', icon: '⊘' },
+  planning: { color: 'var(--yellow)', icon: '◐' },
+  pending: { color: 'var(--text-muted)', icon: '○' },
 }
 
 export function TasksSidebar({ data }: Props) {
@@ -41,42 +31,52 @@ export function TasksSidebar({ data }: Props) {
   const activeTasks = data.tasks.filter(t => !['completed', 'failed', 'cancelled'].includes(t.status))
   const recentDone = data.tasks.filter(t => t.status === 'completed').slice(-3)
 
+  const sectionTitle = { fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: 10 }
+
   return (
-    <div className="mb-4">
-      <h3 className="text-xs font-semibold text-[#a0a0a0] uppercase tracking-wider mb-2">任务</h3>
+    <div style={{ marginBottom: 24 }}>
+      <h3 style={sectionTitle}>任务</h3>
 
       {activeTasks.length === 0 && recentDone.length === 0 && (
-        <p className="text-xs text-[#666]">暂无任务</p>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>暂无任务</p>
       )}
 
-      {activeTasks.map(task => (
-        <div key={task.id} className="mb-3 p-2 rounded-lg bg-[#1a1a2e]">
-          <div className="flex items-center gap-1.5">
-            <span>{statusIcons[task.status] || '○'}</span>
-            <span className={`text-xs font-medium ${statusColors[task.status] || ''}`}>
-              {task.name}
-            </span>
-          </div>
-          {task.subtasks.length > 0 && (
-            <div className="mt-1.5 pl-4 space-y-1">
-              {task.subtasks.map(st => (
-                <div key={st.id} className="text-xs text-[#a0a0a0] flex items-center gap-1">
-                  <span>{statusIcons[st.status] || '○'}</span>
-                  <span className="truncate">{st.name}</span>
-                </div>
-              ))}
+      {activeTasks.map(task => {
+        const s = statusStyles[task.status] || statusStyles.pending
+        return (
+          <div
+            key={task.id}
+            className="j-card"
+            style={{ padding: '10px 12px', marginBottom: 6 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ color: s.color, fontSize: 12 }}>{s.icon}</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)' }}>{task.name}</span>
             </div>
-          )}
-        </div>
-      ))}
+            {task.subtasks.length > 0 && (
+              <div style={{ marginTop: 6, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {task.subtasks.map(st => {
+                  const ss = statusStyles[st.status] || statusStyles.pending
+                  return (
+                    <div key={st.id} style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ color: ss.color }}>{ss.icon}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{st.name}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })}
 
       {recentDone.length > 0 && (
-        <div className="mt-2 border-t border-[#2a2a4a] pt-2">
-          <p className="text-xs text-[#666] mb-1">最近完成</p>
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-light)' }}>
+          <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>最近完成</p>
           {recentDone.map(t => (
-            <div key={t.id} className="text-xs text-[#a0a0a0] py-0.5 flex items-center gap-1">
-              <span>✅</span>
-              <span className="truncate">{t.name}</span>
+            <div key={t.id} style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '2px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ color: 'var(--green)' }}>✓</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
             </div>
           ))}
         </div>

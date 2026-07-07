@@ -14,8 +14,8 @@ interface Props {
 
 function Bar({ value, color }: { value: number; color: string }) {
   return (
-    <div className="w-full h-1.5 bg-[#2a2a4a] rounded-full overflow-hidden">
-      <div className={`h-full rounded-full ${color}`} style={{ width: `${value}%` }} />
+    <div style={{ width: '100%', height: 4, background: 'var(--bg-hover)', borderRadius: 2, overflow: 'hidden' }}>
+      <div style={{ height: '100%', borderRadius: 2, background: color, width: `${value}%`, transition: 'width 0.3s' }} />
     </div>
   )
 }
@@ -23,34 +23,36 @@ function Bar({ value, color }: { value: number; color: string }) {
 export function StatusCard({ state }: Props) {
   if (!state) return null
 
+  const sectionTitle = {
+    fontSize: 11, fontWeight: 600, color: 'var(--text-muted)',
+    textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: 10,
+  }
+
+  const rowLabel = { fontSize: 11, color: 'var(--text-muted)' }
+  const rowValue = { fontSize: 11, color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' as const }
+
+  const items = [
+    { label: '精力', value: state.energy, color: 'var(--green)' },
+    { label: '心情', value: state.mood, color: 'var(--accent)' },
+    { label: '信任度', value: state.trustLevel, color: 'var(--yellow)' },
+  ]
+
   return (
-    <div className="mb-4">
-      <h3 className="text-xs font-semibold text-[#a0a0a0] uppercase tracking-wider mb-2">Jarvis 状态</h3>
-      <div className="space-y-2 p-2 rounded-lg bg-[#1a1a2e]">
-        <div>
-          <div className="flex justify-between text-xs mb-0.5">
-            <span className="text-[#a0a0a0]">精力</span>
-            <span className="text-white">{state.energy}</span>
+    <div style={{ marginBottom: 24 }}>
+      <h3 style={sectionTitle}>Jarvis 状态</h3>
+      <div className="j-card" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {items.map(it => (
+          <div key={it.label}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={rowLabel}>{it.label}</span>
+              <span style={rowValue}>{it.value}</span>
+            </div>
+            <Bar value={it.value} color={it.color} />
           </div>
-          <Bar value={state.energy} color="bg-green-400" />
-        </div>
-        <div>
-          <div className="flex justify-between text-xs mb-0.5">
-            <span className="text-[#a0a0a0]">心情</span>
-            <span className="text-white">{state.mood}</span>
-          </div>
-          <Bar value={state.mood} color="bg-yellow-400" />
-        </div>
-        <div>
-          <div className="flex justify-between text-xs mb-0.5">
-            <span className="text-[#a0a0a0]">信任度</span>
-            <span className="text-white">{state.trustLevel}</span>
-          </div>
-          <Bar value={state.trustLevel} color="bg-blue-400" />
-        </div>
-        <div className="flex justify-between text-xs pt-1 border-t border-[#2a2a4a]">
-          <span className="text-[#a0a0a0]">今日完成</span>
-          <span className="text-white">{state.tasksCompletedToday} 任务 / {state.messagesHandledToday} 消息</span>
+        ))}
+        <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px solid var(--border-light)' }}>
+          <span style={rowLabel}>今日完成</span>
+          <span style={rowValue}>{state.tasksCompletedToday} 任务 / {state.messagesHandledToday} 消息</span>
         </div>
       </div>
     </div>

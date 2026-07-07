@@ -26,34 +26,45 @@ export function ChatPanel({ messages, isLoading, onSend }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div className="flex-1 overflow-y-auto" style={{ padding: '24px 32px' }}>
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-[#a0a0a0]">
-            <img src="/jarvis-logo.png" alt="Jarvis" className="w-20 h-20 rounded-full object-cover mb-4 border border-[#2a2a4a]" />
-            <p className="text-lg">你好，Sir。有什么我能帮忙的？</p>
-            <p className="text-sm mt-1">随时吩咐，我在。</p>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)' }}>
+            <img
+              src="/jarvis-logo.png"
+              alt="Jarvis"
+              style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border)', marginBottom: 16 }}
+            />
+            <p style={{ fontSize: 16, color: 'var(--text-secondary)' }}>你好，Sir。有什么我能帮忙的？</p>
+            <p style={{ fontSize: 13, marginTop: 4 }}>随时吩咐，我在。</p>
           </div>
         )}
-        {messages.map(msg => (
-          <MessageBubble key={msg.id} message={msg} />
-        ))}
-        <div ref={bottomRef} />
+        <div style={{ maxWidth: 720, margin: '0 auto' }}>
+          {messages.map(msg => (
+            <MessageBubble key={msg.id} message={msg} />
+          ))}
+          <div ref={bottomRef} />
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="p-4 border-t border-[#2a2a4a]">
-        <div className="flex gap-2">
+      <form
+        onSubmit={handleSubmit}
+        style={{ padding: '16px 32px', borderTop: '1px solid var(--border-light)' }}
+      >
+        <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
           <input
+            className="j-input"
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
             placeholder="跟 Jarvis 说点什么..."
-            className="flex-1 bg-[#1a1a2e] border border-[#3a3a5a] rounded-xl px-4 py-3 text-sm text-white placeholder-[#666] focus:outline-none focus:border-[#e94560] transition-colors"
+            style={{ flex: 1, borderRadius: 'var(--radius)' }}
             disabled={isLoading}
           />
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="px-5 py-3 bg-[#e94560] text-white rounded-xl text-sm font-medium hover:bg-[#d63850] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="j-btn j-btn-primary"
+            style={{ padding: '10px 20px', borderRadius: 'var(--radius)' }}
           >
             发送
           </button>

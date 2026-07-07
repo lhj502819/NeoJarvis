@@ -13,10 +13,9 @@ export function CredentialsModal({ open, onClose }: Props) {
   const [creds, setCreds] = useState<Credential[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  // editing: null=不在编辑, 'new'=新增, 其它=编辑该 id
   const [editing, setEditing] = useState<string | null>(null)
   const [form, setForm] = useState(EMPTY_FORM)
-  const [keyChanged, setKeyChanged] = useState(false)  // 编辑态是否点了"更换 key"
+  const [keyChanged, setKeyChanged] = useState(false)
 
   const refresh = async () => {
     setLoading(true); setError('')
@@ -43,9 +42,7 @@ export function CredentialsModal({ open, onClose }: Props) {
         if (!form.label || !form.apiKey || !form.baseUrl || !form.model) { setError('请填写所有必填项'); return }
         await createCredential({ ...form, tier: form.tier as CredentialInput['tier'] })
       } else if (editing) {
-        // 编辑：点了"更换"但没填新 key，拦截
         if (keyChanged && !form.apiKey) { setError('请输入新的 API Key'); return }
-        // 编辑：未点"更换"则不提交 apiKey
         const body: Partial<CredentialInput> = { label: form.label, tier: form.tier as CredentialInput['tier'], baseUrl: form.baseUrl, model: form.model, isDefault: form.isDefault }
         if (keyChanged && form.apiKey) body.apiKey = form.apiKey
         await updateCredential(editing, body)
@@ -66,86 +63,135 @@ export function CredentialsModal({ open, onClose }: Props) {
     catch (e) { setError(e instanceof Error ? e.message : '操作失败') }
   }
 
-  const inputCls = 'w-full px-3 py-2 rounded bg-[#0c0c1a] border border-[#2a2a4a] text-white text-sm focus:border-[#7c7cff] outline-none'
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
-      <div className="w-[520px] max-h-[80vh] overflow-auto rounded-xl bg-[#12122a] border border-[#2a2a4a] p-6" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">API 凭证</h2>
-          <button onClick={onClose} className="text-[#a0a0a0] hover:text-white text-xl leading-none">×</button>
+    <div className="j-overlay" onClick={onClose}>
+      <div
+        className="j-card"
+        style={{ width: 520, maxHeight: '80vh', overflow: 'auto', padding: '28px 32px', boxShadow: 'var(--shadow-lg)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <h2 style={{ fontSize: 17, fontWeight: 600, color: 'var(--text)' }}>API 凭证</h2>
+          <button
+            onClick={onClose}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--text-muted)', lineHeight: 1 }}
+          >×</button>
         </div>
 
-        {error && <div className="mb-3 text-sm text-[#e94560]">{error}</div>}
-        {loading && <div className="text-sm text-[#a0a0a0]">加载中…</div>}
+        {error && <div style={{ marginBottom: 12, fontSize: 13, color: 'var(--red)' }}>{error}</div>}
+        {loading && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>加载中…</div>}
 
         {/* 列表 */}
         {!editing && (
           <>
             {creds.length === 0 && !loading && (
-              <div className="text-sm text-[#a0a0a0] mb-4">当前使用平台默认凭证。添加自己的凭证后将优先使用。</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+                当前使用平台默认凭证。添加自己的凭证后将优先使用。
+              </div>
             )}
-            <div className="space-y-2 mb-4">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
               {creds.map(c => (
-                <div key={c.id} className="flex items-center justify-between p-3 rounded bg-[#0c0c1a] border border-[#2a2a4a]">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-white text-sm truncate">{c.label}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#2a2a4a] text-[#9e9eff]">{TIER_LABELS[c.tier] || c.tier}</span>
-                    {c.isDefault && <span className="text-[10px] text-[#e94560]">★ 默认</span>}
+                <div
+                  key={c.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '12px 14px', borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-subtle)', border: '1px solid var(--border-light)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {c.label}
+                    </span>
+                    <span className="j-badge">{TIER_LABELS[c.tier] || c.tier}</span>
+                    {c.isDefault && <span className="j-badge j-badge-accent">★ 默认</span>}
                   </div>
-                  <div className="flex items-center gap-2 shrink-0 text-xs">
-                    {!c.isDefault && <button onClick={() => setDefault(c.id)} className="text-[#7c7cff] hover:text-[#9e9eff]">设为默认</button>}
-                    <button onClick={() => startEdit(c)} className="text-[#a0a0a0] hover:text-white">编辑</button>
-                    <button onClick={() => remove(c.id)} className="text-[#a0a0a0] hover:text-[#e94560]">删除</button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, fontSize: 12 }}>
+                    {!c.isDefault && (
+                      <button
+                        onClick={() => setDefault(c.id)}
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 12, padding: '2px 6px', fontFamily: 'inherit' }}
+                      >
+                        设为默认
+                      </button>
+                    )}
+                    <button
+                      onClick={() => startEdit(c)}
+                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 12, padding: '2px 6px', fontFamily: 'inherit' }}
+                    >
+                      编辑
+                    </button>
+                    <button
+                      onClick={() => remove(c.id)}
+                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--red)', fontSize: 12, padding: '2px 6px', fontFamily: 'inherit' }}
+                    >
+                      删除
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
-            <button onClick={startNew} className="w-full py-2 rounded border border-dashed border-[#2a2a4a] text-sm text-[#7c7cff] hover:border-[#7c7cff]">+ 添加凭证</button>
+            <button
+              onClick={startNew}
+              className="j-btn j-btn-ghost"
+              style={{ width: '100%', justifyContent: 'center', borderStyle: 'dashed' }}
+            >
+              + 添加凭证
+            </button>
           </>
         )}
 
-        {/* 新增/编辑表单 */}
+        {/* 表单 */}
         {editing && (
-          <div className="space-y-3">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
-              <label className="block text-xs text-[#a0a0a0] mb-1">名称</label>
-              <input className={inputCls} value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} placeholder="如 DeepSeek Pro" />
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>名称</label>
+              <input className="j-input" value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} placeholder="如 DeepSeek Pro" />
             </div>
             <div>
-              <label className="block text-xs text-[#a0a0a0] mb-1">能力档位</label>
-              <select className={inputCls} value={form.tier} onChange={e => setForm({ ...form, tier: e.target.value })}>
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>能力档位</label>
+              <select
+                className="j-input"
+                style={{ cursor: 'pointer' }}
+                value={form.tier}
+                onChange={e => setForm({ ...form, tier: e.target.value })}
+              >
                 <option value="fast">快速</option>
                 <option value="standard">标准</option>
                 <option value="strong">强力</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs text-[#a0a0a0] mb-1">API Key</label>
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>API Key</label>
               {editing !== 'new' && !keyChanged ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-[#a0a0a0]">••••••••</span>
-                  <button onClick={() => setKeyChanged(true)} className="text-xs text-[#7c7cff]">更换</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>••••••••</span>
+                  <button
+                    onClick={() => setKeyChanged(true)}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 12, fontFamily: 'inherit' }}
+                  >
+                    更换
+                  </button>
                 </div>
               ) : (
-                <input className={inputCls} type="password" value={form.apiKey} onChange={e => setForm({ ...form, apiKey: e.target.value })} placeholder="sk-..." />
+                <input className="j-input" type="password" value={form.apiKey} onChange={e => setForm({ ...form, apiKey: e.target.value })} placeholder="sk-..." />
               )}
             </div>
             <div>
-              <label className="block text-xs text-[#a0a0a0] mb-1">Base URL</label>
-              <input className={inputCls} value={form.baseUrl} onChange={e => setForm({ ...form, baseUrl: e.target.value })} placeholder="如 https://api.deepseek.com/anthropic" />
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Base URL</label>
+              <input className="j-input" value={form.baseUrl} onChange={e => setForm({ ...form, baseUrl: e.target.value })} placeholder="如 https://api.deepseek.com/anthropic" />
             </div>
             <div>
-              <label className="block text-xs text-[#a0a0a0] mb-1">模型名</label>
-              <input className={inputCls} value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} placeholder="如 deepseek-v4-flash" />
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>模型名</label>
+              <input className="j-input" value={form.model} onChange={e => setForm({ ...form, model: e.target.value })} placeholder="如 deepseek-v4-flash" />
             </div>
-            <label className="flex items-center gap-2 text-sm text-[#a0a0a0]">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-secondary)' }}>
               <input type="checkbox" checked={form.isDefault} onChange={e => setForm({ ...form, isDefault: e.target.checked })} />
               设为默认凭证
             </label>
-            <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setEditing(null)} className="px-4 py-2 rounded text-sm text-[#a0a0a0] hover:text-white">取消</button>
-              <button onClick={save} className="px-4 py-2 rounded bg-[#7c7cff] text-white text-sm hover:bg-[#9e9eff]">保存</button>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 8 }}>
+              <button onClick={() => setEditing(null)} className="j-btn j-btn-ghost">取消</button>
+              <button onClick={save} className="j-btn j-btn-primary">保存</button>
             </div>
           </div>
         )}

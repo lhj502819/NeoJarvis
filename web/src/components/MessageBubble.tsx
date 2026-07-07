@@ -12,7 +12,15 @@ export function MessageBubble({ message }: Props) {
   if (isSystem) {
     return (
       <div className="flex justify-center my-2">
-        <div className="text-xs text-[#a0a0a0] bg-[#1a1a2e] px-3 py-1 rounded-full">
+        <div
+          style={{
+            fontSize: 12,
+            color: 'var(--text-muted)',
+            background: 'var(--bg-subtle)',
+            padding: '4px 12px',
+            borderRadius: 'var(--radius-full)',
+          }}
+        >
           {message.content}
         </div>
       </div>
@@ -22,28 +30,55 @@ export function MessageBubble({ message }: Props) {
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
       {!isUser && (
-        <img src="/jarvis-logo.png" alt="Jarvis" className="w-7 h-7 rounded-full object-cover shrink-0 mt-1 mr-2" />
+        <img
+          src="/jarvis-logo.png"
+          alt="Jarvis"
+          className="w-7 h-7 rounded-full object-cover shrink-0 mt-1 mr-2"
+          style={{ border: '1px solid var(--border)' }}
+        />
       )}
-      <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
-        isUser
-          ? 'bg-[#2a4a8a] text-white'
-          : 'bg-[#1e1e3a] text-[#e8e8e8]'
-      }`}>
+      <div
+        style={{
+          maxWidth: '75%',
+          padding: '10px 14px',
+          borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+          background: isUser ? 'var(--accent)' : 'var(--bg-subtle)',
+          color: isUser ? 'var(--text-on-accent)' : 'var(--text)',
+          fontSize: 14,
+          lineHeight: 1.7,
+        }}
+      >
         {message.status === 'thinking' ? (
-          <div className="flex items-center gap-2 text-[#a0a0a0]">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)' }}>
             <span className="animate-pulse">●</span>
-            <span className="text-sm">思考中...</span>
+            <span>思考中...</span>
           </div>
         ) : message.status === 'streaming' && message.role === 'jarvis' && !message.content.includes('\n') ? (
-          <div className="text-sm text-[#a0a0a0] italic">{message.content}</div>
+          <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>{message.content}</div>
         ) : (
-          <div className="markdown-body text-sm leading-relaxed">
+          <div className="markdown-body">
             <Markdown>{message.content}</Markdown>
           </div>
         )}
       </div>
       {isUser && (
-        <div className="w-7 h-7 rounded-full bg-[#2a4a8a] flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1 ml-2">
+        <div
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: '50%',
+            background: 'var(--accent-light)',
+            color: 'var(--accent)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 12,
+            fontWeight: 600,
+            flexShrink: 0,
+            marginTop: 4,
+            marginLeft: 8,
+          }}
+        >
           S
         </div>
       )}

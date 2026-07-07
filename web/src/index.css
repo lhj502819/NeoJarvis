@@ -1,24 +1,173 @@
 @import "tailwindcss";
 
-body {
-  margin: 0;
-  background: #0f0f1a;
-  color: #e8e8e8;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+/* ═══════════════════════════════════════════════════════════════
+   Jarvis Design Tokens — 奶油暖白 + Notion 气质
+   配合管家素描 logo。全站单一主题。
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  /* 底色 */
+  --bg: #faf8f5;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #f3f0eb;
+  --bg-hover: #ede9e3;
+  --bg-active: #e8e3dc;
+
+  /* 文字 */
+  --text: #2c2a27;
+  --text-secondary: #6b6560;
+  --text-muted: #9e9790;
+  --text-on-accent: #ffffff;
+
+  /* 边框 */
+  --border: #e8e3dc;
+  --border-light: #f0ece6;
+  --border-focus: #b8a48a;
+
+  /* 品牌暖金 */
+  --accent: #8b6b3d;
+  --accent-light: #f5ede2;
+  --accent-hover: #7a5d34;
+
+  /* 状态色（低饱和暖化） */
+  --green: #3d8b5a;
+  --green-bg: #edf7f1;
+  --yellow: #8b7a3d;
+  --yellow-bg: #f7f4ed;
+  --red: #8b3d3d;
+  --red-bg: #f7eded;
+
+  /* 圆角 */
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-xs: 4px;
+  --radius-full: 9999px;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px rgba(44, 42, 39, 0.04);
+  --shadow: 0 2px 8px rgba(44, 42, 39, 0.06), 0 1px 3px rgba(44, 42, 39, 0.04);
+  --shadow-lg: 0 8px 32px rgba(44, 42, 39, 0.1), 0 2px 8px rgba(44, 42, 39, 0.05);
+
+  /* 字体 */
+  --font: "Noto Sans SC", -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --font-display: "Newsreader", "Songti SC", Georgia, serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   基础 reset + body
+   ═══════════════════════════════════════════════════════════════ */
 * { box-sizing: border-box; }
 
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #1a1a2e; }
-::-webkit-scrollbar-thumb { background: #3a3a5a; border-radius: 3px; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
 
-.markdown-body h1, .markdown-body h2, .markdown-body h3 { margin: 0.5em 0 0.3em; }
+.text-display { font-family: var(--font-display); font-weight: 400; letter-spacing: -0.01em; }
+
+/* ═══════════════════════════════════════════════════════════════
+   语义组件类（按钮 / 输入 / 卡片 / 徽章 / 遮罩）
+   ═══════════════════════════════════════════════════════════════ */
+.j-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px;
+  font: inherit; font-size: 14px; font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer; transition: all 0.15s;
+  border: none; text-decoration: none;
+}
+.j-btn-primary {
+  background: var(--accent); color: var(--text-on-accent);
+}
+.j-btn-primary:hover { background: var(--accent-hover); }
+.j-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.j-btn-ghost {
+  background: transparent; color: var(--text-secondary); border: 1px solid var(--border);
+}
+.j-btn-ghost:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-focus); }
+.j-btn-text {
+  background: transparent; color: var(--accent); padding: 4px 8px;
+  border: none; cursor: pointer; font: inherit; font-size: 13px;
+}
+.j-btn-text:hover { background: var(--accent-light); border-radius: var(--radius-sm); }
+
+.j-input {
+  width: 100%; padding: 10px 14px;
+  font: inherit; font-size: 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.j-input::placeholder { color: var(--text-muted); }
+.j-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--accent-light); }
+
+.j-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.j-badge {
+  display: inline-flex; align-items: center;
+  padding: 2px 8px;
+  font-size: 11px; font-weight: 500;
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle); color: var(--text-secondary);
+}
+.j-badge-accent { background: var(--accent-light); color: var(--accent); }
+.j-badge-green { background: var(--green-bg); color: var(--green); }
+.j-badge-red { background: var(--red-bg); color: var(--red); }
+
+.j-divider { border: none; border-top: 1px solid var(--border-light); margin: 16px 0; }
+
+.j-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(44, 42, 39, 0.3);
+  backdrop-filter: blur(4px);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   滚动条（细、暖色）
+   ═══════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ═══════════════════════════════════════════════════════════════
+   Markdown（暖色版，配 --bg-subtle 底 + 暖灰边框）
+   ═══════════════════════════════════════════════════════════════ */
+.markdown-body h1, .markdown-body h2, .markdown-body h3 { margin: 0.5em 0 0.3em; color: var(--text); font-weight: 600; }
 .markdown-body p { margin: 0.4em 0; }
 .markdown-body ul, .markdown-body ol { padding-left: 1.5em; margin: 0.3em 0; }
-.markdown-body code { background: #2a2a4a; padding: 0.15em 0.4em; border-radius: 3px; font-size: 0.9em; }
-.markdown-body pre { background: #1a1a2e; padding: 0.8em; border-radius: 6px; overflow-x: auto; }
-.markdown-body pre code { background: none; padding: 0; }
+.markdown-body strong { font-weight: 600; color: var(--text); }
+.markdown-body code {
+  background: var(--bg-subtle); color: var(--accent);
+  padding: 0.15em 0.4em; border-radius: 3px;
+  font-family: var(--font-mono); font-size: 0.9em;
+}
+.markdown-body pre {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-light);
+  padding: 0.8em; border-radius: 6px;
+  overflow-x: auto;
+}
+.markdown-body pre code { background: none; padding: 0; color: var(--text); }
 .markdown-body table { border-collapse: collapse; width: 100%; margin: 0.5em 0; }
-.markdown-body th, .markdown-body td { border: 1px solid #3a3a5a; padding: 0.4em 0.8em; text-align: left; }
-.markdown-body th { background: #1a1a2e; }
+.markdown-body th, .markdown-body td {
+  border: 1px solid var(--border);
+  padding: 0.4em 0.8em; text-align: left;
+}
+.markdown-body th { background: var(--bg-subtle); font-weight: 600; }
+.markdown-body a { color: var(--accent); text-decoration: none; }
+.markdown-body a:hover { text-decoration: underline; }

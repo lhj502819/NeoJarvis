@@ -33,7 +33,7 @@ function App() {
   }
 
   if (user === undefined) {
-    return <div className="h-screen flex items-center justify-center bg-gray-950 text-gray-400">加载中...</div>
+    return <div className="h-screen flex items-center justify-center" style={{ background: 'var(--bg)', color: 'var(--text-muted)' }}>加载中...</div>
   }
 
   if (!user) {
@@ -71,7 +71,10 @@ function ChatView({ user, onLogout }: { user: AuthUser; onLogout: () => void }) 
           <ChatPanel messages={messages} isLoading={isLoading} onSend={send} />
         </main>
 
-        <aside className="w-72 border-l border-[#2a2a4a] bg-[#12122a] overflow-y-auto p-4 hidden lg:block">
+        <aside
+          className="w-72 overflow-y-auto p-4 hidden lg:block"
+          style={{ borderLeft: '1px solid var(--border)', background: 'var(--bg)' }}
+        >
           <TasksSidebar data={tasksData} />
           <AgentsSidebar running={agentsData} recipes={recipesData} />
           <StatusCard state={stateData} />

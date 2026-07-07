@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { usePolling, useSSE, type SSEEvent } from '../api/hooks'
 import { postJSON } from '../api/client'
 import type { AuthUser } from '../api/auth'
+import { Header } from '../components/Header'
 import './DashboardPage.css'
 
 interface Task {
@@ -82,35 +83,23 @@ export function DashboardPage({ user, onLogout }: DashboardProps) {
 
   return (
     <div className="dash-app">
-      <header className="dash-header">
-        <div className="dash-header-left">
-          <img src="/jarvis-logo.png" alt="Jarvis" className="dash-logo" />
-          <span className="dash-header-title">Jarvis Dashboard</span>
-        </div>
-        <div className="dash-header-right">
-          <a href="#/" className="dash-nav-link">对话</a>
-          <span style={{ fontSize: 13, color: 'var(--dash-text-secondary)' }}>{user.displayName || user.username}</span>
-          <button onClick={onLogout} style={{ fontSize: 12, color: 'var(--dash-text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>退出</button>
-          <div className="dash-header-status">
-            <div className={`dash-status-dot ${connected ? '' : 'offline'}`} />
-            <span>{connected ? '已连接' : '未连接'}</span>
+      <Header connected={connected} username={user.displayName || user.username} onLogout={onLogout} />
+
+      <div className="dash-body">
+        <main className="dash-main">
+          <TasksPanel tasks={tasks} />
+        </main>
+
+        <aside className="dash-sidebar">
+          <AgentsPanel agents={agentsData} history={historyData} recipes={recipesData} />
+          <div style={{ marginTop: 20 }}>
+            <JarvisStateCard state={stateData} />
           </div>
-        </div>
-      </header>
-
-      <main className="dash-main">
-        <TasksPanel tasks={tasks} />
-      </main>
-
-      <aside className="dash-sidebar">
-        <AgentsPanel agents={agentsData} history={historyData} recipes={recipesData} />
-        <div style={{ marginTop: 20 }}>
-          <JarvisStateCard state={stateData} />
-        </div>
-        <div style={{ marginTop: 20 }}>
-          <ActivityFeed events={events} />
-        </div>
-      </aside>
+          <div style={{ marginTop: 20 }}>
+            <ActivityFeed events={events} />
+          </div>
+        </aside>
+      </div>
     </div>
   )
 }
