@@ -29,9 +29,7 @@ export function ChatPanel({ messages, isLoading, onSend }: Props) {
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-[#a0a0a0]">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#e94560] to-[#f06292] flex items-center justify-center text-white text-2xl font-bold mb-4">
-              J
-            </div>
+            <img src="/jarvis-logo.png" alt="Jarvis" className="w-20 h-20 rounded-full object-cover mb-4 border border-[#2a2a4a]" />
             <p className="text-lg">你好，Sir。有什么我能帮忙的？</p>
             <p className="text-sm mt-1">随时吩咐，我在。</p>
           </div>

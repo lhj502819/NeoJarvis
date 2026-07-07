@@ -64,14 +64,8 @@
 .dash-logo {
   width: 28px;
   height: 28px;
-  border-radius: 7px;
-  background: var(--dash-accent);
-  display: grid;
-  place-items: center;
-  color: white;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: var(--dash-mono);
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .dash-header-title {

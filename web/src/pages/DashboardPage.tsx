@@ -84,7 +84,7 @@ export function DashboardPage({ user, onLogout }: DashboardProps) {
     <div className="dash-app">
       <header className="dash-header">
         <div className="dash-header-left">
-          <div className="dash-logo">J</div>
+          <img src="/jarvis-logo.png" alt="Jarvis" className="dash-logo" />
           <span className="dash-header-title">Jarvis Dashboard</span>
         </div>
         <div className="dash-header-right">

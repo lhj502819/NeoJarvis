@@ -37,9 +37,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     <div className="min-h-screen flex items-center justify-center bg-gray-950">
       <div className="w-full max-w-sm p-8 bg-gray-900 rounded-2xl border border-gray-800">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">
-            <span className="text-white text-2xl font-bold">J</span>
-          </div>
+          <img src="/jarvis-logo.png" alt="Jarvis" className="w-16 h-16 rounded-full object-cover mx-auto mb-3 border border-gray-700" />
           <h1 className="text-xl font-semibold text-white">Jarvis</h1>
           <p className="text-gray-400 text-sm mt-1">
             {isRegister ? '创建你的管家账号' : '欢迎回来，Sir'}

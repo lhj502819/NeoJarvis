@@ -12,9 +12,7 @@ export function Header({ connected, username, onLogout }: Props) {
   return (
     <header className="flex items-center justify-between px-6 py-3 border-b border-[#2a2a4a] bg-[#12122a]">
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#e94560] to-[#f06292] flex items-center justify-center text-white font-bold text-sm">
-          J
-        </div>
+        <img src="/jarvis-logo.png" alt="Jarvis" className="w-9 h-9 rounded-full object-cover" />
         <span className="text-lg font-semibold text-white">Jarvis</span>
       </div>
       <div className="flex items-center gap-4">

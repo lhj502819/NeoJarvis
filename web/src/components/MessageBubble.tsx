@@ -22,9 +22,7 @@ export function MessageBubble({ message }: Props) {
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
       {!isUser && (
-        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#e94560] to-[#f06292] flex items-center justify-center text-white text-xs font-bold shrink-0 mt-1 mr-2">
-          J
-        </div>
+        <img src="/jarvis-logo.png" alt="Jarvis" className="w-7 h-7 rounded-full object-cover shrink-0 mt-1 mr-2" />
       )}
       <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
         isUser
