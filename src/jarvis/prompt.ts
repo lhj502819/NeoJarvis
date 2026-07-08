@@ -1,8 +1,8 @@
 import { getState, getStateDescription } from './state.js'
 
-export function buildSystemPrompt(userId: string): string {
-  const state = getState(userId)
-  const stateDesc = getStateDescription(userId)
+export async function buildSystemPrompt(userId: string): Promise<string> {
+  const state = await getState(userId)
+  const stateDesc = await getStateDescription(userId)
 
   return `你是 Jarvis。
 

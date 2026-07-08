@@ -2,8 +2,8 @@ import { agentEnv } from './config.js'
 import { resolveCredential } from '../auth/credentials.js'
 
 // 每次返回新对象，绝不修改全局 agentEnv、绝不写 process.env（并发隔离红线）
-export function buildUserEnv(userId: string, tier?: string): Record<string, string> {
-  const cred = resolveCredential(userId, tier)
+export async function buildUserEnv(userId: string, tier?: string): Promise<Record<string, string>> {
+  const cred = await resolveCredential(userId, tier)
   if (!cred) return { ...agentEnv }  // 无凭证 → 回退平台默认（返回新对象，不暴露引用）
 
   const env = { ...agentEnv }

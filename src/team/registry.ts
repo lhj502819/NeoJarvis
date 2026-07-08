@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import type { AgentRecipe } from '../shared/types.js'
-import db from '../shared/db.js'
+import pool from '../shared/db.js'
 
 function rowToRecipe(row: any): AgentRecipe {
   return {
@@ -11,7 +11,7 @@ function rowToRecipe(row: any): AgentRecipe {
     tools: JSON.parse(row.tools),
     model: row.model,
     context: JSON.parse(row.context),
-    persistent: row.persistent === 1,
+    persistent: row.persistent === 1 || row.persistent === true,
     usageCount: row.usage_count,
     createdBy: row.created_by,
     createdAt: row.created_at,
@@ -19,25 +19,25 @@ function rowToRecipe(row: any): AgentRecipe {
   }
 }
 
-export function listRecipes(userId: string): AgentRecipe[] {
-  const rows = db.prepare('SELECT * FROM jarvis_recipes WHERE user_id = ?').all(userId) as any[]
+export async function listRecipes(userId: string): Promise<AgentRecipe[]> {
+  const { rows } = await pool.query('SELECT * FROM jarvis_recipes WHERE user_id = $1', [userId])
   return rows.map(rowToRecipe)
 }
 
-export function getRecipe(userId: string, id: string): AgentRecipe | undefined {
-  const row = db.prepare('SELECT * FROM jarvis_recipes WHERE id = ? AND user_id = ?').get(id, userId) as any
-  return row ? rowToRecipe(row) : undefined
+export async function getRecipe(userId: string, id: string): Promise<AgentRecipe | undefined> {
+  const { rows } = await pool.query('SELECT * FROM jarvis_recipes WHERE id = $1 AND user_id = $2', [id, userId])
+  return rows[0] ? rowToRecipe(rows[0]) : undefined
 }
 
-export function findMatchingRecipe(userId: string, description: string): AgentRecipe | undefined {
-  const recipes = listRecipes(userId)
+export async function findMatchingRecipe(userId: string, description: string): Promise<AgentRecipe | undefined> {
+  const recipes = await listRecipes(userId)
   const lower = description.toLowerCase()
   return recipes.find(r =>
     r.persistent && r.description.toLowerCase().split(/\W+/).some(word => word.length >= 2 && lower.includes(word))
   )
 }
 
-export function createRecipe(userId: string, params: {
+export async function createRecipe(userId: string, params: {
   name: string
   description: string
   systemPrompt: string
@@ -45,7 +45,7 @@ export function createRecipe(userId: string, params: {
   model?: string
   context?: Record<string, unknown>
   persistent?: boolean
-}): AgentRecipe {
+}): Promise<AgentRecipe> {
   const recipe: AgentRecipe = {
     id: randomUUID().slice(0, 8),
     name: params.name,
@@ -61,24 +61,24 @@ export function createRecipe(userId: string, params: {
     lastUsedAt: '',
   }
 
-  db.prepare(`
+  await pool.query(`
     INSERT INTO jarvis_recipes (id, user_id, name, description, system_prompt, tools, model, context, persistent, usage_count, created_by, created_at, last_used_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(recipe.id, userId, recipe.name, recipe.description, recipe.systemPrompt, JSON.stringify(recipe.tools), recipe.model, JSON.stringify(recipe.context), recipe.persistent ? 1 : 0, recipe.usageCount, recipe.createdBy, recipe.createdAt, recipe.lastUsedAt || null)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+  `, [recipe.id, userId, recipe.name, recipe.description, recipe.systemPrompt, JSON.stringify(recipe.tools), recipe.model, JSON.stringify(recipe.context), recipe.persistent ? 1 : 0, recipe.usageCount, recipe.createdBy, recipe.createdAt, recipe.lastUsedAt || null])
 
   return recipe
 }
 
-export function incrementUsage(userId: string, id: string) {
-  db.prepare(`
-    UPDATE jarvis_recipes SET usage_count = usage_count + 1, last_used_at = ? WHERE id = ? AND user_id = ?
-  `).run(new Date().toISOString(), id, userId)
+export async function incrementUsage(userId: string, id: string): Promise<void> {
+  await pool.query(`
+    UPDATE jarvis_recipes SET usage_count = usage_count + 1, last_used_at = $1 WHERE id = $2 AND user_id = $3
+  `, [new Date().toISOString(), id, userId])
 }
 
-export function promoteRecipe(userId: string, id: string) {
-  db.prepare('UPDATE jarvis_recipes SET persistent = 1 WHERE id = ? AND user_id = ?').run(id, userId)
+export async function promoteRecipe(userId: string, id: string): Promise<void> {
+  await pool.query('UPDATE jarvis_recipes SET persistent = 1 WHERE id = $1 AND user_id = $2', [id, userId])
 }
 
-export function removeRecipe(userId: string, id: string) {
-  db.prepare('DELETE FROM jarvis_recipes WHERE id = ? AND user_id = ?').run(id, userId)
+export async function removeRecipe(userId: string, id: string): Promise<void> {
+  await pool.query('DELETE FROM jarvis_recipes WHERE id = $1 AND user_id = $2', [id, userId])
 }

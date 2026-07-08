@@ -16,13 +16,13 @@ const initializedUsers = new Set<string>()
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const token = req.cookies?.jarvis_token
   if (!token) {
-    res.status(401).json({ error: 'not authenticated' })
+    res.status(401).json({ code: 401, message: '未登录' })
     return
   }
 
   const payload = verifyToken(token)
   if (!payload) {
-    res.status(401).json({ error: 'invalid token' })
+    res.status(401).json({ code: 401, message: 'token 无效' })
     return
   }
 

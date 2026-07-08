@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import type { Task, SubTask, TaskStatus, SubTaskStatus } from '../shared/types.js'
-import db from '../shared/db.js'
+import pool from '../shared/db.js'
 
 function rowToSubTask(row: any): SubTask {
   return {
@@ -22,19 +22,19 @@ function rowToSubTask(row: any): SubTask {
   }
 }
 
-function loadSubTasks(taskId: string): SubTask[] {
-  const rows = db.prepare('SELECT * FROM jarvis_subtasks WHERE task_id = ?').all(taskId) as any[]
+async function loadSubTasks(taskId: string): Promise<SubTask[]> {
+  const { rows } = await pool.query('SELECT * FROM jarvis_subtasks WHERE task_id = $1', [taskId])
   return rows.map(rowToSubTask)
 }
 
-function rowToTask(row: any): Task {
+async function rowToTask(row: any): Promise<Task> {
   return {
     id: row.id,
     name: row.name,
     description: row.description,
     status: row.status,
     plan: row.plan || undefined,
-    subtasks: loadSubTasks(row.id),
+    subtasks: await loadSubTasks(row.id),
     result: row.result || undefined,
     error: row.error || undefined,
     createdAt: row.created_at,
@@ -42,14 +42,14 @@ function rowToTask(row: any): Task {
   }
 }
 
-export function createTask(userId: string, name: string, description: string): Task {
+export async function createTask(userId: string, name: string, description: string): Promise<Task> {
   const id = randomUUID().slice(0, 8)
   const now = new Date().toISOString()
 
-  db.prepare(`
+  await pool.query(`
     INSERT INTO jarvis_tasks (id, user_id, name, description, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'created', ?, ?)
-  `).run(id, userId, name, description, now, now)
+    VALUES ($1, $2, $3, $4, 'created', $5, $6)
+  `, [id, userId, name, description, now, now])
 
   return {
     id,
@@ -62,38 +62,39 @@ export function createTask(userId: string, name: string, description: string): T
   }
 }
 
-export function updateTask(userId: string, taskId: string, updates: Partial<Pick<Task, 'status' | 'plan' | 'result' | 'error'>>): Task {
-  const row = db.prepare('SELECT * FROM jarvis_tasks WHERE id = ? AND user_id = ?').get(taskId, userId) as any
-  if (!row) throw new Error(`Task ${taskId} not found`)
+export async function updateTask(userId: string, taskId: string, updates: Partial<Pick<Task, 'status' | 'plan' | 'result' | 'error'>>): Promise<Task> {
+  const { rows: taskRows } = await pool.query('SELECT * FROM jarvis_tasks WHERE id = $1 AND user_id = $2', [taskId, userId])
+  if (!taskRows[0]) throw new Error(`Task ${taskId} not found`)
 
   const now = new Date().toISOString()
-  const sets: string[] = ['updated_at = ?']
+  let paramIdx = 1
+  const sets: string[] = [`updated_at = $${paramIdx++}`]
   const values: any[] = [now]
 
-  if (updates.status !== undefined) { sets.push('status = ?'); values.push(updates.status) }
-  if (updates.plan !== undefined) { sets.push('plan = ?'); values.push(updates.plan) }
-  if (updates.result !== undefined) { sets.push('result = ?'); values.push(updates.result) }
-  if (updates.error !== undefined) { sets.push('error = ?'); values.push(updates.error) }
+  if (updates.status !== undefined) { sets.push(`status = $${paramIdx++}`); values.push(updates.status) }
+  if (updates.plan !== undefined) { sets.push(`plan = $${paramIdx++}`); values.push(updates.plan) }
+  if (updates.result !== undefined) { sets.push(`result = $${paramIdx++}`); values.push(updates.result) }
+  if (updates.error !== undefined) { sets.push(`error = $${paramIdx++}`); values.push(updates.error) }
 
   values.push(taskId, userId)
-  db.prepare(`UPDATE jarvis_tasks SET ${sets.join(', ')} WHERE id = ? AND user_id = ?`).run(...values)
+  await pool.query(`UPDATE jarvis_tasks SET ${sets.join(', ')} WHERE id = $${paramIdx++} AND user_id = $${paramIdx++}`, values)
 
-  return getTask(userId, taskId)!
+  return (await getTask(userId, taskId))!
 }
 
-export function addSubTask(userId: string, taskId: string, params: { name: string; description: string; assignee: string; domain?: string; cwd?: string; dependsOn?: string[] }): SubTask {
-  const taskRow = db.prepare('SELECT id FROM jarvis_tasks WHERE id = ? AND user_id = ?').get(taskId, userId)
-  if (!taskRow) throw new Error(`Task ${taskId} not found`)
+export async function addSubTask(userId: string, taskId: string, params: { name: string; description: string; assignee: string; domain?: string; cwd?: string; dependsOn?: string[] }): Promise<SubTask> {
+  const { rows: taskRows } = await pool.query('SELECT id FROM jarvis_tasks WHERE id = $1 AND user_id = $2', [taskId, userId])
+  if (!taskRows[0]) throw new Error(`Task ${taskId} not found`)
 
   const id = randomUUID().slice(0, 8)
   const now = new Date().toISOString()
 
-  db.prepare(`
+  await pool.query(`
     INSERT INTO jarvis_subtasks (id, task_id, user_id, name, description, assignee, domain, cwd, status, depends_on, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
-  `).run(id, taskId, userId, params.name, params.description, params.assignee, params.domain || null, params.cwd || null, params.dependsOn ? JSON.stringify(params.dependsOn) : null, now, now)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10, $11)
+  `, [id, taskId, userId, params.name, params.description, params.assignee, params.domain || null, params.cwd || null, params.dependsOn ? JSON.stringify(params.dependsOn) : null, now, now])
 
-  db.prepare('UPDATE jarvis_tasks SET updated_at = ? WHERE id = ?').run(now, taskId)
+  await pool.query('UPDATE jarvis_tasks SET updated_at = $1 WHERE id = $2', [now, taskId])
 
   return {
     id,
@@ -110,58 +111,60 @@ export function addSubTask(userId: string, taskId: string, params: { name: strin
   }
 }
 
-export function updateSubTask(userId: string, taskId: string, subtaskId: string, updates: Partial<Pick<SubTask, 'status' | 'progress' | 'result' | 'error' | 'blockedReason'>>): SubTask {
-  const row = db.prepare('SELECT * FROM jarvis_subtasks WHERE id = ? AND task_id = ?').get(subtaskId, taskId) as any
-  if (!row) throw new Error(`SubTask ${subtaskId} not found`)
+export async function updateSubTask(userId: string, taskId: string, subtaskId: string, updates: Partial<Pick<SubTask, 'status' | 'progress' | 'result' | 'error' | 'blockedReason'>>): Promise<SubTask> {
+  const { rows: stRows } = await pool.query('SELECT * FROM jarvis_subtasks WHERE id = $1 AND task_id = $2', [subtaskId, taskId])
+  if (!stRows[0]) throw new Error(`SubTask ${subtaskId} not found`)
 
   const now = new Date().toISOString()
-  const sets: string[] = ['updated_at = ?']
+  let paramIdx = 1
+  const sets: string[] = [`updated_at = $${paramIdx++}`]
   const values: any[] = [now]
 
-  if (updates.status !== undefined) { sets.push('status = ?'); values.push(updates.status) }
-  if (updates.progress !== undefined) { sets.push('progress = ?'); values.push(updates.progress) }
-  if (updates.result !== undefined) { sets.push('result = ?'); values.push(updates.result) }
-  if (updates.error !== undefined) { sets.push('error = ?'); values.push(updates.error) }
-  if (updates.blockedReason !== undefined) { sets.push('blocked_reason = ?'); values.push(updates.blockedReason) }
+  if (updates.status !== undefined) { sets.push(`status = $${paramIdx++}`); values.push(updates.status) }
+  if (updates.progress !== undefined) { sets.push(`progress = $${paramIdx++}`); values.push(updates.progress) }
+  if (updates.result !== undefined) { sets.push(`result = $${paramIdx++}`); values.push(updates.result) }
+  if (updates.error !== undefined) { sets.push(`error = $${paramIdx++}`); values.push(updates.error) }
+  if (updates.blockedReason !== undefined) { sets.push(`blocked_reason = $${paramIdx++}`); values.push(updates.blockedReason) }
 
   values.push(subtaskId, taskId)
-  db.prepare(`UPDATE jarvis_subtasks SET ${sets.join(', ')} WHERE id = ? AND task_id = ?`).run(...values)
+  await pool.query(`UPDATE jarvis_subtasks SET ${sets.join(', ')} WHERE id = $${paramIdx++} AND task_id = $${paramIdx++}`, values)
 
-  db.prepare('UPDATE jarvis_tasks SET updated_at = ? WHERE id = ?').run(now, taskId)
+  await pool.query('UPDATE jarvis_tasks SET updated_at = $1 WHERE id = $2', [now, taskId])
 
-  return rowToSubTask(db.prepare('SELECT * FROM jarvis_subtasks WHERE id = ?').get(subtaskId) as any)
+  const { rows: updatedRows } = await pool.query('SELECT * FROM jarvis_subtasks WHERE id = $1', [subtaskId])
+  return rowToSubTask(updatedRows[0])
 }
 
-export function getTask(userId: string, taskId: string): Task | undefined {
-  const row = db.prepare('SELECT * FROM jarvis_tasks WHERE id = ? AND user_id = ?').get(taskId, userId) as any
-  return row ? rowToTask(row) : undefined
+export async function getTask(userId: string, taskId: string): Promise<Task | undefined> {
+  const { rows } = await pool.query('SELECT * FROM jarvis_tasks WHERE id = $1 AND user_id = $2', [taskId, userId])
+  return rows[0] ? await rowToTask(rows[0]) : undefined
 }
 
-export function listTasks(userId: string): Task[] {
-  const rows = db.prepare('SELECT * FROM jarvis_tasks WHERE user_id = ? ORDER BY created_at DESC').all(userId) as any[]
-  return rows.map(rowToTask)
+export async function listTasks(userId: string): Promise<Task[]> {
+  const { rows } = await pool.query('SELECT * FROM jarvis_tasks WHERE user_id = $1 ORDER BY created_at DESC', [userId])
+  return Promise.all(rows.map(rowToTask))
 }
 
-export function cleanupStaleTasks(userId: string) {
+export async function cleanupStaleTasks(userId: string): Promise<void> {
   const now = new Date().toISOString()
-  db.prepare(`
-    UPDATE jarvis_tasks SET status = 'cancelled', error = '进程重启，任务自动取消', updated_at = ?
-    WHERE user_id = ? AND status IN ('executing', 'planning')
-  `).run(now, userId)
+  await pool.query(`
+    UPDATE jarvis_tasks SET status = 'cancelled', error = '进程重启，任务自动取消', updated_at = $1
+    WHERE user_id = $2 AND status IN ('executing', 'planning')
+  `, [now, userId])
 
-  db.prepare(`
-    UPDATE jarvis_subtasks SET status = 'cancelled', updated_at = ?
-    WHERE user_id = ? AND status IN ('running', 'pending')
-  `).run(now, userId)
+  await pool.query(`
+    UPDATE jarvis_subtasks SET status = 'cancelled', updated_at = $1
+    WHERE user_id = $2 AND status IN ('running', 'pending')
+  `, [now, userId])
 }
 
-export function getActiveTasks(userId: string): Task[] {
-  const rows = db.prepare(`SELECT * FROM jarvis_tasks WHERE user_id = ? AND status NOT IN ('completed', 'failed', 'cancelled')`).all(userId) as any[]
-  return rows.map(rowToTask)
+export async function getActiveTasks(userId: string): Promise<Task[]> {
+  const { rows } = await pool.query(`SELECT * FROM jarvis_tasks WHERE user_id = $1 AND status NOT IN ('completed', 'failed', 'cancelled')`, [userId])
+  return Promise.all(rows.map(rowToTask))
 }
 
-export function getNextRunnableSubTask(userId: string, taskId: string): SubTask | undefined {
-  const task = getTask(userId, taskId)
+export async function getNextRunnableSubTask(userId: string, taskId: string): Promise<SubTask | undefined> {
+  const task = await getTask(userId, taskId)
   if (!task) return undefined
 
   return task.subtasks.find(st => {
@@ -174,8 +177,8 @@ export function getNextRunnableSubTask(userId: string, taskId: string): SubTask 
   })
 }
 
-export function getAllRunnableSubTasks(userId: string, taskId: string): SubTask[] {
-  const task = getTask(userId, taskId)
+export async function getAllRunnableSubTasks(userId: string, taskId: string): Promise<SubTask[]> {
+  const task = await getTask(userId, taskId)
   if (!task) return []
 
   return task.subtasks.filter(st => {
@@ -188,8 +191,8 @@ export function getAllRunnableSubTasks(userId: string, taskId: string): SubTask[
   })
 }
 
-export function getTaskSummary(userId: string): string {
-  const tasks = listTasks(userId)
+export async function getTaskSummary(userId: string): Promise<string> {
+  const tasks = await listTasks(userId)
   if (tasks.length === 0) return '当前没有任何任务。'
 
   return tasks

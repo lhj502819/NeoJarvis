@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import db from '../shared/db.js'
+import pool from '../shared/db.js'
 import { encrypt, decrypt } from '../shared/crypto.js'
 
 export type Transport = 'stdio' | 'sse' | 'http'
@@ -57,18 +57,20 @@ function rowToServer(row: any): McpServer {
 }
 
 // 脱敏列表（env 只回 key 名，不回值）
-export function listMcpServers(userId: string): McpServer[] {
-  const rows = db.prepare(
-    'SELECT * FROM jarvis_user_mcp_servers WHERE user_id = ? ORDER BY created_at ASC'
-  ).all(userId) as any[]
+export async function listMcpServers(userId: string): Promise<McpServer[]> {
+  const { rows } = await pool.query(
+    'SELECT * FROM jarvis_user_mcp_servers WHERE user_id = $1 ORDER BY created_at ASC',
+    [userId]
+  )
   return rows.map(rowToServer)
 }
 
 // 解密解析全部 enabled server，用于组装 SDK mcpServers 字典（仅后端）
-export function resolveMcpServers(userId: string): ResolvedMcpServer[] {
-  const rows = db.prepare(
-    'SELECT * FROM jarvis_user_mcp_servers WHERE user_id = ? AND enabled = 1'
-  ).all(userId) as any[]
+export async function resolveMcpServers(userId: string): Promise<ResolvedMcpServer[]> {
+  const { rows } = await pool.query(
+    'SELECT * FROM jarvis_user_mcp_servers WHERE user_id = $1 AND enabled = 1',
+    [userId]
+  )
   const out: ResolvedMcpServer[] = []
   for (const row of rows) {
     let env: Record<string, string> = {}
@@ -93,7 +95,7 @@ export function resolveMcpServers(userId: string): ResolvedMcpServer[] {
   return out
 }
 
-export function addMcpServer(userId: string, p: {
+export async function addMcpServer(userId: string, p: {
   name: string
   transport: Transport
   command?: string
@@ -101,7 +103,7 @@ export function addMcpServer(userId: string, p: {
   url?: string
   env?: Record<string, string>
   description?: string
-}): McpServer {
+}): Promise<McpServer> {
   // 校验：stdio 必须有 command；sse/http 必须有 url
   if (p.transport === 'stdio' && !p.command) throw new Error('stdio 类型必须提供 command')
   if ((p.transport === 'sse' || p.transport === 'http') && !p.url) throw new Error(`${p.transport} 类型必须提供 url`)
@@ -111,15 +113,16 @@ export function addMcpServer(userId: string, p: {
   const envEnc = p.env && Object.keys(p.env).length > 0 ? encrypt(JSON.stringify(p.env)) : null
   const argsJson = p.args && p.args.length > 0 ? JSON.stringify(p.args) : null
 
-  db.prepare(`
+  await pool.query(`
     INSERT INTO jarvis_user_mcp_servers (id, user_id, name, transport, command, args_json, url, env_enc, description, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-  `).run(id, userId, p.name, p.transport, p.command || null, argsJson, p.url || null, envEnc, p.description || null, now, now)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11)
+  `, [id, userId, p.name, p.transport, p.command || null, argsJson, p.url || null, envEnc, p.description || null, now, now])
 
-  return rowToServer(db.prepare('SELECT * FROM jarvis_user_mcp_servers WHERE id = ?').get(id))
+  const { rows } = await pool.query('SELECT * FROM jarvis_user_mcp_servers WHERE id = $1', [id])
+  return rowToServer(rows[0])
 }
 
-export function updateMcpServer(userId: string, name: string, p: {
+export async function updateMcpServer(userId: string, name: string, p: {
   transport?: Transport
   command?: string
   args?: string[]
@@ -127,8 +130,12 @@ export function updateMcpServer(userId: string, name: string, p: {
   env?: Record<string, string>   // 传了就整体替换（不合并旧值）
   description?: string
   enabled?: boolean
-}): McpServer | null {
-  const row = db.prepare('SELECT * FROM jarvis_user_mcp_servers WHERE user_id = ? AND name = ?').get(userId, name) as any
+}): Promise<McpServer | null> {
+  const { rows: existing } = await pool.query(
+    'SELECT * FROM jarvis_user_mcp_servers WHERE user_id = $1 AND name = $2',
+    [userId, name]
+  )
+  const row = existing[0]
   if (!row) return null
 
   const now = new Date().toISOString()
@@ -139,11 +146,11 @@ export function updateMcpServer(userId: string, name: string, p: {
     ? (p.args.length > 0 ? JSON.stringify(p.args) : null)
     : row.args_json
 
-  db.prepare(`
+  await pool.query(`
     UPDATE jarvis_user_mcp_servers
-    SET transport = ?, command = ?, args_json = ?, url = ?, env_enc = ?, description = ?, enabled = ?, updated_at = ?
-    WHERE user_id = ? AND name = ?
-  `).run(
+    SET transport = $1, command = $2, args_json = $3, url = $4, env_enc = $5, description = $6, enabled = $7, updated_at = $8
+    WHERE user_id = $9 AND name = $10
+  `, [
     p.transport ?? row.transport,
     p.command ?? row.command,
     argsJson,
@@ -152,11 +159,19 @@ export function updateMcpServer(userId: string, name: string, p: {
     p.description ?? row.description,
     p.enabled !== undefined ? (p.enabled ? 1 : 0) : row.enabled,
     now, userId, name
+  ])
+
+  const { rows: updated } = await pool.query(
+    'SELECT * FROM jarvis_user_mcp_servers WHERE user_id = $1 AND name = $2',
+    [userId, name]
   )
-  return rowToServer(db.prepare('SELECT * FROM jarvis_user_mcp_servers WHERE user_id = ? AND name = ?').get(userId, name))
+  return rowToServer(updated[0])
 }
 
-export function removeMcpServer(userId: string, name: string): boolean {
-  const result = db.prepare('DELETE FROM jarvis_user_mcp_servers WHERE user_id = ? AND name = ?').run(userId, name)
-  return result.changes > 0
+export async function removeMcpServer(userId: string, name: string): Promise<boolean> {
+  const result = await pool.query(
+    'DELETE FROM jarvis_user_mcp_servers WHERE user_id = $1 AND name = $2',
+    [userId, name]
+  )
+  return (result.rowCount ?? 0) > 0
 }

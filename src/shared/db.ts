@@ -1,20 +1,13 @@
-import Database from 'better-sqlite3'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
-import { mkdirSync } from 'fs'
+import pg from 'pg'
 
-const PROJECT_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
-const DB_DIR = join(PROJECT_ROOT, 'data')
-mkdirSync(DB_DIR, { recursive: true })
+const { Pool } = pg
 
-const DB_PATH = join(DB_DIR, 'jarvis.db')
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/jarvis',
+})
 
-const db = new Database(DB_PATH)
-
-db.pragma('journal_mode = WAL')
-db.pragma('foreign_keys = ON')
-
-db.exec(`
+export async function initDb() {
+  await pool.query(`
 -- ═══ 用户表 ═══
 CREATE TABLE IF NOT EXISTS jarvis_users (
   id TEXT PRIMARY KEY,
@@ -82,7 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_jarvis_recipes_user ON jarvis_recipes(user_id);
 
 -- ═══ Claude Code Session 登记簿 ═══
 CREATE TABLE IF NOT EXISTS jarvis_claude_sessions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   user_id TEXT NOT NULL,
   session_id TEXT NOT NULL,
   recipe_id TEXT NOT NULL,
@@ -121,14 +114,27 @@ CREATE INDEX IF NOT EXISTS idx_user_jarvis_sessions_user ON user_jarvis_sessions
 
 -- ═══ 用户↔Jarvis 消息表 ═══
 CREATE TABLE IF NOT EXISTS user_jarvis_messages (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   session_id TEXT NOT NULL REFERENCES user_jarvis_sessions(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
-  timestamp INTEGER NOT NULL
+  timestamp BIGINT NOT NULL,
+  artifact_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_user_jarvis_messages_session ON user_jarvis_messages(session_id, timestamp);
+
+-- ═══ Artifact 制品表 ═══
+CREATE TABLE IF NOT EXISTS jarvis_artifacts (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  language TEXT,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_artifacts_user ON jarvis_artifacts(user_id);
 
 -- ═══ Jarvis↔Agent 会话表 ═══
 CREATE TABLE IF NOT EXISTS jarvis_agent_threads (
@@ -153,37 +159,38 @@ CREATE TABLE IF NOT EXISTS jarvis_agent_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_jarvis_agent_messages_thread ON jarvis_agent_messages(thread_id);
 
--- ═══ 用户凭证表（BYOK：API Key/Base URL/模型名，支持多凭证 + 能力档位）═══
+-- ═══ 用户凭证表（BYOK）═══
 CREATE TABLE IF NOT EXISTS jarvis_user_credentials (
-  id          TEXT PRIMARY KEY,
-  user_id     TEXT NOT NULL,
-  label       TEXT NOT NULL,
-  tier        TEXT NOT NULL DEFAULT 'standard',
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  label TEXT NOT NULL,
+  tier TEXT NOT NULL DEFAULT 'standard',
   api_key_enc TEXT NOT NULL,
-  base_url    TEXT NOT NULL,
-  model       TEXT NOT NULL,
-  is_default  INTEGER NOT NULL DEFAULT 0,
-  created_at  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL
+  base_url TEXT NOT NULL,
+  model TEXT NOT NULL,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_jarvis_user_credentials_user ON jarvis_user_credentials(user_id);
 
--- ═══ 用户 MCP servers 表（全局共享给该用户所有小弟，按需使用）═══
+-- ═══ 用户 MCP servers 表 ═══
 CREATE TABLE IF NOT EXISTS jarvis_user_mcp_servers (
-  id           TEXT PRIMARY KEY,
-  user_id      TEXT NOT NULL,
-  name         TEXT NOT NULL,           -- 用户可见名，Jarvis 按此增删改
-  transport    TEXT NOT NULL,           -- 'stdio' | 'sse' | 'http'
-  command      TEXT,                    -- stdio: 可执行命令
-  args_json    TEXT,                    -- stdio: JSON 数组字符串
-  url          TEXT,                    -- sse/http: 端点 URL
-  env_enc      TEXT,                    -- 加密 JSON，含 token 等敏感 env
-  description  TEXT,
-  enabled      INTEGER NOT NULL DEFAULT 1,
-  created_at   TEXT NOT NULL,
-  updated_at   TEXT NOT NULL
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  transport TEXT NOT NULL,
+  command TEXT,
+  args_json TEXT,
+  url TEXT,
+  env_enc TEXT,
+  description TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_jarvis_user_mcp_name ON jarvis_user_mcp_servers(user_id, name);
-`)
+  `)
+}
 
-export default db
+export default pool

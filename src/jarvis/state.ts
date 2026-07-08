@@ -1,4 +1,4 @@
-import db from '../shared/db.js'
+import pool from '../shared/db.js'
 
 export interface JarvisState {
   mood: number
@@ -52,19 +52,19 @@ function rowToState(row: any): JarvisState {
   }
 }
 
-export function getState(userId: string): JarvisState {
-  const row = db.prepare('SELECT * FROM jarvis_state WHERE user_id = ?').get(userId) as any
-  if (!row) return resetIfNewDay({ ...DEFAULT_STATE })
-  return resetIfNewDay(rowToState(row))
+export async function getState(userId: string): Promise<JarvisState> {
+  const { rows } = await pool.query('SELECT * FROM jarvis_state WHERE user_id = $1', [userId])
+  if (!rows[0]) return resetIfNewDay({ ...DEFAULT_STATE })
+  return resetIfNewDay(rowToState(rows[0]))
 }
 
-export function updateState(userId: string, updates: Partial<JarvisState>) {
-  const state = getState(userId)
+export async function updateState(userId: string, updates: Partial<JarvisState>): Promise<void> {
+  const state = await getState(userId)
   const updated = { ...state, ...updates, lastInteractionAt: new Date().toISOString() }
 
-  db.prepare(`
+  await pool.query(`
     INSERT INTO jarvis_state (user_id, mood, energy, confidence, tasks_completed_today, messages_handled_today, last_interaction_at, last_day_reset, familiarity, trust_level)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     ON CONFLICT(user_id) DO UPDATE SET
       mood = excluded.mood,
       energy = excluded.energy,
@@ -75,44 +75,44 @@ export function updateState(userId: string, updates: Partial<JarvisState>) {
       last_day_reset = excluded.last_day_reset,
       familiarity = excluded.familiarity,
       trust_level = excluded.trust_level
-  `).run(userId, updated.mood, updated.energy, updated.confidence, updated.tasksCompletedToday, updated.messagesHandledToday, updated.lastInteractionAt, updated.lastDayReset, updated.familiarity, updated.trustLevel)
+  `, [userId, updated.mood, updated.energy, updated.confidence, updated.tasksCompletedToday, updated.messagesHandledToday, updated.lastInteractionAt, updated.lastDayReset, updated.familiarity, updated.trustLevel])
 }
 
-export function onTaskCompleted(userId: string) {
-  const state = getState(userId)
-  updateState(userId, {
+export async function onTaskCompleted(userId: string): Promise<void> {
+  const state = await getState(userId)
+  await updateState(userId, {
     mood: Math.min(100, state.mood + 3),
     confidence: Math.min(100, state.confidence + 2),
     tasksCompletedToday: state.tasksCompletedToday + 1,
   })
 }
 
-export function onTaskFailed(userId: string) {
-  const state = getState(userId)
-  updateState(userId, {
+export async function onTaskFailed(userId: string): Promise<void> {
+  const state = await getState(userId)
+  await updateState(userId, {
     mood: Math.max(30, state.mood - 5),
     confidence: Math.max(20, state.confidence - 8),
   })
 }
 
-export function onMessageHandled(userId: string) {
-  const state = getState(userId)
-  updateState(userId, {
+export async function onMessageHandled(userId: string): Promise<void> {
+  const state = await getState(userId)
+  await updateState(userId, {
     energy: Math.max(20, state.energy - 2),
     messagesHandledToday: state.messagesHandledToday + 1,
     familiarity: Math.min(100, state.familiarity + 1),
   })
 }
 
-export function onUserTrustsMore(userId: string) {
-  const state = getState(userId)
-  updateState(userId, {
+export async function onUserTrustsMore(userId: string): Promise<void> {
+  const state = await getState(userId)
+  await updateState(userId, {
     trustLevel: Math.min(100, state.trustLevel + 5),
   })
 }
 
-export function getStateDescription(userId: string): string {
-  const s = getState(userId)
+export async function getStateDescription(userId: string): Promise<string> {
+  const s = await getState(userId)
   const parts: string[] = []
 
   if (s.energy < 40) parts.push('精力偏低（高负荷运转中）')

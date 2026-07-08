@@ -1,34 +1,76 @@
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════
-   Jarvis Design Tokens — 奶油暖白 + Notion 气质
-   配合管家素描 logo。全站单一主题。
+   Jarvis Design Tokens — 双主题（深色默认 / 浅色可选）
+   切换方式：document.documentElement.setAttribute('data-theme', 'light')
    ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Dark (default) — mid-gray, not black ─── */
 :root {
-  /* 底色 */
+  --bg: #26262b;
+  --bg-elevated: #2c2c31;
+  --bg-subtle: #333338;
+  --bg-hover: #3a3a40;
+  --bg-active: #424248;
+
+  --text: rgba(255, 255, 255, 0.92);
+  --text-secondary: rgba(255, 255, 255, 0.6);
+  --text-muted: rgba(255, 255, 255, 0.35);
+  --text-on-accent: #ffffff;
+
+  --border: rgba(255, 255, 255, 0.08);
+  --border-light: rgba(255, 255, 255, 0.05);
+  --border-focus: rgba(99, 102, 241, 0.5);
+
+  --accent: #6366f1;
+  --accent-light: rgba(99, 102, 241, 0.12);
+  --accent-hover: #818cf8;
+
+  --green: #34d399;
+  --green-bg: rgba(52, 211, 153, 0.1);
+  --yellow: #fbbf24;
+  --yellow-bg: rgba(251, 191, 36, 0.1);
+  --red: #f87171;
+  --red-bg: rgba(248, 113, 113, 0.1);
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-xs: 4px;
+  --radius-full: 9999px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.3);
+
+  --font: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --font-display: "Inter", -apple-system, system-ui, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+
+  --glass: rgba(38, 38, 43, 0.8);
+  --glass-border: rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Light ─── */
+[data-theme="light"] {
   --bg: #faf8f5;
   --bg-elevated: #ffffff;
   --bg-subtle: #f3f0eb;
   --bg-hover: #ede9e3;
   --bg-active: #e8e3dc;
 
-  /* 文字 */
   --text: #2c2a27;
   --text-secondary: #6b6560;
   --text-muted: #9e9790;
   --text-on-accent: #ffffff;
 
-  /* 边框 */
   --border: #e8e3dc;
   --border-light: #f0ece6;
   --border-focus: #b8a48a;
 
-  /* 品牌暖金 */
   --accent: #8b6b3d;
   --accent-light: #f5ede2;
   --accent-hover: #7a5d34;
 
-  /* 状态色（低饱和暖化） */
   --green: #3d8b5a;
   --green-bg: #edf7f1;
   --yellow: #8b7a3d;
@@ -36,21 +78,12 @@
   --red: #8b3d3d;
   --red-bg: #f7eded;
 
-  /* 圆角 */
-  --radius: 12px;
-  --radius-sm: 8px;
-  --radius-xs: 4px;
-  --radius-full: 9999px;
-
-  /* 阴影 */
   --shadow-sm: 0 1px 2px rgba(44, 42, 39, 0.04);
   --shadow: 0 2px 8px rgba(44, 42, 39, 0.06), 0 1px 3px rgba(44, 42, 39, 0.04);
   --shadow-lg: 0 8px 32px rgba(44, 42, 39, 0.1), 0 2px 8px rgba(44, 42, 39, 0.05);
 
-  /* 字体 */
-  --font: "Noto Sans SC", -apple-system, "SF Pro Text", system-ui, sans-serif;
-  --font-display: "Newsreader", "Songti SC", Georgia, serif;
-  --font-mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+  --glass: rgba(250, 248, 245, 0.8);
+  --glass-border: rgba(0, 0, 0, 0.06);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -69,6 +102,11 @@ body {
 }
 
 .text-display { font-family: var(--font-display); font-weight: 400; letter-spacing: -0.01em; }
+
+@keyframes msg-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 /* ═══════════════════════════════════════════════════════════════
    语义组件类（按钮 / 输入 / 卡片 / 徽章 / 遮罩）

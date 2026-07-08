@@ -4,7 +4,22 @@ import { listRecipes } from '../team/registry.js'
 import { listTasks, getTask } from '../task/manager.js'
 import { listAgentSessions, getSessionsByDomain } from '../a2a/history.js'
 import { addMcpServer, listMcpServers, removeMcpServer } from '../auth/mcp-servers.js'
-import db from '../shared/db.js'
+import pool from '../shared/db.js'
+
+export interface PendingArtifact {
+  type: 'html' | 'markdown' | 'code' | 'mermaid'
+  title: string
+  content: string
+  language?: string
+}
+
+const pendingArtifacts = new Map<string, PendingArtifact>()
+
+export function consumeArtifact(userId: string): PendingArtifact | null {
+  const artifact = pendingArtifacts.get(userId) || null
+  pendingArtifacts.delete(userId)
+  return artifact
+}
 
 export function createJarvisTools(userId: string) {
   return createSdkMcpServer({
@@ -13,7 +28,7 @@ export function createJarvisTools(userId: string) {
     tools: [
       tool('list_team', '查看当前团队成员（小弟）列表，包括已转正和临时的', {},
         async () => {
-          const recipes = listRecipes(userId)
+          const recipes = await listRecipes(userId)
           const summary = recipes.map(r => ({
             id: r.id,
             name: r.name,
@@ -28,7 +43,7 @@ export function createJarvisTools(userId: string) {
 
       tool('list_tasks', '查看任务列表，可按状态筛选', { status: z.string().optional().describe('可选：created|executing|completed|failed|cancelled') },
         async (args) => {
-          let tasks = listTasks(userId)
+          let tasks = await listTasks(userId)
           if (args.status) {
             tasks = tasks.filter(t => t.status === args.status)
           }
@@ -45,7 +60,7 @@ export function createJarvisTools(userId: string) {
 
       tool('get_task', '查看单个任务的完整详情（含子任务）', { taskId: z.string().describe('任务ID') },
         async (args) => {
-          const task = getTask(userId, args.taskId)
+          const task = await getTask(userId, args.taskId)
           if (!task) {
             return { content: [{ type: 'text' as const, text: '未找到该任务' }] }
           }
@@ -56,8 +71,8 @@ export function createJarvisTools(userId: string) {
       tool('list_agent_history', '查看 agent 执行历史记录，可按领域筛选', { domain: z.string().optional().describe('可选：按领域筛选，如"技术调研"') },
         async (args) => {
           const sessions = args.domain
-            ? getSessionsByDomain(userId, args.domain)
-            : listAgentSessions(userId)
+            ? await getSessionsByDomain(userId, args.domain)
+            : await listAgentSessions(userId)
           const summary = sessions.map(s => ({
             sessionId: s.sessionId,
             domain: s.domain,
@@ -71,17 +86,17 @@ export function createJarvisTools(userId: string) {
 
       tool('get_team_stats', '查看团队统计：各领域执行次数、已转正/待转正情况', {},
         async () => {
-          const recipes = listRecipes(userId)
+          const recipes = await listRecipes(userId)
           const persistent = recipes.filter(r => r.persistent)
           const temporary = recipes.filter(r => !r.persistent)
 
-          const domainStats = db.prepare(`
+          const { rows: domainStats } = await pool.query(`
             SELECT domain, COUNT(*) as task_count
             FROM jarvis_claude_sessions
-            WHERE user_id = ? AND domain != ''
+            WHERE user_id = $1 AND domain != ''
             GROUP BY domain
             ORDER BY task_count DESC
-          `).all(userId) as Array<{ domain: string; task_count: number }>
+          `, [userId])
 
           const stats = {
             totalMembers: recipes.length,
@@ -111,7 +126,7 @@ export function createJarvisTools(userId: string) {
         },
         async (args) => {
           try {
-            const s = addMcpServer(userId, {
+            const s = await addMcpServer(userId, {
               name: args.name,
               transport: args.transport,
               command: args.command,
@@ -137,7 +152,7 @@ export function createJarvisTools(userId: string) {
         '查看当前用户已配置的 MCP servers（脱敏：env 只回 key 名不回值）',
         {},
         async () => {
-          const servers = listMcpServers(userId)
+          const servers = await listMcpServers(userId)
           if (servers.length === 0) {
             return { content: [{ type: 'text' as const, text: '当前未配置任何 MCP server。' }] }
           }
@@ -160,11 +175,38 @@ export function createJarvisTools(userId: string) {
         '按 name 删除一个 MCP server',
         { name: z.string().describe('要删除的 MCP server name') },
         async (args) => {
-          const ok = removeMcpServer(userId, args.name)
+          const ok = await removeMcpServer(userId, args.name)
           return {
             content: [{
               type: 'text' as const,
               text: ok ? `已删除 MCP server「${args.name}」。` : `未找到名为「${args.name}」的 MCP server。`,
+            }],
+          }
+        }
+      ),
+
+      tool(
+        'render_preview',
+        '在 Sir 的界面上打开一个预览面板，展示你生成的内容。' +
+          '当你写了网页(html)、文档(markdown)、代码片段(code)、或图表(mermaid) 且内容较长值得独立预览时，调用此工具。' +
+          '短代码（几行）不需要用这个，直接放回复里即可。',
+        {
+          type: z.enum(['html', 'markdown', 'code', 'mermaid']).describe('内容类型'),
+          title: z.string().describe('预览面板标题，简短描述内容'),
+          content: z.string().describe('完整内容（HTML源码 / Markdown文本 / 代码 / Mermaid语法）'),
+          language: z.string().optional().describe('仅 type=code 时填，语言标识如 typescript、python'),
+        },
+        async (args) => {
+          pendingArtifacts.set(userId, {
+            type: args.type,
+            title: args.title,
+            content: args.content,
+            language: args.language,
+          })
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `已渲染预览「${args.title}」(${args.type})，Sir 可以在右侧面板查看。`,
             }],
           }
         }

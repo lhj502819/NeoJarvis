@@ -1,11 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { fetchJSON, streamChat, type ChatEvent } from './client'
+import { fetchJSON, streamChat } from './client'
+
+export interface MessageArtifact {
+  id?: string
+  type: 'html' | 'markdown' | 'code' | 'mermaid'
+  title: string
+  content: string
+  language?: string
+}
 
 export interface Message {
   id: string
   role: 'user' | 'jarvis' | 'system'
   content: string
   status?: 'thinking' | 'streaming' | 'done'
+  artifact?: MessageArtifact
 }
 
 export function useChat() {
@@ -13,11 +22,12 @@ export function useChat() {
   const [isLoading, setIsLoading] = useState(false)
   const historyLoaded = useRef(false)
   const typingRef = useRef<number | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     if (historyLoaded.current) return
     historyLoaded.current = true
-    fetchJSON<Array<{ role: string; content: string; timestamp: number }>>('/api/conversation')
+    fetchJSON<Array<{ role: string; content: string; timestamp: number; artifact?: { id: string; type: string; title: string } }>>('/api/conversation')
       .then(turns => {
         if (turns.length === 0) return
         const msgs: Message[] = turns.map((t, i) => ({
@@ -25,6 +35,7 @@ export function useChat() {
           role: t.role === 'user' ? 'user' as const : 'jarvis' as const,
           content: t.content,
           status: 'done' as const,
+          artifact: t.artifact ? { type: t.artifact.type as MessageArtifact['type'], title: t.artifact.title, content: '', id: t.artifact.id } : undefined,
         }))
         setMessages(msgs)
       })
@@ -54,14 +65,34 @@ export function useChat() {
   }, [])
 
   const send = useCallback(async (text: string) => {
+    // Abort previous request if still in progress
+    if (abortRef.current) {
+      abortRef.current.abort()
+      abortRef.current = null
+    }
+    if (typingRef.current) {
+      cancelAnimationFrame(typingRef.current)
+      typingRef.current = null
+    }
+
+    // Mark any pending jarvis message as done
+    setMessages(prev => prev.map(m =>
+      m.role === 'jarvis' && m.status !== 'done'
+        ? { ...m, status: 'done' as const, content: m.content || '[已打断]' }
+        : m
+    ))
+
     const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: text, status: 'done' }
     const jarvisMsg: Message = { id: `j-${Date.now()}`, role: 'jarvis', content: '', status: 'thinking' }
 
     setMessages(prev => [...prev, userMsg, jarvisMsg])
     setIsLoading(true)
 
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
-      for await (const event of streamChat(text)) {
+      for await (const event of streamChat(text, controller.signal)) {
         setMessages(prev => {
           const msgs = [...prev]
           const last = msgs[msgs.length - 1]
@@ -80,14 +111,25 @@ export function useChat() {
             typewriterEffect(event.content)
             return msgs
           }
+          if (event.type === 'artifact') {
+            try {
+              const artifact = JSON.parse(event.content) as MessageArtifact
+              return msgs.map((m, i) => i === msgs.length - 1 ? { ...m, artifact } : m)
+            } catch { return msgs }
+          }
           return msgs
         })
       }
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return
       setMessages(prev => prev.map((m, i) =>
         i === prev.length - 1 ? { ...m, content: `[错误] ${err instanceof Error ? err.message : '未知错误'}`, status: 'done' as const } : m
       ))
-      setIsLoading(false)
+    } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null
+        setIsLoading(false)
+      }
     }
   }, [typewriterEffect])
 
@@ -95,7 +137,12 @@ export function useChat() {
     setMessages(prev => [...prev, { id: `s-${Date.now()}`, role: 'system', content, status: 'done' }])
   }, [])
 
-  return { messages, isLoading, send, addSystemMessage }
+  const pushJarvisMessage = useCallback((content: string) => {
+    setMessages(prev => [...prev, { id: `j-bg-${Date.now()}`, role: 'jarvis', content, status: 'done' }])
+    setIsLoading(false)
+  }, [])
+
+  return { messages, isLoading, send, addSystemMessage, pushJarvisMessage }
 }
 
 export function usePolling<T>(path: string, interval: number) {

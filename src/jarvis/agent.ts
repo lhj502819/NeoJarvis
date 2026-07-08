@@ -11,7 +11,7 @@ import {
 } from '@a2a-js/sdk/server'
 import { agentCardHandler, jsonRpcHandler, restHandler, UserBuilder } from '@a2a-js/sdk/server/express'
 import { config } from '../shared/config.js'
-import db from '../shared/db.js'
+import pool from '../shared/db.js'
 import { think } from './brain.js'
 import { getTaskSummary, listTasks } from '../task/manager.js'
 import { getState } from './state.js'
@@ -78,7 +78,7 @@ class JarvisExecutor implements AgentExecutor {
     }
     eventBus.publish(statusUpdate)
 
-    const response = await think('system', userText, (progress) => {
+    const thinkResult = await think('system', userText, (progress) => {
       broadcast('progress', progress)
     })
 
@@ -86,7 +86,7 @@ class JarvisExecutor implements AgentExecutor {
       kind: 'message',
       messageId: randomUUID(),
       role: 'agent',
-      parts: [{ kind: 'text', text: response }],
+      parts: [{ kind: 'text', text: thinkResult.response }],
       contextId: requestContext.contextId,
     }
     eventBus.publish(responseMessage)
@@ -165,12 +165,15 @@ export function startJarvisServer(): express.Express {
     sendEvent('thinking', '正在思考...')
 
     try {
-      const response = await think(req.userId!, message, (progress) => {
+      const result = await think(req.userId!, message, (progress) => {
         sendEvent('progress', progress)
       }, (delta) => {
         sendEvent('delta', delta)
       })
-      sendEvent('response', response)
+      sendEvent('response', result.response)
+      if (result.artifact) {
+        sendEvent('artifact', JSON.stringify(result.artifact))
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       sendEvent('response', `[错误] ${msg}`)
@@ -181,59 +184,84 @@ export function startJarvisServer(): express.Express {
   })
 
   // ─── 任务状态查询端点 ───
-  app.get('/tasks', (req, res) => {
-    res.json({ summary: getTaskSummary(req.userId!), tasks: listTasks(req.userId!) })
+  app.get('/tasks', async (req, res) => {
+    res.json({ summary: await getTaskSummary(req.userId!), tasks: await listTasks(req.userId!) })
   })
 
   // ─── 对话历史 ───
-  app.get('/api/conversation', (req, res) => {
-    const session = db.prepare('SELECT id FROM user_jarvis_sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1').get(req.userId!) as any
-    if (!session) { res.json([]); return }
-    const rows = db.prepare('SELECT role, content, timestamp FROM user_jarvis_messages WHERE session_id = ? ORDER BY timestamp ASC').all(session.id)
-    res.json(rows)
+  app.get('/api/conversation', async (req, res) => {
+    const { rows: sessionRows } = await pool.query(
+      'SELECT id FROM user_jarvis_sessions WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 1',
+      [req.userId!]
+    )
+    if (sessionRows.length === 0) { res.json([]); return }
+    const { rows } = await pool.query(
+      `SELECT m.role, m.content, m.timestamp, m.artifact_id,
+              a.type AS artifact_type, a.title AS artifact_title
+       FROM user_jarvis_messages m
+       LEFT JOIN jarvis_artifacts a ON m.artifact_id = a.id
+       WHERE m.session_id = $1 ORDER BY m.timestamp ASC`,
+      [sessionRows[0].id]
+    )
+    res.json(rows.map(r => ({
+      role: r.role,
+      content: r.content,
+      timestamp: r.timestamp,
+      artifact: r.artifact_id ? { id: r.artifact_id, type: r.artifact_type, title: r.artifact_title } : undefined,
+    })))
+  })
+
+  // ─── Artifact 详情 ───
+  app.get('/api/artifact/:id', async (req, res) => {
+    const { rows } = await pool.query(
+      'SELECT id, type, title, content, language FROM jarvis_artifacts WHERE id = $1 AND user_id = $2',
+      [req.params.id, req.userId!]
+    )
+    if (rows.length === 0) { res.status(404).json({ code: 404, message: '制品不存在' }); return }
+    res.json({ code: 0, ...rows[0] })
   })
 
   // ─── Dashboard API ───
-  app.get('/api/state', (req, res) => {
-    res.json(getState(req.userId!))
+  app.get('/api/state', async (req, res) => {
+    res.json(await getState(req.userId!))
   })
 
   app.get('/api/agents', (req, res) => {
     res.json(listAllRunningTasks(req.userId!))
   })
 
-  app.get('/api/history', (req, res) => {
-    res.json(listAgentSessions(req.userId!))
+  app.get('/api/history', async (req, res) => {
+    res.json(await listAgentSessions(req.userId!))
   })
 
-  app.get('/api/recipes', (req, res) => {
-    res.json(listRecipes(req.userId!))
+  app.get('/api/recipes', async (req, res) => {
+    res.json(await listRecipes(req.userId!))
   })
 
   // ─── 用户凭证管理（BYOK）───
-  app.get('/api/credentials', (req, res) => {
-    res.json(listCredentials(req.userId!))
+  app.get('/api/credentials', async (req, res) => {
+    res.json(await listCredentials(req.userId!))
   })
 
-  app.post('/api/credentials', (req, res) => {
+  app.post('/api/credentials', async (req, res) => {
     const { label, tier, apiKey, baseUrl, model, isDefault } = req.body
     if (!label || !tier || !apiKey || !baseUrl || !model) {
       res.status(400).json({ error: 'label、tier、apiKey、baseUrl、model 均为必填' })
       return
     }
-    const cred = addCredential(req.userId!, { label, tier, apiKey, baseUrl, model, isDefault })
+    const cred = await addCredential(req.userId!, { label, tier, apiKey, baseUrl, model, isDefault })
     res.json(cred)
   })
 
-  app.put('/api/credentials/:id', (req, res) => {
+  app.put('/api/credentials/:id', async (req, res) => {
     const { label, tier, apiKey, baseUrl, model, isDefault } = req.body
-    const cred = updateCredential(req.userId!, req.params.id, { label, tier, apiKey, baseUrl, model, isDefault })
+    const cred = await updateCredential(req.userId!, req.params.id, { label, tier, apiKey, baseUrl, model, isDefault })
     if (!cred) { res.status(404).json({ error: '凭证不存在' }); return }
     res.json(cred)
   })
 
-  app.delete('/api/credentials/:id', (req, res) => {
-    const ok = deleteCredential(req.userId!, req.params.id)
+  app.delete('/api/credentials/:id', async (req, res) => {
+    const ok = await deleteCredential(req.userId!, req.params.id)
     if (!ok) { res.status(404).json({ error: '凭证不存在' }); return }
     res.json({ ok: true })
   })
@@ -278,12 +306,12 @@ export function startJarvisServer(): express.Express {
     res.json(bus.listAgents())
   })
 
-  app.get('/api/bus/conversations', (req, res) => {
-    res.json(bus.getAllConversations())
+  app.get('/api/bus/conversations', async (req, res) => {
+    res.json(await bus.getAllConversations())
   })
 
-  app.get('/api/bus/conversations/:contextId', (req, res) => {
-    const conv = bus.getConversation(req.params.contextId)
+  app.get('/api/bus/conversations/:contextId', async (req, res) => {
+    const conv = await bus.getConversation(req.params.contextId)
     if (!conv) { res.status(404).json({ error: 'not found' }); return }
     res.json(conv)
   })

@@ -1,0 +1,77 @@
+.jarvis-orb {
+  width: 80px;
+  height: 44px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Waveform — a row of five bars that pulse with mood */
+.jarvis-orb-wave {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.jarvis-orb-wave span {
+  width: 3px;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(to top, var(--accent), var(--accent-hover));
+  box-shadow: 0 0 8px var(--accent-light);
+  transform-origin: center;
+  animation: orb-wave-idle 2.6s ease-in-out infinite;
+}
+
+.jarvis-orb-wave span:nth-child(1) { animation-delay: 0s;    }
+.jarvis-orb-wave span:nth-child(2) { animation-delay: 0.18s; }
+.jarvis-orb-wave span:nth-child(3) { animation-delay: 0.36s; }
+.jarvis-orb-wave span:nth-child(4) { animation-delay: 0.54s; }
+.jarvis-orb-wave span:nth-child(5) { animation-delay: 0.72s; }
+
+/* Idle — quiet, shallow breathing so it clearly reads as "at rest" */
+@keyframes orb-wave-idle {
+  0%, 100% { transform: scaleY(1);   opacity: 0.35; }
+  50%      { transform: scaleY(1.6); opacity: 0.65; }
+}
+
+/* Thinking — fast, tall, brightly lit; a tight stagger makes a flowing wave
+   that reads as unmistakably "working", not "resting". */
+.jarvis-orb-wave[data-mood="thinking"] span {
+  animation-name: orb-wave-active;
+  animation-duration: 0.62s;
+  background: linear-gradient(to top, var(--accent-hover), var(--accent));
+  box-shadow: 0 0 10px var(--accent-hover), 0 0 4px var(--accent);
+}
+.jarvis-orb-wave[data-mood="thinking"] span:nth-child(1) { animation-delay: 0s;   }
+.jarvis-orb-wave[data-mood="thinking"] span:nth-child(2) { animation-delay: 0.1s; }
+.jarvis-orb-wave[data-mood="thinking"] span:nth-child(3) { animation-delay: 0.2s; }
+.jarvis-orb-wave[data-mood="thinking"] span:nth-child(4) { animation-delay: 0.3s; }
+.jarvis-orb-wave[data-mood="thinking"] span:nth-child(5) { animation-delay: 0.4s; }
+
+@keyframes orb-wave-active {
+  0%, 100% { transform: scaleY(1);   opacity: 0.55; }
+  50%      { transform: scaleY(3.8); opacity: 1;    }
+}
+
+/* Happy — medium, settled energy */
+.jarvis-orb-wave[data-mood="happy"] span {
+  animation-name: orb-wave-happy;
+  animation-duration: 1.6s;
+}
+
+@keyframes orb-wave-happy {
+  0%, 100% { transform: scaleY(1.1); opacity: 0.6;  }
+  50%      { transform: scaleY(2.6); opacity: 0.95; }
+}
+
+.jarvis-orb-label {
+  margin-top: 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  text-align: center;
+}

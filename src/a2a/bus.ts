@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import db from '../shared/db.js'
+import pool from '../shared/db.js'
 
 // ─── A2A Message Types ───
 
@@ -69,21 +69,21 @@ class MessageBus {
 
   async send(from: string, to: string, contextId: string, content: string, metadata?: Record<string, unknown>): Promise<A2AMessage | null> {
     const msg = this.buildMessage(from, to, contextId, content, metadata)
-    this.recordMessage(msg)
+    await this.recordMessage(msg)
 
     const target = this.agents.get(to)
     if (!target) return null
 
     const reply = await target.handler(msg)
     if (reply) {
-      this.recordMessage(reply)
+      await this.recordMessage(reply)
     }
     return reply
   }
 
-  notify(from: string, to: string, contextId: string, content: string, metadata?: Record<string, unknown>): void {
+  async notify(from: string, to: string, contextId: string, content: string, metadata?: Record<string, unknown>): Promise<void> {
     const msg = this.buildMessage(from, to, contextId, content, metadata)
-    this.recordMessage(msg)
+    await this.recordMessage(msg)
 
     const target = this.agents.get(to)
     if (target) {
@@ -91,9 +91,9 @@ class MessageBus {
     }
   }
 
-  broadcast(from: string, contextId: string, content: string): void {
+  async broadcast(from: string, contextId: string, content: string): Promise<void> {
     const msg = this.buildMessage(from, '*', contextId, content)
-    this.recordMessage(msg)
+    await this.recordMessage(msg)
 
     for (const [id, node] of this.agents) {
       if (id !== from) {
@@ -116,11 +116,12 @@ class MessageBus {
 
   // ─── History ───
 
-  getConversation(contextId: string): ConversationLog | undefined {
-    const thread = db.prepare('SELECT * FROM jarvis_agent_threads WHERE id = ?').get(contextId) as any
+  async getConversation(contextId: string): Promise<ConversationLog | undefined> {
+    const { rows: threadRows } = await pool.query('SELECT * FROM jarvis_agent_threads WHERE id = $1', [contextId])
+    const thread = threadRows[0]
     if (!thread) return undefined
 
-    const msgRows = db.prepare('SELECT * FROM jarvis_agent_messages WHERE thread_id = ? ORDER BY timestamp ASC').all(contextId) as any[]
+    const { rows: msgRows } = await pool.query('SELECT * FROM jarvis_agent_messages WHERE thread_id = $1 ORDER BY timestamp ASC', [contextId])
     return {
       contextId: thread.id,
       participants: JSON.parse(thread.participants),
@@ -130,18 +131,23 @@ class MessageBus {
     }
   }
 
-  getAgentConversations(agentId: string): ConversationLog[] {
-    const threads = db.prepare(`SELECT * FROM jarvis_agent_threads WHERE participants LIKE ?`).all(`%"${agentId}"%`) as any[]
-    return threads.map(t => this.getConversation(t.id)!)
+  async getAgentConversations(agentId: string): Promise<ConversationLog[]> {
+    const { rows: threads } = await pool.query(`SELECT * FROM jarvis_agent_threads WHERE participants LIKE $1`, [`%"${agentId}"%`])
+    const results: ConversationLog[] = []
+    for (const t of threads) {
+      const conv = await this.getConversation(t.id)
+      if (conv) results.push(conv)
+    }
+    return results
   }
 
-  getRecentMessages(contextId: string, limit = 20): A2AMessage[] {
-    const rows = db.prepare('SELECT * FROM jarvis_agent_messages WHERE thread_id = ? ORDER BY timestamp DESC LIMIT ?').all(contextId, limit) as any[]
+  async getRecentMessages(contextId: string, limit = 20): Promise<A2AMessage[]> {
+    const { rows } = await pool.query('SELECT * FROM jarvis_agent_messages WHERE thread_id = $1 ORDER BY timestamp DESC LIMIT $2', [contextId, limit])
     return rows.reverse().map(rowToMessage)
   }
 
-  getAllConversations(): ConversationLog[] {
-    const threads = db.prepare('SELECT * FROM jarvis_agent_threads ORDER BY updated_at DESC LIMIT ?').all(MAX_CONVERSATIONS) as any[]
+  async getAllConversations(): Promise<ConversationLog[]> {
+    const { rows: threads } = await pool.query('SELECT * FROM jarvis_agent_threads ORDER BY updated_at DESC LIMIT $1', [MAX_CONVERSATIONS])
     return threads.map(t => ({
       contextId: t.id,
       participants: JSON.parse(t.participants),
@@ -166,41 +172,43 @@ class MessageBus {
     }
   }
 
-  private recordMessage(msg: A2AMessage): void {
-    let thread = db.prepare('SELECT id, participants FROM jarvis_agent_threads WHERE id = ?').get(msg.contextId) as any
+  private async recordMessage(msg: A2AMessage): Promise<void> {
+    const { rows: threadRows } = await pool.query('SELECT id, participants FROM jarvis_agent_threads WHERE id = $1', [msg.contextId])
+    const thread = threadRows[0]
 
     if (!thread) {
       const participants = [msg.from]
       if (msg.to !== '*') participants.push(msg.to)
-      db.prepare(`
+      await pool.query(`
         INSERT INTO jarvis_agent_threads (id, user_id, participants, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(msg.contextId, this.ownerUserId || 'system', JSON.stringify(participants), msg.timestamp, msg.timestamp)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [msg.contextId, this.ownerUserId || 'system', JSON.stringify(participants), msg.timestamp, msg.timestamp])
     } else {
       const participants: string[] = JSON.parse(thread.participants)
       let changed = false
       if (!participants.includes(msg.from)) { participants.push(msg.from); changed = true }
       if (msg.to !== '*' && !participants.includes(msg.to)) { participants.push(msg.to); changed = true }
       if (changed) {
-        db.prepare('UPDATE jarvis_agent_threads SET participants = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(participants), msg.timestamp, msg.contextId)
+        await pool.query('UPDATE jarvis_agent_threads SET participants = $1, updated_at = $2 WHERE id = $3', [JSON.stringify(participants), msg.timestamp, msg.contextId])
       } else {
-        db.prepare('UPDATE jarvis_agent_threads SET updated_at = ? WHERE id = ?').run(msg.timestamp, msg.contextId)
+        await pool.query('UPDATE jarvis_agent_threads SET updated_at = $1 WHERE id = $2', [msg.timestamp, msg.contextId])
       }
     }
 
-    db.prepare(`
+    await pool.query(`
       INSERT INTO jarvis_agent_messages (id, thread_id, sender, receiver, role, parts, timestamp, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(msg.id, msg.contextId, msg.from, msg.to, msg.role, JSON.stringify(msg.parts), msg.timestamp, msg.metadata ? JSON.stringify(msg.metadata) : null)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, [msg.id, msg.contextId, msg.from, msg.to, msg.role, JSON.stringify(msg.parts), msg.timestamp, msg.metadata ? JSON.stringify(msg.metadata) : null])
 
     // Trim old threads
-    const count = (db.prepare('SELECT COUNT(*) as cnt FROM jarvis_agent_threads').get() as any).cnt
+    const { rows: countRows } = await pool.query('SELECT COUNT(*) as cnt FROM jarvis_agent_threads')
+    const count = parseInt(countRows[0].cnt, 10)
     if (count > MAX_CONVERSATIONS) {
-      db.prepare(`
+      await pool.query(`
         DELETE FROM jarvis_agent_threads WHERE id IN (
-          SELECT id FROM jarvis_agent_threads ORDER BY updated_at ASC LIMIT ?
+          SELECT id FROM jarvis_agent_threads ORDER BY updated_at ASC LIMIT $1
         )
-      `).run(count - MAX_CONVERSATIONS)
+      `, [count - MAX_CONVERSATIONS])
     }
   }
 }

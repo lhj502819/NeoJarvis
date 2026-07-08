@@ -20,7 +20,19 @@ function useCurrentRoute() {
 
 export function Header({ connected, username, onLogout }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
   const page = useCurrentRoute()
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
+    if (next === 'dark') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', next)
+    }
+    localStorage.setItem('jarvis-theme', next)
+  }
 
   const navBtn = (target: 'chat' | 'dashboard', label: string, href: string) => (
     <a
@@ -72,6 +84,17 @@ export function Header({ connected, username, onLogout }: Props) {
           {connected ? '已连接' : '未连接'}
         </div>
         {username && <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{username}</span>}
+        <button
+          onClick={toggleTheme}
+          title={theme === 'dark' ? '切换到浅色' : '切换到深色'}
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', padding: 6, borderRadius: 6 }}
+        >
+          {theme === 'dark' ? (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          ) : (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          )}
+        </button>
         <button
           onClick={() => setSettingsOpen(true)}
           title="API 凭证设置"

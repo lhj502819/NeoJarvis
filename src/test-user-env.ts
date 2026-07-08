@@ -28,22 +28,22 @@ function assert(condition: boolean, msg: string) {
 }
 
 // ─── 清理工具 ───────────────────────────────────────────────────────────────
-function cleanup() {
-  const creds = listCredentials(TEST_USER)
+async function cleanup() {
+  const creds = await listCredentials(TEST_USER)
   for (const c of creds) {
-    deleteCredential(TEST_USER, c.id)
+    await deleteCredential(TEST_USER, c.id)
   }
 }
 
 // ─── 测试 1：全局 agentEnv 不被污染 ─────────────────────────────────────────
-function testNoGlobalMutation() {
+async function testNoGlobalMutation() {
   console.log('\n═══ 测试 1: 全局 agentEnv 不被污染（核心安全不变式）═══')
 
   // 快照调用前的 agentEnv（序列化后比较，不管有没有 ANTHROPIC_AUTH_TOKEN）
   const snapshotBefore = JSON.stringify(agentEnv)
 
   // 插入一条凭证并调用「有凭证路径」
-  addCredential(TEST_USER, {
+  await addCredential(TEST_USER, {
     label: '测试凭证',
     tier: 'standard',
     apiKey: 'sk-test-key',
@@ -52,7 +52,7 @@ function testNoGlobalMutation() {
     isDefault: true,
   })
 
-  buildUserEnv(TEST_USER)
+  await buildUserEnv(TEST_USER)
 
   const snapshotAfter = JSON.stringify(agentEnv)
   assert(snapshotBefore === snapshotAfter, 'agentEnv 调用前后完全一致（无 mutation）')
@@ -72,10 +72,10 @@ function testNoGlobalMutation() {
 }
 
 // ─── 测试 2：有凭证结果隔离 ──────────────────────────────────────────────────
-function testWithCredential() {
+async function testWithCredential() {
   console.log('\n═══ 测试 2: 有凭证结果隔离 ═══')
 
-  const result = buildUserEnv(TEST_USER)
+  const result = await buildUserEnv(TEST_USER)
 
   // 返回对象不是 agentEnv 本身（引用隔离）
   assert(result !== agentEnv, '返回新对象（!== agentEnv）')
@@ -94,10 +94,10 @@ function testWithCredential() {
 }
 
 // ─── 测试 3：无凭证回退 ──────────────────────────────────────────────────────
-function testNoCredential() {
+async function testNoCredential() {
   console.log('\n═══ 测试 3: 无凭证回退 ═══')
 
-  const noUserResult = buildUserEnv('__non_existent_user_xyz__')
+  const noUserResult = await buildUserEnv('__non_existent_user_xyz__')
 
   // 返回新对象（不是 agentEnv 引用）
   assert(noUserResult !== agentEnv, '无凭证：返回新对象（!== agentEnv）')
@@ -114,14 +114,14 @@ async function main() {
 
   try {
     // 确保干净起点
-    cleanup()
+    await cleanup()
 
-    testNoGlobalMutation()
-    testWithCredential()
-    testNoCredential()
+    await testNoGlobalMutation()
+    await testWithCredential()
+    await testNoCredential()
   } finally {
     // 测试数据删干净
-    cleanup()
+    await cleanup()
     console.log('\n  [cleanup] 测试数据已清除')
   }
 

@@ -7,8 +7,8 @@ import { resolveMcpServers } from '../auth/mcp-servers.js'
  *
  * 无凭证/失败时返回 `{}`，让 query() 保持无 MCP 状态。
  */
-export function buildUserMcpServers(userId: string): Record<string, McpServerConfig> {
-  const servers = resolveMcpServers(userId)
+export async function buildUserMcpServers(userId: string): Promise<Record<string, McpServerConfig>> {
+  const servers = await resolveMcpServers(userId)
   const out: Record<string, McpServerConfig> = {}
   for (const s of servers) {
     if (s.transport === 'stdio') {

@@ -64,7 +64,7 @@ async function testSyncSend() {
   assert(reply!.parts[0]?.text?.includes('继续执行方案A') ?? false, '回复内容正确')
   assert(reply!.from === 'mock-jarvis', '回复来源正确')
 
-  const conv = bus.getConversation('task-001')
+  const conv = await bus.getConversation('task-001')
   assert(conv !== undefined, '对话记录被创建')
   assert(conv!.messages.length >= 2, '对话包含请求和回复')
   assert(conv!.participants.includes('test-agent-1'), '参与者包含发送方')
@@ -106,33 +106,33 @@ async function testConversationHistory() {
   await bus.send('test-agent-1', 'mock-jarvis', 'task-002', '第二个任务的问题')
   bus.notify('mock-jarvis', 'test-agent-1', 'task-002', '好的，明白了')
 
-  const conv = bus.getConversation('task-002')
+  const conv = await bus.getConversation('task-002')
   assert(conv !== undefined, 'task-002 对话存在')
   assert(conv!.messages.length >= 2, '包含多条消息')
 
-  const allConvs = bus.getAllConversations()
+  const allConvs = await bus.getAllConversations()
   assert(allConvs.length >= 2, '有多个对话记录 (task-001, task-002)')
 
-  const agentConvs = bus.getAgentConversations('test-agent-1')
+  const agentConvs = await bus.getAgentConversations('test-agent-1')
   assert(agentConvs.length >= 1, 'getAgentConversations 按 agent 过滤')
 }
 
 async function testTaskManagement() {
   console.log('\n═══ 测试 6: 任务管理 + 子任务 ═══')
 
-  const task = createTask('test-user', '测试任务', '验证多子任务并行')
+  const task = await createTask('test-user', '测试任务', '验证多子任务并行')
   assert(task.id.length > 0, '任务创建成功')
 
-  const sub1 = addSubTask('test-user', task.id, { name: '子任务1', description: '调研 SDK', assignee: 'general' })
-  const sub2 = addSubTask('test-user', task.id, { name: '子任务2', description: '调研协议', assignee: 'general' })
+  const sub1 = await addSubTask('test-user', task.id, { name: '子任务1', description: '调研 SDK', assignee: 'general' })
+  const sub2 = await addSubTask('test-user', task.id, { name: '子任务2', description: '调研协议', assignee: 'general' })
   assert(sub1.id !== sub2.id, '子任务 ID 不同')
 
-  updateTask('test-user', task.id, { status: 'executing' })
-  const updated = getTask('test-user', task.id)
+  await updateTask('test-user', task.id, { status: 'executing' })
+  const updated = await getTask('test-user', task.id)
   assert(updated?.status === 'executing', '任务状态更新成功')
 
-  updateSubTask('test-user', task.id, sub1.id, { progress: '回合 3 | 已执行 5 步' })
-  const t = getTask('test-user', task.id)
+  await updateSubTask('test-user', task.id, sub1.id, { progress: '回合 3 | 已执行 5 步' })
+  const t = await getTask('test-user', task.id)
   const s1 = t?.subtasks.find(s => s.id === sub1.id)
   assert(s1?.progress === '回合 3 | 已执行 5 步', '子任务进度更新成功')
 }

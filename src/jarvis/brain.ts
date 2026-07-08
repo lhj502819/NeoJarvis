@@ -1,9 +1,8 @@
 import { query, type McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { execSync } from 'child_process'
-import { homedir } from 'os'
 import { randomUUID } from 'crypto'
 import { buildSystemPrompt } from './prompt.js'
-import { createJarvisTools } from './tools.js'
+import { createJarvisTools, consumeArtifact, type PendingArtifact } from './tools.js'
 import { createTask, updateTask, addSubTask, getTask, getTaskSummary, listTasks, updateSubTask } from '../task/manager.js'
 import { scheduleAllRunnable, handleSubTaskComplete, handleSubTaskFailed, checkTaskCompletion } from '../task/scheduler.js'
 import { listRecipes, getRecipe, createRecipe, incrementUsage } from '../team/registry.js'
@@ -15,12 +14,12 @@ import { broadcast } from './agent.js'
 import { searchMemory, addMemory } from '../memory/everos.js'
 import { onMessageHandled, onTaskCompleted, onTaskFailed } from './state.js'
 import { buildUserEnv } from '../shared/user-env.js'
+import { getUserWorkspace } from '../shared/user-workspace.js'
 import { buildUserMcpServers } from '../shared/user-mcp.js'
 import { redactSecrets } from '../shared/redact.js'
-import db from '../shared/db.js'
+import pool from '../shared/db.js'
 
 const CLAUDE_PATH = execSync('which claude', { encoding: 'utf-8' }).trim()
-const HOME_DIR = homedir()
 
 // 注册 Jarvis 到 MessageBus — 处理小弟的请示
 bus.register('jarvis', 'Jarvis', async (msg) => {
@@ -100,10 +99,10 @@ function parseAction(text: string): ActionResponse | null {
 }
 
 async function llmCall(userId: string, prompt: string, onDelta?: (text: string) => void): Promise<string> {
-  const systemPrompt = buildSystemPrompt(userId)
+  const systemPrompt = await buildSystemPrompt(userId)
   const mcpServers: Record<string, McpServerConfig> = {
     'jarvis-system': createJarvisTools(userId),
-    ...buildUserMcpServers(userId),
+    ...(await buildUserMcpServers(userId)),
   }
   return withBrainLock(userId, () => rawLlmCall(userId, systemPrompt, prompt, onDelta, mcpServers))
 }
@@ -125,11 +124,11 @@ async function rawLlmCall(userId: string, systemPrompt: string, prompt: string, 
     options: {
       systemPrompt,
       pathToClaudeCodeExecutable: CLAUDE_PATH,
-      cwd: HOME_DIR,
+      cwd: getUserWorkspace(userId),
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       settingSources: [],
-      env: buildUserEnv(userId),
+      env: await buildUserEnv(userId),
       maxTurns: 99999,
       ...(mcpServers && { mcpServers }),
     },
@@ -171,11 +170,11 @@ async function rawLlmCall(userId: string, systemPrompt: string, prompt: string, 
 async function executeSubTask(userId: string, taskId: string, subtaskId: string, description: string, assignee: string, signal: AbortSignal, resumeSession?: string, domain?: string, cwd?: string): Promise<string> {
   if (signal.aborted) throw new Error('任务已取消')
 
-  const recipe = getRecipe(userId, assignee)
+  const recipe = await getRecipe(userId, assignee)
   const agentId = recipe ? recipe.id : `adhoc-${subtaskId.slice(0, 6)}`
 
   if (recipe) {
-    incrementUsage(userId, recipe.id)
+    await incrementUsage(userId, recipe.id)
   }
 
   registerRunningTask(userId, taskId, subtaskId, agentId, description)
@@ -189,7 +188,7 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
       signal,
       resumeSession,
       onProgress: (progress) => {
-        updateSubTask(userId, taskId, subtaskId, { progress })
+        updateSubTask(userId, taskId, subtaskId, { progress }).catch(() => {})
       },
     })
     return result
@@ -204,7 +203,7 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
 
 function executeTaskInBackground(userId: string, taskId: string, subtasks: Array<{ name: string; description: string; assignee?: string; resumeSession?: string; domain?: string; cwd?: string }>) {
   ;(async () => {
-    const task = getTask(userId, taskId)
+    const task = await getTask(userId, taskId)
     if (!task) return
 
     const controller = getOrCreateAbortController(taskId)
@@ -215,26 +214,26 @@ function executeTaskInBackground(userId: string, taskId: string, subtasks: Array
     const cwdMap = new Map<string, string>()
     for (const st of subtasks) {
       const assignee = st.assignee || 'general'
-      const sub = addSubTask(userId, taskId, { name: st.name, description: st.description, assignee, domain: st.domain, cwd: st.cwd })
+      const sub = await addSubTask(userId, taskId, { name: st.name, description: st.description, assignee, domain: st.domain, cwd: st.cwd })
       if (st.resumeSession) {
         resumeMap.set(sub.id, st.resumeSession)
       }
       if (st.domain) domainMap.set(sub.id, st.domain)
       if (st.cwd) cwdMap.set(sub.id, st.cwd)
     }
-    updateTask(userId, taskId, { status: 'executing' })
+    await updateTask(userId, taskId, { status: 'executing' })
 
     let completed = 0
     while (true) {
       if (signal.aborted) break
 
-      const currentTask = getTask(userId, taskId)
+      const currentTask = await getTask(userId, taskId)
       if (currentTask?.status === 'cancelled') {
         controller.abort()
         break
       }
 
-      const runnables = scheduleAllRunnable(userId, taskId)
+      const runnables = await scheduleAllRunnable(userId, taskId)
       if (runnables.length === 0) break
 
       if (runnables.length > 1) {
@@ -250,14 +249,14 @@ function executeTaskInBackground(userId: string, taskId: string, subtasks: Array
       for (let i = 0; i < runnables.length; i++) {
         const r = results[i]
         if (r.status === 'fulfilled') {
-          handleSubTaskComplete(userId, taskId, runnables[i].id, r.value)
+          await handleSubTaskComplete(userId, taskId, runnables[i].id, r.value)
           completed++
           broadcast('progress', `✅ [${completed}/${subtasks.length}] ${runnables[i].name} — 完成`, userId)
-          onTaskCompleted(userId)
+          await onTaskCompleted(userId)
         } else {
           const errMsg = r.reason?.message || 'unknown'
           if (errMsg.includes('取消')) continue
-          handleSubTaskFailed(userId, taskId, runnables[i].id, errMsg)
+          await handleSubTaskFailed(userId, taskId, runnables[i].id, errMsg)
           broadcast('progress', `❌ ${runnables[i].name} — 失败`, userId)
         }
       }
@@ -266,10 +265,10 @@ function executeTaskInBackground(userId: string, taskId: string, subtasks: Array
     taskAbortControllers.delete(taskId)
 
     if (!signal.aborted) {
-      try { evaluatePromotion(userId) } catch {}
+      try { await evaluatePromotion(userId) } catch {}
 
-      checkTaskCompletion(userId, taskId)
-      const finalTask = getTask(userId, taskId)
+      await checkTaskCompletion(userId, taskId)
+      const finalTask = await getTask(userId, taskId)
       if (finalTask?.status === 'completed' && finalTask.result) {
         broadcast('progress', `正在为您整理汇报...`, userId)
 
@@ -285,7 +284,7 @@ function executeTaskInBackground(userId: string, taskId: string, subtasks: Array
         const summary = await withBrainLock(userId, () => rawLlmCall(userId, reportPrompt, '请汇报'))
         const report = summary || finalTask.result
         broadcast('response', report, userId)
-        addToBuffer(userId, 'jarvis', report)
+        await addToBuffer(userId, 'jarvis', report)
       }
     }
   })().catch(err => {
@@ -294,13 +293,18 @@ function executeTaskInBackground(userId: string, taskId: string, subtasks: Array
   })
 }
 
-export async function think(userId: string, userMessage: string, onProgress?: (text: string) => void, onDelta?: (text: string) => void): Promise<string> {
+export interface ThinkResult {
+  response: string
+  artifact?: PendingArtifact
+}
+
+export async function think(userId: string, userMessage: string, onProgress?: (text: string) => void, onDelta?: (text: string) => void): Promise<ThinkResult> {
   const t0 = Date.now()
   debug('think() called:', userMessage.slice(0, 50))
-  addToBuffer(userId, 'user', userMessage)
+  await addToBuffer(userId, 'user', userMessage)
 
-  const taskContext = getTaskSummary(userId)
-  const recipes = listRecipes(userId)
+  const taskContext = await getTaskSummary(userId)
+  const recipes = await listRecipes(userId)
   const teamInfo = recipes.map(r => `- ${r.name} (id: ${r.id}): ${r.description}`).join('\n')
 
   // 从 EverOS 检索相关记忆
@@ -311,7 +315,7 @@ export async function think(userId: string, userMessage: string, onProgress?: (t
   console.log(`[perf] searchMemory: ${Date.now() - t1}ms`)
   debug('memory done, length:', memories.length)
 
-  const recentConvo = getRecentConversation(userId)
+  const recentConvo = await getRecentConversation(userId)
 
   const contextualPrompt = `## 当前任务状态
 ${taskContext}
@@ -349,9 +353,11 @@ ${userMessage}`
   if (!action) {
     const cleaned = llmResponse.replace(/```(?:json)?[\s\S]*?```/g, '').trim()
     const finalResponse = cleaned || llmResponse
-    addToBuffer(userId, 'jarvis', finalResponse)
-    saveConversation(userId, userMessage, finalResponse)
-    return finalResponse
+    const noActionArtifact = consumeArtifact(userId)
+    const artifactId = noActionArtifact ? await saveArtifact(userId, noActionArtifact) : undefined
+    await addToBuffer(userId, 'jarvis', finalResponse, artifactId)
+    await saveConversation(userId, userMessage, finalResponse)
+    return { response: finalResponse, artifact: noActionArtifact || undefined }
   }
 
   let response: string
@@ -363,8 +369,8 @@ ${userMessage}`
         description: string
         subtasks?: Array<{ name: string; description: string; assignee?: string; resumeSession?: string; domain?: string; cwd?: string }>
       }
-      const task = createTask(userId, name, description)
-      updateTask(userId, task.id, { status: 'planning' })
+      const task = await createTask(userId, name, description)
+      await updateTask(userId, task.id, { status: 'planning' })
 
       const preamble = llmResponse.split('```json')[0].trim()
 
@@ -390,19 +396,19 @@ ${userMessage}`
       const { taskId, reason } = action.data as { taskId: string; reason?: string }
 
       if (taskId === 'all') {
-        const activeTasks = listTasks(userId).filter(t => !['completed', 'failed', 'cancelled'].includes(t.status))
+        const activeTasks = (await listTasks(userId)).filter(t => !['completed', 'failed', 'cancelled'].includes(t.status))
         for (const t of activeTasks) {
-          updateTask(userId, t.id, { status: 'cancelled' })
+          await updateTask(userId, t.id, { status: 'cancelled' })
           abortTask(t.id)
         }
         response = `已取消全部 ${activeTasks.length} 个任务，Sir。${reason ? `原因：${reason}` : ''}`
       } else {
-        const task = getTask(userId, taskId)
+        const task = await getTask(userId, taskId)
         if (!task) {
-          const activeTasks = listTasks(userId).filter(t => !['completed', 'failed', 'cancelled'].includes(t.status))
+          const activeTasks = (await listTasks(userId)).filter(t => !['completed', 'failed', 'cancelled'].includes(t.status))
           if (activeTasks.length > 0) {
             for (const t of activeTasks) {
-              updateTask(userId, t.id, { status: 'cancelled' })
+              await updateTask(userId, t.id, { status: 'cancelled' })
               abortTask(t.id)
             }
             response = `已取消全部 ${activeTasks.length} 个活跃任务，Sir。`
@@ -410,7 +416,7 @@ ${userMessage}`
             response = '当前没有可取消的任务，Sir。'
           }
         } else {
-          updateTask(userId, taskId, { status: 'cancelled' })
+          await updateTask(userId, taskId, { status: 'cancelled' })
           abortTask(taskId)
           response = `已取消任务「${task.name}」，Sir。`
         }
@@ -450,10 +456,12 @@ ${userMessage}`
     }
   }
 
-  onMessageHandled(userId)
-  addToBuffer(userId, 'jarvis', response)
-  saveConversation(userId, userMessage, response)
-  return response
+  await onMessageHandled(userId)
+  const artifact = consumeArtifact(userId)
+  const artifactId = artifact ? await saveArtifact(userId, artifact) : undefined
+  await addToBuffer(userId, 'jarvis', response, artifactId)
+  await saveConversation(userId, userMessage, response)
+  return { response, artifact: artifact || undefined }
 }
 
 interface ConversationTurn {
@@ -465,10 +473,12 @@ interface ConversationTurn {
 const MAX_BUFFER_TURNS = 20
 const CONVERSATION_TTL = 4 * 60 * 60 * 1000 // 4小时过期
 
-function getOrCreateSession(userId: string): string {
-  const row = db.prepare(`
-    SELECT id, updated_at FROM user_jarvis_sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1
-  `).get(userId) as any
+async function getOrCreateSession(userId: string): Promise<string> {
+  const { rows } = await pool.query(
+    `SELECT id, updated_at FROM user_jarvis_sessions WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 1`,
+    [userId]
+  )
+  const row = rows[0]
 
   if (row) {
     const lastUpdate = new Date(row.updated_at).getTime()
@@ -479,33 +489,56 @@ function getOrCreateSession(userId: string): string {
 
   const id = randomUUID()
   const now = new Date().toISOString()
-  db.prepare('INSERT INTO user_jarvis_sessions (id, user_id, created_at, updated_at) VALUES (?, ?, ?, ?)').run(id, userId, now, now)
+  await pool.query(
+    'INSERT INTO user_jarvis_sessions (id, user_id, created_at, updated_at) VALUES ($1, $2, $3, $4)',
+    [id, userId, now, now]
+  )
   return id
 }
 
-function addToBuffer(userId: string, role: 'user' | 'jarvis', content: string) {
-  const sessionId = getOrCreateSession(userId)
+async function saveArtifact(userId: string, artifact: PendingArtifact): Promise<string> {
+  const id = randomUUID()
+  await pool.query(
+    'INSERT INTO jarvis_artifacts (id, user_id, type, title, content, language, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+    [id, userId, artifact.type, artifact.title, artifact.content, artifact.language || null, Date.now()]
+  )
+  return id
+}
+
+async function addToBuffer(userId: string, role: 'user' | 'jarvis', content: string, artifactId?: string) {
+  const sessionId = await getOrCreateSession(userId)
   const now = Date.now()
 
-  db.prepare('INSERT INTO user_jarvis_messages (session_id, user_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)').run(sessionId, userId, role, content, now)
-  db.prepare('UPDATE user_jarvis_sessions SET updated_at = ? WHERE id = ?').run(new Date().toISOString(), sessionId)
+  await pool.query(
+    'INSERT INTO user_jarvis_messages (session_id, user_id, role, content, timestamp, artifact_id) VALUES ($1, $2, $3, $4, $5, $6)',
+    [sessionId, userId, role, content, now, artifactId || null]
+  )
+  await pool.query(
+    'UPDATE user_jarvis_sessions SET updated_at = $1 WHERE id = $2',
+    [new Date().toISOString(), sessionId]
+  )
 
   // Keep max N turns per session
-  const count = (db.prepare('SELECT COUNT(*) as cnt FROM user_jarvis_messages WHERE session_id = ?').get(sessionId) as any).cnt
+  const { rows: countRows } = await pool.query(
+    'SELECT COUNT(*) as cnt FROM user_jarvis_messages WHERE session_id = $1',
+    [sessionId]
+  )
+  const count = parseInt(countRows[0].cnt, 10)
   if (count > MAX_BUFFER_TURNS) {
-    db.prepare(`
+    await pool.query(`
       DELETE FROM user_jarvis_messages WHERE id IN (
-        SELECT id FROM user_jarvis_messages WHERE session_id = ? ORDER BY timestamp ASC LIMIT ?
+        SELECT id FROM user_jarvis_messages WHERE session_id = $1 ORDER BY timestamp ASC LIMIT $2
       )
-    `).run(sessionId, count - MAX_BUFFER_TURNS)
+    `, [sessionId, count - MAX_BUFFER_TURNS])
   }
 }
 
-function getRecentConversation(userId: string): string {
-  const sessionId = getOrCreateSession(userId)
-  const rows = db.prepare(`
-    SELECT role, content FROM user_jarvis_messages WHERE session_id = ? ORDER BY timestamp ASC
-  `).all(sessionId) as any[]
+async function getRecentConversation(userId: string): Promise<string> {
+  const sessionId = await getOrCreateSession(userId)
+  const { rows } = await pool.query(
+    `SELECT role, content FROM user_jarvis_messages WHERE session_id = $1 ORDER BY timestamp ASC`,
+    [sessionId]
+  )
 
   if (rows.length === 0) return ''
   // 喂给 LLM 前 redact 敏感 token —— db 里原文保留供用户回看
@@ -514,7 +547,7 @@ function getRecentConversation(userId: string): string {
     .join('\n')
 }
 
-function saveConversation(userId: string, userMessage: string, jarvisResponse: string) {
+async function saveConversation(userId: string, userMessage: string, jarvisResponse: string) {
   const sessionId = `jarvis-${userId}`
   const now = Date.now()
   // 发去 EverOS 长记忆前 redact 敏感 token —— db 聊天表里原文保留

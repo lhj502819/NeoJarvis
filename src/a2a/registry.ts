@@ -23,23 +23,25 @@ export function unregisterRunningTask(subtaskId: string) {
 
 export interface PeerInfo {
   name: string
+  subtaskId: string
   url: string
   task: string
 }
 
-export function getPeerAgents(userId: string, taskId: string, excludeSubtaskId: string): PeerInfo[] {
-  return runningTasks
-    .filter(t => t.taskId === taskId && t.subtaskId !== excludeSubtaskId)
-    .map(t => {
-      const recipe = getRecipe(userId, t.recipeId)
-      const url = getAgentUrl(t.recipeId)
-      return {
-        name: recipe?.name || t.recipeId,
-        url: url || `unknown`,
-        task: t.description,
-      }
+export async function getPeerAgents(userId: string, taskId: string, excludeSubtaskId: string): Promise<PeerInfo[]> {
+  const results: PeerInfo[] = []
+  const filtered = runningTasks.filter(t => t.taskId === taskId && t.subtaskId !== excludeSubtaskId)
+  for (const t of filtered) {
+    const recipe = await getRecipe(userId, t.recipeId)
+    const url = getAgentUrl(t.recipeId)
+    results.push({
+      name: recipe?.name || t.recipeId,
+      subtaskId: t.subtaskId,
+      url: url || '',
+      task: t.description,
     })
-    .filter(p => p.url !== 'unknown')
+  }
+  return results
 }
 
 export function getRunningTasksForAgent(recipeId: string): RunningTask[] {

@@ -5,12 +5,13 @@ export interface ChatEvent {
   content: string
 }
 
-export async function* streamChat(message: string): AsyncGenerator<ChatEvent> {
+export async function* streamChat(message: string, signal?: AbortSignal): AsyncGenerator<ChatEvent> {
   const res = await fetch(`${BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ message }),
+    signal,
   })
 
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -53,4 +54,11 @@ export async function postJSON<T>(path: string, body: Record<string, unknown>): 
     body: JSON.stringify(body),
   })
   return res.json()
+}
+
+export async function fetchArtifact(id: string): Promise<{ type: string; title: string; content: string; language?: string }> {
+  const res = await fetch(`${BASE}/api/artifact/${id}`, { credentials: 'include' })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const data = await res.json()
+  return data
 }

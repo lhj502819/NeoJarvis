@@ -1,11 +1,13 @@
 import Markdown from 'react-markdown'
-import type { Message } from '../api/hooks'
+import remarkGfm from 'remark-gfm'
+import type { Message, MessageArtifact } from '../api/hooks'
 
 interface Props {
   message: Message
+  onArtifactClick?: (artifact: MessageArtifact) => void
 }
 
-export function MessageBubble({ message }: Props) {
+export function MessageBubble({ message, onArtifactClick }: Props) {
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
 
@@ -28,60 +30,69 @@ export function MessageBubble({ message }: Props) {
   }
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
-      {!isUser && (
-        <img
-          src="/jarvis-logo.png"
-          alt="Jarvis"
-          className="w-7 h-7 rounded-full object-cover shrink-0 mt-1 mr-2"
-          style={{ border: '1px solid var(--border)' }}
-        />
-      )}
+    <div style={{ marginBottom: 16, animation: 'msg-fade-in 0.3s ease-out' }}>
       <div
         style={{
-          maxWidth: '75%',
-          padding: '10px 14px',
-          borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-          background: isUser ? 'var(--accent)' : 'var(--bg-subtle)',
+          maxWidth: '100%',
+          padding: '14px 18px',
+          borderRadius: 12,
+          background: isUser ? 'var(--accent)' : 'var(--bg-elevated)',
           color: isUser ? 'var(--text-on-accent)' : 'var(--text)',
+          border: isUser ? 'none' : '1px solid var(--border)',
           fontSize: 14,
           lineHeight: 1.7,
         }}
       >
+        <div style={{
+          fontSize: 10,
+          fontFamily: 'var(--font-mono)',
+          fontWeight: 500,
+          marginBottom: 6,
+          color: isUser ? 'rgba(255,255,255,0.6)' : 'var(--accent)',
+          letterSpacing: '0.05em',
+        }}>
+          {isUser ? 'SIR' : 'JARVIS'}
+        </div>
+
         {message.status === 'thinking' ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: isUser ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)' }}>
             <span className="animate-pulse">●</span>
             <span>思考中...</span>
           </div>
-        ) : message.status === 'streaming' && message.role === 'jarvis' && !message.content.includes('\n') ? (
-          <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>{message.content}</div>
         ) : (
           <div className="markdown-body">
-            <Markdown>{message.content}</Markdown>
+            <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
           </div>
         )}
+
+        {message.artifact && onArtifactClick && (
+          <button
+            onClick={() => onArtifactClick(message.artifact!)}
+            style={{
+              marginTop: 10,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 10px',
+              background: isUser ? 'rgba(255,255,255,0.15)' : 'var(--accent-light)',
+              border: 'none',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontSize: 11,
+              color: isUser ? '#fff' : 'var(--accent)',
+              fontFamily: 'var(--font-mono)',
+              transition: 'opacity 0.15s',
+            }}
+          >
+            {message.artifact.type === 'html' && '🌐'}
+            {message.artifact.type === 'markdown' && '📄'}
+            {message.artifact.type === 'code' && '💻'}
+            {message.artifact.type === 'mermaid' && '📊'}
+            {message.artifact.title}
+            <span style={{ opacity: 0.6 }}>→</span>
+          </button>
+        )}
       </div>
-      {isUser && (
-        <div
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: '50%',
-            background: 'var(--accent-light)',
-            color: 'var(--accent)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 12,
-            fontWeight: 600,
-            flexShrink: 0,
-            marginTop: 4,
-            marginLeft: 8,
-          }}
-        >
-          S
-        </div>
-      )}
     </div>
   )
 }
