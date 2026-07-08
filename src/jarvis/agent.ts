@@ -1,5 +1,6 @@
 import express from 'express'
 import cookieParser from 'cookie-parser'
+import path from 'path'
 import { randomUUID } from 'crypto'
 import type { AgentCard, Message, TaskStatusUpdateEvent } from '@a2a-js/sdk'
 import {
@@ -314,6 +315,16 @@ export function startJarvisServer(): express.Express {
     const conv = await bus.getConversation(req.params.contextId)
     if (!conv) { res.status(404).json({ error: 'not found' }); return }
     res.json(conv)
+  })
+
+  // Serve frontend static files in production
+  const distPath = path.resolve(import.meta.dirname, '../../web/dist')
+  app.use(express.static(distPath))
+  app.get('/{*path}', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/a2a') || req.path.startsWith('/.well-known') || req.path.startsWith('/auth')) {
+      return next()
+    }
+    res.sendFile(path.join(distPath, 'index.html'))
   })
 
   app.listen(config.jarvisPort, () => {

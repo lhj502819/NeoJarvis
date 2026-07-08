@@ -1,0 +1,16 @@
+{
+  "envId": "homework-d8g3o3ljgc5ec3011",
+  "framework": {
+    "name": "jarvis",
+    "plugins": {
+      "client": {
+        "use": "@cloudbase/framework-plugin-website",
+        "inputs": {
+          "outputPath": "web/dist",
+          "buildCommand": "cd web && npm run build",
+          "cloudPath": "/"
+        }
+      }
+    }
+  }
+}

@@ -11,7 +11,7 @@ interface Props {
   onSend: (text: string) => void
 }
 
-export function ChatPanel({ messages, isLoading, onSend }: Props) {
+export function ChatPanel({ messages, onSend }: Props) {
   const [input, setInput] = useState('')
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)

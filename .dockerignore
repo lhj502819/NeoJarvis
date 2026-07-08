@@ -1,0 +1,8 @@
+node_modules
+web/node_modules
+web/src
+designs
+.git
+.claude
+.agents
+*.md
