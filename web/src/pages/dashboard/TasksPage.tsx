@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { usePolling } from '../../api/hooks'
 import type { Task } from './types'
+import { TaskDetail } from './components/TaskDetail'
 
 function TaskRow({ task, onClick }: { task: Task; onClick: () => void }) {
   return (
@@ -24,13 +25,7 @@ export function TasksPage() {
   const tasks = tasksData?.tasks || []
 
   if (selectedTaskId) {
-    // Task 9 会替换成 <TaskDetail taskId={selectedTaskId} onBack={...} />
-    return (
-      <div>
-        <button className="dash-back-btn" onClick={() => setSelectedTaskId(null)}>← 返回任务</button>
-        <div className="dash-section-title">任务详情（待 Task 9 实现）: {selectedTaskId}</div>
-      </div>
-    )
+    return <TaskDetail taskId={selectedTaskId} onBack={() => setSelectedTaskId(null)} />
   }
 
   const active = tasks.filter(t => !['completed', 'failed', 'cancelled'].includes(t.status))

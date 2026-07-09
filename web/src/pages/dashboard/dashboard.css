@@ -455,3 +455,23 @@
 .dash-task-row-main { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .dash-task-row-foot { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-top: 8px; }
 .dash-task-id-mono { font-family: var(--font-mono, monospace); }
+
+/* ═══ 任务详情钻取 ═══ */
+.dash-detail-head { display: flex; justify-content: space-between; align-items: center; }
+.dash-detail-id { font-size: 11px; color: var(--text-muted); margin-bottom: 14px; }
+.dash-detail-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+.dash-detail-stat { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; padding: 12px; text-align: center; }
+.dash-detail-stat b { display: block; font-size: 17px; color: var(--accent); }
+.dash-detail-stat span { font-size: 11px; color: var(--text-muted); }
+.dash-subtask-tree-head { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+.dash-subtask-tree-meta { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.dash-accent-text { color: var(--accent); }
+.dash-turns { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
+.dash-turn { display: flex; gap: 8px; font-size: 12px; padding: 3px 0; color: var(--text-secondary); }
+.dash-turn-idx { color: var(--accent); flex-shrink: 0; font-family: var(--font-mono, monospace); }
+.dash-conv-msg { display: flex; gap: 8px; padding: 6px 10px; border-radius: 8px; margin-bottom: 6px; font-size: 12px; }
+.dash-conv-msg.from-jarvis { background: var(--accent-light); }
+.dash-conv-msg.from-agent { background: var(--bg-subtle); }
+.dash-conv-who { font-weight: 600; flex-shrink: 0; }
+.dash-result-box { white-space: pre-wrap; font-size: 13px; line-height: 1.6; }
+.dash-skeleton { padding: 20px; color: var(--text-muted); }
