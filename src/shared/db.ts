@@ -7,7 +7,12 @@ const pool = new Pool({
 })
 
 export async function initDb() {
-  await pool.query(`
+  // 用 advisory lock 序列化 DDL——多 worker/进程并发启动时,
+  // ALTER TABLE ADD COLUMN 取排他锁,并发执行会因锁顺序冲突死锁。
+  const client = await pool.connect()
+  try {
+    await client.query('SELECT pg_advisory_lock($1)', [918273])
+    await client.query(`
 -- ═══ 用户表 ═══
 CREATE TABLE IF NOT EXISTS jarvis_users (
   id TEXT PRIMARY KEY,
@@ -210,6 +215,10 @@ ALTER TABLE jarvis_subtasks ADD COLUMN IF NOT EXISTS retry_count INTEGER;
 ALTER TABLE jarvis_subtasks ADD COLUMN IF NOT EXISTS tokens_input INTEGER;
 ALTER TABLE jarvis_subtasks ADD COLUMN IF NOT EXISTS tokens_output INTEGER;
   `)
+  } finally {
+    await client.query('SELECT pg_advisory_unlock($1)', [918273]).catch(() => {})
+    client.release()
+  }
 }
 
 export default pool

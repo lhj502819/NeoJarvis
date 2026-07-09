@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
-import type { Task, SubTask, SubTaskTurn, TaskStatus, SubTaskStatus } from '../shared/types.js'
+import type { Task, SubTask, SubTaskTurn, TaskDetail, TaskStatus, SubTaskStatus } from '../shared/types.js'
 import pool from '../shared/db.js'
+import { bus } from '../a2a/bus.js'
 
 function rowToSubTask(row: any): SubTask {
   return {
@@ -247,4 +248,27 @@ export async function getSubtaskTurns(subtaskId: string): Promise<SubTaskTurn[]>
     endedAt: r.ended_at || undefined,
     createdAt: r.created_at,
   }))
+}
+
+export async function getTaskDetail(userId: string, taskId: string): Promise<TaskDetail | undefined> {
+  const task = await getTask(userId, taskId)
+  if (!task) return undefined
+
+  const turnsBySubtask: Record<string, SubTaskTurn[]> = {}
+  for (const st of task.subtasks) {
+    turnsBySubtask[st.id] = await getSubtaskTurns(st.id)
+  }
+
+  const conv = await bus.getConversation(taskId)
+  const conversation = conv ? {
+    contextId: conv.contextId,
+    participants: conv.participants,
+    messages: conv.messages.map(m => ({
+      id: m.id, from: m.from, to: m.to, role: m.role,
+      parts: m.parts.map(p => ({ kind: p.kind, text: p.text })),
+      timestamp: m.timestamp,
+    })),
+  } : null
+
+  return { task, turnsBySubtask, conversation }
 }

@@ -66,6 +66,16 @@ export interface SubTaskTurn {
   createdAt: string
 }
 
+export interface TaskDetail {
+  task: Task
+  turnsBySubtask: Record<string, SubTaskTurn[]>
+  conversation: {
+    contextId: string
+    participants: string[]
+    messages: Array<{ id: string; from: string; to: string; role: string; parts: Array<{ kind: string; text?: string }>; timestamp: string }>
+  } | null
+}
+
 // ─── Agent Recipe Types ───
 
 export interface AgentRecipe {
