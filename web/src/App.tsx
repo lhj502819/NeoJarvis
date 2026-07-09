@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Header } from './components/Header'
 import { ChatPanel } from './components/ChatPanel'
 import { LoginPage } from './components/LoginPage'
-import { DashboardPage } from './pages/DashboardPage'
+import { DashboardPage } from './pages/dashboard/DashboardPage'
 import { LandingPage } from './pages/LandingPage'
 import { useChat, useSSE } from './api/hooks'
 import { checkAuth, logout, type AuthUser } from './api/auth'
@@ -50,16 +50,18 @@ function App() {
 }
 
 function ChatView({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
-  const { messages, isLoading, send, pushJarvisMessage } = useChat()
+  const { messages, isLoading, send, applyLiveEvent } = useChat()
   const { connected, events } = useSSE('/events')
+  const processedRef = useRef(0)
 
   useEffect(() => {
-    if (events.length === 0) return
-    const latest = events[events.length - 1]
-    if (latest.type === 'response') {
-      pushJarvisMessage(latest.content)
+    // 只处理新增的 /events 事件(events 是累积数组),交给 applyLiveEvent
+    // 驱动刷新恢复后的进行中气泡;发起方会在 applyLiveEvent 内部忽略。
+    for (let i = processedRef.current; i < events.length; i++) {
+      applyLiveEvent(events[i])
     }
-  }, [events, pushJarvisMessage])
+    processedRef.current = events.length
+  }, [events, applyLiveEvent])
 
   return (
     <div className="h-screen flex flex-col">
