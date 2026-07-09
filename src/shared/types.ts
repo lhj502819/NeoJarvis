@@ -47,8 +47,23 @@ export interface SubTask {
   error?: string
   blockedReason?: string
   dependsOn?: string[]
+  startedAt?: string
+  turnCount?: number
+  retryCount?: number
+  tokensInput?: number
+  tokensOutput?: number
   createdAt: string
   updatedAt: string
+}
+
+export interface SubTaskTurn {
+  id: string
+  subtaskId: string
+  turnIndex: number
+  text: string
+  startedAt: string
+  endedAt?: string
+  createdAt: string
 }
 
 // ─── Agent Recipe Types ───

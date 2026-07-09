@@ -190,6 +190,25 @@ CREATE TABLE IF NOT EXISTS jarvis_user_mcp_servers (
   updated_at TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_jarvis_user_mcp_name ON jarvis_user_mcp_servers(user_id, name);
+
+-- ═══ 子任务执行回合表（完整轨迹） ═══
+CREATE TABLE IF NOT EXISTS jarvis_subtask_turns (
+  id TEXT PRIMARY KEY,
+  subtask_id TEXT NOT NULL,
+  turn_index INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_subtask_turns_subtask ON jarvis_subtask_turns(subtask_id, turn_index);
+
+-- ═══ 子任务执行元信息（在已有表上补列） ═══
+ALTER TABLE jarvis_subtasks ADD COLUMN IF NOT EXISTS started_at TEXT;
+ALTER TABLE jarvis_subtasks ADD COLUMN IF NOT EXISTS turn_count INTEGER;
+ALTER TABLE jarvis_subtasks ADD COLUMN IF NOT EXISTS retry_count INTEGER;
+ALTER TABLE jarvis_subtasks ADD COLUMN IF NOT EXISTS tokens_input INTEGER;
+ALTER TABLE jarvis_subtasks ADD COLUMN IF NOT EXISTS tokens_output INTEGER;
   `)
 }
 
