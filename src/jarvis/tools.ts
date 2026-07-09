@@ -4,8 +4,7 @@ import { listRecipes, createRecipe } from '../team/registry.js'
 import { listTasks, getTask } from '../task/manager.js'
 import { listAgentSessions, getSessionsByDomain } from '../a2a/history.js'
 import { addMcpServer, listMcpServers, removeMcpServer } from '../auth/mcp-servers.js'
-import pool from '../shared/db.js'
-import { getAdhocAgent, markAdhocPromoted } from '../a2a/adhoc.js'
+import { getAdhocAgent, markAdhocPromoted, listAdhocAgents } from '../a2a/adhoc.js'
 import { buildDomainExpertPrompt, buildExpertDescription, dominantCwd, type DomainCluster } from '../team/promoter.js'
 import { broadcast } from './sse.js'
 
@@ -116,25 +115,21 @@ export function createJarvisTools(userId: string) {
         }
       ),
 
-      tool('get_team_stats', '查看团队统计：各领域执行次数、已转正/待转正情况', {},
+      tool('get_team_stats', '查看团队统计:正式小弟、临时工(按领域聚合的待转正候选)、各领域活跃度', {},
         async () => {
           const recipes = await listRecipes(userId)
           const persistent = recipes.filter(r => r.persistent)
-          const temporary = recipes.filter(r => !r.persistent)
-
-          const { rows: domainStats } = await pool.query(`
-            SELECT domain, COUNT(*) as task_count
-            FROM jarvis_claude_sessions
-            WHERE user_id = $1 AND domain != ''
-            GROUP BY domain
-            ORDER BY task_count DESC
-          `, [userId])
+          const adhocs = await listAdhocAgents(userId)  // 仅 promoted=0
 
           const stats = {
-            totalMembers: recipes.length,
+            totalMembers: persistent.length,
             persistent: persistent.map(r => ({ name: r.name, domain: r.context?.domain || '', usageCount: r.usageCount })),
-            temporary: temporary.map(r => ({ name: r.name, domain: r.context?.domain || '', usageCount: r.usageCount, needForPromotion: Math.max(0, 3 - r.usageCount) })),
-            domainActivity: domainStats,
+            adhocCandidates: adhocs.map(a => ({
+              domain: a.domain,
+              taskCount: a.taskCount,
+              readyToPromote: a.taskCount >= 3,
+              lastTask: a.lastTaskDescription.slice(0, 60),
+            })),
           }
           return { content: [{ type: 'text' as const, text: JSON.stringify(stats, null, 2) }] }
         }

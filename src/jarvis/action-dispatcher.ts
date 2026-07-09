@@ -3,7 +3,6 @@ import { scheduleAllRunnable, handleSubTaskComplete, handleSubTaskFailed, checkT
 import { listRecipes, getRecipe, incrementUsage } from '../team/registry.js'
 import { dispatchToAgent, interruptAgent } from '../a2a/client.js'
 import { registerRunningTask, unregisterRunningTask } from '../a2a/registry.js'
-import { evaluatePromotion } from '../team/promoter.js'
 import { bus } from '../a2a/bus.js'
 import { broadcast } from './sse.js'
 import { consumeArtifact } from './tools.js'
@@ -159,8 +158,6 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
     taskAbortControllers.delete(taskId)
 
     if (!signal.aborted) {
-      try { await evaluatePromotion(userId) } catch {}
-
       await checkTaskCompletion(userId, taskId)
       const finalTask = await getTask(userId, taskId)
       if (finalTask?.status === 'completed' && finalTask.result) {
