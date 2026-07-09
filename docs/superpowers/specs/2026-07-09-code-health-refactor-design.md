@@ -128,6 +128,7 @@ export function createAppContext(): AppContext
 ## 执行顺序
 
 ```
+Phase 0: 前后端代码分离为独立 package
 Phase 1: 测试基建 + parseAction 测试
          （先有测试保护，再动手拆）
 Phase 2: 提取 sse.ts，消除循环依赖
@@ -139,11 +140,34 @@ Phase 5: 全局状态渐进收拢
 
 每个 Phase 独立可交付、可 commit。Phase 之间不存在"做到一半不能用"的中间态。
 
+### Phase 0: 前后端分离
+
+当前结构 `src/`（后端）和 `web/`（前端）共用根 package.json 的部分配置，部署和开发时容易互相干扰。分离为独立 package：
+
+```
+jarvis/
+  packages/
+    server/           — 后端（原 src/）
+      package.json    — express, pg, claude-agent-sdk 等后端依赖
+      tsconfig.json
+      src/
+    web/              — 前端（原 web/）
+      package.json    — react, vite 等前端依赖（已有，保持）
+      tsconfig.json
+      src/
+  package.json        — workspace root（pnpm workspace 或 npm workspaces）
+  pnpm-workspace.yaml
+```
+
+**关键原则**：
+- 前后端零共享代码（类型定义如需共享，提取 `packages/shared/` 放接口类型）
+- 各自独立 `npm run dev` / `npm run build`
+- 根目录 `npm run dev` 同时启动两者（turbo 或 concurrently）
+
 ## 不动的东西
 
 - 产品行为、用户可见 API 不变
 - 数据库 schema 不变
-- 前端代码不变
 - A2A 协议端点不变
 - prompt.ts 和 DB migration 留到后续迭代
 
