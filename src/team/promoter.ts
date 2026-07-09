@@ -95,13 +95,13 @@ export function dominantCwd(cluster: DomainCluster): string {
   return best
 }
 
-function buildExpertDescription(domain: string, cwd: string): string {
+export function buildExpertDescription(domain: string, cwd: string): string {
   return cwd
     ? `负责「${domain}」领域的所有任务，主战场在 ${cwd}`
     : `负责「${domain}」领域的所有任务`
 }
 
-function buildDomainExpertPrompt(domain: string, cwd: string, cluster: DomainCluster): string {
+export function buildDomainExpertPrompt(domain: string, cwd: string, cluster: DomainCluster): string {
   const taskExamples = cluster.sessions
     .slice(-5)
     .map(s => `- ${s.lastTaskDescription.slice(0, 100)}`)

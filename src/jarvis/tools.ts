@@ -1,10 +1,13 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
-import { listRecipes } from '../team/registry.js'
+import { listRecipes, createRecipe } from '../team/registry.js'
 import { listTasks, getTask } from '../task/manager.js'
 import { listAgentSessions, getSessionsByDomain } from '../a2a/history.js'
 import { addMcpServer, listMcpServers, removeMcpServer } from '../auth/mcp-servers.js'
 import pool from '../shared/db.js'
+import { getAdhocAgent, markAdhocPromoted } from '../a2a/adhoc.js'
+import { buildDomainExpertPrompt, buildExpertDescription, dominantCwd, type DomainCluster } from '../team/promoter.js'
+import { broadcast } from './sse.js'
 
 export interface PendingArtifact {
   type: 'html' | 'markdown' | 'code' | 'mermaid'
@@ -19,6 +22,35 @@ export function consumeArtifact(userId: string): PendingArtifact | null {
   const artifact = pendingArtifacts.get(userId) || null
   pendingArtifacts.delete(userId)
   return artifact
+}
+
+export async function promoteAdhocToRecipe(userId: string, domain: string): Promise<{ ok: boolean; message: string }> {
+  const adhoc = await getAdhocAgent(userId, domain)
+  if (!adhoc) return { ok: false, message: `「${domain}」领域暂无临时工记录,无法转正。` }
+  if (adhoc.promoted) return { ok: false, message: `「${domain}」领域已有正式小弟。` }
+
+  const sessions = await getSessionsByDomain(userId, domain)
+  const cluster: DomainCluster = {
+    sessions,
+    taskCount: adhoc.taskCount,
+    topics: adhoc.topics,
+  }
+  const cwd = adhoc.cwd || dominantCwd(cluster)
+
+  await createRecipe(userId, {
+    name: `${domain}专家`,
+    description: buildExpertDescription(domain, cwd),
+    systemPrompt: buildDomainExpertPrompt(domain, cwd, cluster),
+    tools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch'],
+    skills: [],
+    context: cwd ? { domain, cwd } : { domain },
+    persistent: true,
+  })
+  await markAdhocPromoted(userId, domain)
+
+  const where = cwd ? `(主战场:${cwd})` : ''
+  broadcast('progress', `🎓 新小弟入队:「${domain}专家」${where} — 由 Sir 拍板转正`, userId)
+  return { ok: true, message: `已把「${domain}」临时工转正为正式小弟「${domain}专家」。` }
 }
 
 export function createJarvisTools(userId: string) {
@@ -105,6 +137,14 @@ export function createJarvisTools(userId: string) {
             domainActivity: domainStats,
           }
           return { content: [{ type: 'text' as const, text: JSON.stringify(stats, null, 2) }] }
+        }
+      ),
+
+      tool('promote_agent', '把某个领域的临时工转正为正式小弟(persistent 专家)。仅在用户确认转正后调用。',
+        { domain: z.string().describe('要转正的领域名,如"技术调研"') },
+        async (args) => {
+          const res = await promoteAdhocToRecipe(userId, args.domain)
+          return { content: [{ type: 'text' as const, text: res.message }] }
         }
       ),
 
