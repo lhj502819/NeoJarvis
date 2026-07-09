@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import type { Task, SubTask, TaskStatus, SubTaskStatus } from '../shared/types.js'
+import type { Task, SubTask, SubTaskTurn, TaskStatus, SubTaskStatus } from '../shared/types.js'
 import pool from '../shared/db.js'
 
 function rowToSubTask(row: any): SubTask {
@@ -17,6 +17,11 @@ function rowToSubTask(row: any): SubTask {
     error: row.error || undefined,
     blockedReason: row.blocked_reason || undefined,
     dependsOn: row.depends_on ? JSON.parse(row.depends_on) : undefined,
+    startedAt: row.started_at || undefined,
+    turnCount: row.turn_count ?? undefined,
+    retryCount: row.retry_count ?? undefined,
+    tokensInput: row.tokens_input ?? undefined,
+    tokensOutput: row.tokens_output ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -199,9 +204,47 @@ export async function getTaskSummary(userId: string): Promise<string> {
     .filter(t => !['completed', 'failed', 'cancelled'].includes(t.status))
     .map(t => {
       const subtaskLines = t.subtasks
-        .map(st => `  - ${st.name} [${st.status}]${st.progress ? ` ${st.progress}` : ''}`)
+        .map(st => {
+          // 运行中的子任务可通信(已注册到 bus),暴露 subtaskId 供 send_message/interrupt_agent 使用
+          const canMessage = st.status === 'running' || st.status === 'input-required'
+          const idPart = canMessage ? ` (subtaskId: ${st.id})` : ''
+          return `  - ${st.name} [${st.status}]${idPart}${st.progress ? ` ${st.progress}` : ''}`
+        })
         .join('\n')
       return `[${t.status}] ${t.name} (id: ${t.id})\n  ${t.description}\n${subtaskLines}`
     })
     .join('\n\n') || '当前没有活跃任务。'
+}
+
+export async function setSubtaskStarted(subtaskId: string, startedAt: string): Promise<void> {
+  await pool.query('UPDATE jarvis_subtasks SET started_at = $1 WHERE id = $2', [startedAt, subtaskId])
+}
+
+export async function recordTurn(subtaskId: string, turnIndex: number, text: string, startedAt: string, endedAt: string): Promise<void> {
+  const id = randomUUID().slice(0, 12)
+  await pool.query(
+    `INSERT INTO jarvis_subtask_turns (id, subtask_id, turn_index, text, started_at, ended_at, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [id, subtaskId, turnIndex, text, startedAt, endedAt, new Date().toISOString()]
+  )
+}
+
+export async function finalizeSubtaskMeta(subtaskId: string, meta: { turnCount: number; retryCount: number; tokensInput: number; tokensOutput: number }): Promise<void> {
+  await pool.query(
+    `UPDATE jarvis_subtasks SET turn_count = $1, retry_count = $2, tokens_input = $3, tokens_output = $4 WHERE id = $5`,
+    [meta.turnCount, meta.retryCount, meta.tokensInput, meta.tokensOutput, subtaskId]
+  )
+}
+
+export async function getSubtaskTurns(subtaskId: string): Promise<SubTaskTurn[]> {
+  const { rows } = await pool.query('SELECT * FROM jarvis_subtask_turns WHERE subtask_id = $1 ORDER BY turn_index ASC', [subtaskId])
+  return rows.map(r => ({
+    id: r.id,
+    subtaskId: r.subtask_id,
+    turnIndex: r.turn_index,
+    text: r.text,
+    startedAt: r.started_at,
+    endedAt: r.ended_at || undefined,
+    createdAt: r.created_at,
+  }))
 }
