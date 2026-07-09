@@ -89,7 +89,7 @@ export async function getSessionsByDomain(userId: string, domain: string): Promi
   return rows.map(rowToSession)
 }
 
-function extractKeywords(text: string): string[] {
+export function extractKeywords(text: string): string[] {
   const stopWords = new Set(['的', '了', '和', '与', '是', '在', '对', '将', '把', '被', '用', '让',
     'the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'for', 'is', 'on', 'that', 'this',
     '帮我', '调研', '查', '搜索', '分析', '总结', '对比', '一下', '什么', '哪些', '怎么'])
