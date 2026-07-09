@@ -101,3 +101,33 @@ export function extractKeywords(text: string): string[] {
     .filter(w => w.length >= 2 && !stopWords.has(w))
     .slice(0, 10)
 }
+
+/**
+ * 按 domain + 关键词重叠为临时工匹配可复用的历史 session。
+ * 只返回真实 UUID sessionId(auto- 兜底 ID 无法 resume,排除)。
+ * 打分 = 关键词重叠数 / 查询关键词数,≥0.3 命中,取最高分。
+ */
+export async function findMatchingSessionByDomain(userId: string, domain: string, description: string): Promise<string | undefined> {
+  if (!domain) return undefined
+  const keywords = extractKeywords(description)
+  if (keywords.length === 0) return undefined
+
+  const { rows } = await pool.query(
+    `SELECT * FROM jarvis_claude_sessions WHERE user_id = $1 AND domain = $2 AND session_id NOT LIKE 'auto-%' ORDER BY completed_at DESC`,
+    [userId, domain]
+  )
+  if (rows.length === 0) return undefined
+
+  let best: string | undefined
+  let bestScore = 0
+  for (const row of rows) {
+    const topics: string[] = JSON.parse(row.topics)
+    const overlap = keywords.filter(k => topics.some(t => t.includes(k) || k.includes(t)))
+    const score = overlap.length / keywords.length
+    if (score > bestScore && score >= 0.3) {
+      bestScore = score
+      best = row.session_id
+    }
+  }
+  return best
+}
