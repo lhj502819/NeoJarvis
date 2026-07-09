@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import { buildSystemPrompt } from './prompt.js'
 
-const SKILLS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'skills')
+const JARVIS_PLUGIN_DIR = join(dirname(fileURLToPath(import.meta.url)), 'plugins', 'jarvis')
 import { createJarvisTools } from './tools.js'
 import { broadcast } from './sse.js'
 import { buildUserEnv } from '../shared/user-env.js'
@@ -52,8 +52,8 @@ export async function rawLlmCall(userId: string, systemPrompt: string, prompt: s
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       settingSources: [],
-      plugins: [{ type: 'local', path: SKILLS_DIR }],
-      skills: 'all',
+      plugins: [{ type: 'local', path: JARVIS_PLUGIN_DIR }],
+      skills: ['promote-agent'],
       env: await buildUserEnv(userId),
       maxTurns: 99999,
       includePartialMessages: true,

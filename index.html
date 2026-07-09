@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>李明 · 个人主页</title>
+<style>
+  /* ---------- 设计变量 ---------- */
+  :root {
+    --bg: #061420;
+    --bg-soft: #0a1e2e;
+    --card: #0f2739;
+    --card-hover: #143348;
+    --border: #1d3c53;
+    --text: #e6f1f7;
+    --text-soft: #9db5c6;
+    --text-dim: #5e7688;
+    --accent: #22b8cf;
+    --accent-2: #1e7fc4;
+    --accent-glow: rgba(34, 184, 207, 0.35);
+    --gradient: linear-gradient(135deg, #1e7fc4 0%, #22c9d6 100%);
+    --radius: 16px;
+    --shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+    --nav-h: 68px;
+    --maxw: 1080px;
+  }
+
+  /* ---------- 基础重置 ---------- */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; scroll-padding-top: var(--nav-h); }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* 背景光晕装饰 */
+  body::before {
+    content: "";
+    position: fixed;
+    top: -30%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 900px;
+    height: 900px;
+    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 60%);
+    filter: blur(20px);
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.6;
+  }
+
+  a { color: inherit; text-decoration: none; }
+
+  .container {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 24px;
+    position: relative;
+    z-index: 1;
+  }
+
+  section { padding: 96px 0; position: relative; z-index: 1; }
+
+  .section-title {
+    font-size: clamp(1.6rem, 3vw, 2.2rem);
+    font-weight: 700;
+    margin-bottom: 12px;
+    letter-spacing: -0.02em;
+  }
+
+  .section-sub {
+    color: var(--text-soft);
+    margin-bottom: 48px;
+    font-size: 1.02rem;
+  }
+
+  .accent-bar {
+    display: inline-block;
+    width: 44px;
+    height: 4px;
+    border-radius: 4px;
+    background: var(--gradient);
+    margin-bottom: 20px;
+  }
+
+  /* ---------- 导航栏 ---------- */
+  header {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: var(--nav-h);
+    display: flex;
+    align-items: center;
+    background: rgba(15, 17, 23, 0.72);
+    backdrop-filter: saturate(180%) blur(16px);
+    -webkit-backdrop-filter: saturate(180%) blur(16px);
+    border-bottom: 1px solid transparent;
+    z-index: 100;
+    transition: border-color .3s ease, background .3s ease;
+  }
+  header.scrolled { border-bottom-color: var(--border); }
+
+  .nav {
+    width: 100%;
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .logo {
+    font-weight: 800;
+    font-size: 1.2rem;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .logo .dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--gradient);
+    box-shadow: 0 0 12px var(--accent-glow);
+  }
+
+  .nav-links { display: flex; gap: 6px; list-style: none; }
+  .nav-links a {
+    padding: 8px 16px;
+    border-radius: 10px;
+    color: var(--text-soft);
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: color .2s ease, background .2s ease;
+  }
+  .nav-links a:hover { color: var(--text); background: var(--bg-soft); }
+
+  .nav-toggle {
+    display: none;
+    flex-direction: column;
+    gap: 5px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+  }
+  .nav-toggle span {
+    width: 24px; height: 2px;
+    background: var(--text);
+    border-radius: 2px;
+    transition: .3s;
+  }
+
+  /* ---------- Hero / 个人简介 ---------- */
+  #hero {
+    padding-top: calc(var(--nav-h) + 90px);
+    padding-bottom: 90px;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 56px;
+    align-items: center;
+  }
+
+  .avatar {
+    width: 200px; height: 200px;
+    border-radius: 50%;
+    background: var(--gradient);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 4.4rem;
+    font-weight: 700;
+    color: #fff;
+    position: relative;
+    box-shadow: 0 0 0 6px rgba(34,184,207,0.12), var(--shadow);
+    transition: transform .4s cubic-bezier(.2,.8,.2,1);
+  }
+  .avatar:hover { transform: scale(1.04) rotate(-2deg); }
+  .avatar::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 2px dashed rgba(34,201,214,0.4);
+    animation: spin 18s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .hero-text .eyebrow {
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 0.82rem;
+    margin-bottom: 14px;
+  }
+  .hero-text h1 {
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin-bottom: 16px;
+  }
+  .hero-text h1 .grad {
+    background: var(--gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .tagline {
+    font-size: 1.25rem;
+    color: var(--text);
+    font-weight: 600;
+    margin-bottom: 18px;
+  }
+  .bio {
+    color: var(--text-soft);
+    font-size: 1.05rem;
+    max-width: 560px;
+    margin-bottom: 30px;
+  }
+
+  .hero-actions { display: flex; gap: 14px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 0.98rem;
+    cursor: pointer;
+    transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
+    border: 1px solid transparent;
+  }
+  .btn-primary {
+    background: var(--gradient);
+    color: #fff;
+    box-shadow: 0 6px 20px var(--accent-glow);
+  }
+  .btn-primary:hover { transform: translateY(-3px); box-shadow: 0 12px 28px var(--accent-glow); }
+  .btn-ghost {
+    background: var(--card);
+    color: var(--text);
+    border-color: var(--border);
+  }
+  .btn-ghost:hover { background: var(--card-hover); transform: translateY(-3px); }
+
+  /* ---------- 项目区块 ---------- */
+  #projects { background: var(--bg-soft); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 24px;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+    position: relative;
+    overflow: hidden;
+    transition: transform .3s ease, border-color .3s ease, box-shadow .3s ease;
+  }
+  .card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--gradient);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .35s ease;
+  }
+  .card:hover {
+    transform: translateY(-6px);
+    border-color: transparent;
+    box-shadow: var(--shadow);
+  }
+  .card:hover::before { transform: scaleX(1); }
+
+  .card-icon {
+    width: 52px; height: 52px;
+    border-radius: 14px;
+    background: rgba(34,184,207,0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    margin-bottom: 20px;
+  }
+  .card h3 { font-size: 1.25rem; font-weight: 700; margin-bottom: 10px; }
+  .card p { color: var(--text-soft); font-size: 0.96rem; margin-bottom: 20px; }
+
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+  .tag {
+    font-size: 0.78rem;
+    color: var(--text-soft);
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    padding: 4px 12px;
+    border-radius: 20px;
+  }
+
+  .card-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: gap .2s ease;
+  }
+  .card-link:hover { gap: 12px; }
+  .card-link svg { transition: transform .2s ease; }
+
+  /* ---------- 联系方式 ---------- */
+  #contact { text-align: center; }
+  .contact-lead {
+    max-width: 560px;
+    margin: 0 auto 44px;
+    color: var(--text-soft);
+    font-size: 1.08rem;
+  }
+  .contact-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 18px;
+  }
+  .contact-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 26px;
+    min-width: 220px;
+    transition: transform .25s ease, border-color .25s ease, background .25s ease;
+  }
+  .contact-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--accent);
+    background: var(--card-hover);
+  }
+  .contact-card .ic {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    background: rgba(34,184,207,0.12);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  .contact-card .meta { text-align: left; }
+  .contact-card .meta .label { font-size: 0.78rem; color: var(--text-dim); }
+  .contact-card .meta .value { font-weight: 600; font-size: 0.98rem; }
+
+  /* ---------- 页脚 ---------- */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 0;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ---------- 入场动画 ---------- */
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity .7s ease, transform .7s ease;
+  }
+  .reveal.visible { opacity: 1; transform: none; }
+
+  /* ---------- 响应式 ---------- */
+  @media (max-width: 860px) {
+    .hero-grid { grid-template-columns: 1fr; text-align: center; gap: 32px; justify-items: center; }
+    .bio { margin-left: auto; margin-right: auto; }
+    .hero-actions { justify-content: center; }
+    .avatar { width: 160px; height: 160px; font-size: 3.4rem; }
+  }
+
+  @media (max-width: 680px) {
+    section { padding: 72px 0; }
+    #hero { padding-top: calc(var(--nav-h) + 56px); }
+    .nav-links {
+      position: fixed;
+      top: var(--nav-h); left: 0; right: 0;
+      flex-direction: column;
+      gap: 0;
+      background: rgba(15,17,23,0.97);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px 20px;
+      transform: translateY(-140%);
+      transition: transform .35s cubic-bezier(.2,.8,.2,1);
+    }
+    .nav-links.open { transform: translateY(0); }
+    .nav-links a { display: block; padding: 12px 16px; border-radius: 10px; }
+    .nav-toggle { display: flex; }
+    .contact-card { min-width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- ===== 导航栏 ===== -->
+  <header id="topbar">
+    <nav class="nav">
+      <a href="#hero" class="logo"><span class="dot"></span>李明.dev</a>
+      <ul class="nav-links" id="navLinks">
+        <li><a href="#hero">首页</a></li>
+        <li><a href="#projects">项目</a></li>
+        <li><a href="#contact">联系</a></li>
+      </ul>
+      <button class="nav-toggle" id="navToggle" aria-label="菜单">
+        <span></span><span></span><span></span>
+      </button>
+    </nav>
+  </header>
+
+  <!-- ===== 个人简介 ===== -->
+  <section id="hero">
+    <div class="container">
+      <div class="hero-grid">
+        <div class="avatar reveal">李</div>
+        <div class="hero-text reveal">
+          <p class="eyebrow">👋 你好，欢迎来到我的空间</p>
+          <h1>我是 <span class="grad">李明</span></h1>
+          <p class="tagline">全栈工程师 · 开源爱好者 · 用代码构建美好</p>
+          <p class="bio">
+            我专注于打造优雅、高性能的 Web 应用与开发者工具。热爱将复杂的问题拆解为简洁的解决方案，
+            相信好的产品来自对细节的执着。工作之余喜欢写技术博客、参与开源，并探索 AI 与工程的结合。
+          </p>
+          <div class="hero-actions">
+            <a href="#projects" class="btn btn-primary">查看我的项目 →</a>
+            <a href="#contact" class="btn btn-ghost">联系我</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 项目列表 ===== -->
+  <section id="projects">
+    <div class="container">
+      <span class="accent-bar reveal"></span>
+      <h2 class="section-title reveal">精选项目</h2>
+      <p class="section-sub reveal">一些我引以为豪、亲手打磨的作品。</p>
+
+      <div class="grid">
+        <!-- 项目 1 -->
+        <article class="card reveal">
+          <div class="card-icon">🚀</div>
+          <h3>Nova 设计系统</h3>
+          <p>一套开箱即用的组件库，帮助团队快速构建一致、无障碍的界面，已被 20+ 内部项目采用。</p>
+          <div class="tags">
+            <span class="tag">React</span><span class="tag">TypeScript</span><span class="tag">Design</span>
+          </div>
+          <a href="#" class="card-link">查看项目
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </article>
+
+        <!-- 项目 2 -->
+        <article class="card reveal">
+          <div class="card-icon">⚡</div>
+          <h3>Flux 实时协作平台</h3>
+          <p>基于 WebSocket 与 CRDT 的多人实时协作编辑器，毫秒级同步，支持离线编辑与冲突自动合并。</p>
+          <div class="tags">
+            <span class="tag">Node.js</span><span class="tag">WebSocket</span><span class="tag">CRDT</span>
+          </div>
+          <a href="#" class="card-link">查看项目
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </article>
+
+        <!-- 项目 3 -->
+        <article class="card reveal">
+          <div class="card-icon">🧠</div>
+          <h3>Insight AI 助手</h3>
+          <p>面向开发者的智能代码助手，结合 LLM 与静态分析，自动生成文档、发现潜在缺陷并给出重构建议。</p>
+          <div class="tags">
+            <span class="tag">Python</span><span class="tag">LLM</span><span class="tag">CLI</span>
+          </div>
+          <a href="#" class="card-link">查看项目
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </article>
+
+        <!-- 项目 4 -->
+        <article class="card reveal">
+          <div class="card-icon">📊</div>
+          <h3>Pulse 数据看板</h3>
+          <p>可自定义的实时数据可视化看板，拖拽式布局、丰富图表类型，让指标监控变得直观而优雅。</p>
+          <div class="tags">
+            <span class="tag">Vue</span><span class="tag">D3.js</span><span class="tag">Charts</span>
+          </div>
+          <a href="#" class="card-link">查看项目
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </article>
+
+        <!-- 项目 5 -->
+        <article class="card reveal">
+          <div class="card-icon">🔐</div>
+          <h3>Vault 密钥管理</h3>
+          <p>轻量级的团队密钥与环境变量管理工具，端到端加密，细粒度权限控制，支持一键注入 CI/CD。</p>
+          <div class="tags">
+            <span class="tag">Go</span><span class="tag">Security</span><span class="tag">DevOps</span>
+          </div>
+          <a href="#" class="card-link">查看项目
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </article>
+
+        <!-- 项目 6 -->
+        <article class="card reveal">
+          <div class="card-icon">🌐</div>
+          <h3>个人技术博客</h3>
+          <p>基于静态生成的技术博客，记录工程实践、源码解读与思考，月访问量稳定增长，累计文章 80+ 篇。</p>
+          <div class="tags">
+            <span class="tag">Next.js</span><span class="tag">MDX</span><span class="tag">Blog</span>
+          </div>
+          <a href="#" class="card-link">查看项目
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 联系方式 ===== -->
+  <section id="contact">
+    <div class="container">
+      <span class="accent-bar reveal"></span>
+      <h2 class="section-title reveal">保持联系</h2>
+      <p class="contact-lead reveal">
+        无论是合作机会、技术交流，还是只想打个招呼 —— 我都很乐意收到你的消息。
+      </p>
+      <div class="contact-grid">
+        <a href="mailto:hello@liming.dev" class="contact-card reveal">
+          <span class="ic">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+          </span>
+          <span class="meta"><span class="label">邮箱</span><br><span class="value">hello@liming.dev</span></span>
+        </a>
+
+        <a href="https://github.com" target="_blank" rel="noopener" class="contact-card reveal">
+          <span class="ic">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.5 2.87 8.32 6.84 9.67.5.1.68-.22.68-.48v-1.7c-2.78.62-3.37-1.36-3.37-1.36-.45-1.18-1.11-1.5-1.11-1.5-.91-.63.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.56 2.36 1.11 2.94.85.09-.66.35-1.11.63-1.36-2.22-.26-4.55-1.14-4.55-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9v2.82c0 .27.18.59.69.48A10.02 10.02 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z"/></svg>
+          </span>
+          <span class="meta"><span class="label">GitHub</span><br><span class="value">@liming</span></span>
+        </a>
+
+        <a href="https://linkedin.com" target="_blank" rel="noopener" class="contact-card reveal">
+          <span class="ic">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M4.98 3.5A2.5 2.5 0 1 0 5 8.5a2.5 2.5 0 0 0-.02-5ZM3 9h4v12H3zM9 9h3.8v1.64h.05c.53-1 1.83-2.05 3.76-2.05 4.02 0 4.76 2.64 4.76 6.08V21h-4v-5.4c0-1.29-.02-2.94-1.79-2.94-1.8 0-2.07 1.4-2.07 2.85V21H9z"/></svg>
+          </span>
+          <span class="meta"><span class="label">LinkedIn</span><br><span class="value">in/liming</span></span>
+        </a>
+
+        <a href="https://twitter.com" target="_blank" rel="noopener" class="contact-card reveal">
+          <span class="ic">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M18.24 2H21l-6.5 7.43L22 22h-6.9l-4.6-6-5.27 6H2.5l7.03-8.03L2 2h7.08l4.17 5.5L18.24 2Zm-1.2 18h1.6L7.05 3.7H5.3L17.04 20Z"/></svg>
+          </span>
+          <span class="meta"><span class="label">X (Twitter)</span><br><span class="value">@liming</span></span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 页脚 ===== -->
+  <footer>
+    <div class="container">
+      © 2026 李明 · 用 ❤️ 与代码打造 · 保留所有权利<br>
+      © 2026 DeepSea
+    </div>
+  </footer>
+
+  <script>
+    // 导航栏滚动阴影
+    const topbar = document.getElementById('topbar');
+    window.addEventListener('scroll', () => {
+      topbar.classList.toggle('scrolled', window.scrollY > 10);
+    });
+
+    // 移动端菜单
+    const navToggle = document.getElementById('navToggle');
+    const navLinks = document.getElementById('navLinks');
+    navToggle.addEventListener('click', () => navLinks.classList.toggle('open'));
+    navLinks.querySelectorAll('a').forEach(a =>
+      a.addEventListener('click', () => navLinks.classList.remove('open'))
+    );
+
+    // 滚动入场动画
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e, i) => {
+        if (e.isIntersecting) {
+          e.target.style.transitionDelay = (i % 6) * 0.06 + 's';
+          e.target.classList.add('visible');
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.12 });
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  </script>
+</body>
+</html>

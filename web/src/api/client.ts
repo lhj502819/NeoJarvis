@@ -1,7 +1,7 @@
 const BASE = ''
 
 export interface ChatEvent {
-  type: 'thinking' | 'progress' | 'delta' | 'response'
+  type: 'thinking' | 'progress' | 'delta' | 'response' | 'artifact' | 'buffering' | 'merged' | 'interrupted'
   content: string
 }
 

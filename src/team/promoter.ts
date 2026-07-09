@@ -1,6 +1,6 @@
 import { listAgentSessions, AgentSession } from '../a2a/history.js'
 import { listRecipes, createRecipe } from './registry.js'
-import { broadcast } from '../jarvis/agent.js'
+import { broadcast } from '../jarvis/sse.js'
 import { basename } from 'path'
 
 const PROMOTION_THRESHOLD = 3

@@ -180,18 +180,20 @@ resumeSession 规则：如果这个任务和某个历史 agent 做过的事相�
 \`\`\`
 
 ### 给运行中的小弟发消息（补充指令/纠正方向）：
+只有任务状态里带 (subtaskId: xxx) 标记的运行中子任务才能发消息，用那个 subtaskId。已完成或未开始的子任务无法通信。
 \`\`\`json
 {
   "action": "send_message",
-  "data": { "subtaskId": "子任务ID", "message": "你要传达的内容" }
+  "data": { "subtaskId": "运行中子任务的subtaskId", "message": "你要传达的内容" }
 }
 \`\`\`
 
 ### 打断运行中的小弟：
+同样只能对带 (subtaskId: xxx) 标记的运行中子任务操作。
 \`\`\`json
 {
   "action": "interrupt_agent",
-  "data": { "subtaskId": "子任务ID" }
+  "data": { "subtaskId": "运行中子任务的subtaskId" }
 }
 \`\`\`
 

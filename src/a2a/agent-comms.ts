@@ -2,8 +2,15 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import { bus } from './bus.js'
 import { getPeerAgents } from './registry.js'
+import { broadcast } from '../jarvis/sse.js'
 
-export function createAgentCommsMcp(subtaskId: string, taskId: string, userId: string) {
+export function createAgentCommsMcp(subtaskId: string, taskId: string, userId: string, agentName: string) {
+  const typeLabel: Record<string, string> = {
+    progress: '进展',
+    question: '请示',
+    deliverable: '交付',
+    blocked: '受阻',
+  }
   return createSdkMcpServer({
     name: 'agent-comms',
     alwaysLoad: true,
@@ -17,6 +24,10 @@ export function createAgentCommsMcp(subtaskId: string, taskId: string, userId: s
           type: z.enum(['progress', 'question', 'deliverable', 'blocked']).describe('消息类型：progress=进展汇报, question=请示, deliverable=阶段交付, blocked=阻塞求助'),
         },
         async (args) => {
+          // 把小弟主动发的消息推到前端，让用户看到中途的回执/进展/请示/交付
+          const label = typeLabel[args.type] || args.type
+          broadcast('progress', `💬 ${agentName}[${label}]：${args.content.slice(0, 120)}`, userId)
+
           const reply = await bus.send(subtaskId, 'jarvis', taskId, `[${args.type}] ${args.content}`, { type: args.type })
           const replyText = reply?.parts.find(p => p.kind === 'text')?.text || '（Jarvis 暂无回复，继续执行）'
           return { content: [{ type: 'text' as const, text: replyText }] }

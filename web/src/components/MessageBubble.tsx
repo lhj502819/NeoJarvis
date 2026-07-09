@@ -1,10 +1,32 @@
+import { useState, useEffect } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Message, MessageArtifact } from '../api/hooks'
+import './JarvisOrb.css'
 
 interface Props {
   message: Message
   onArtifactClick?: (artifact: MessageArtifact) => void
+}
+
+function ThinkingIndicator({ content }: { content: string }) {
+  const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    const t0 = Date.now()
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-muted)' }}>
+      <div className="jarvis-orb-wave" data-mood="thinking" style={{ height: 20, gap: 3 }}>
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <span>{content || '思考中...'}</span>
+      {elapsed > 2 && <span style={{ fontSize: 11, opacity: 0.5 }}>{elapsed}s</span>}
+    </div>
+  )
 }
 
 export function MessageBubble({ message, onArtifactClick }: Props) {
@@ -55,10 +77,7 @@ export function MessageBubble({ message, onArtifactClick }: Props) {
         </div>
 
         {message.status === 'thinking' ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: isUser ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)' }}>
-            <span className="animate-pulse">●</span>
-            <span>思考中...</span>
-          </div>
+          <ThinkingIndicator content={message.content} />
         ) : (
           <div className="markdown-body">
             <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
