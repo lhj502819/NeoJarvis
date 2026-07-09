@@ -2,7 +2,8 @@ import { query, type Query } from '@anthropic-ai/claude-agent-sdk'
 import { execSync } from 'child_process'
 import { getPeerAgents } from './registry.js'
 import { getRecipe } from '../team/registry.js'
-import { recordAgentSession } from './history.js'
+import { recordAgentSession, findMatchingSessionByDomain, extractKeywords } from './history.js'
+import { upsertAdhocAgent } from './adhoc.js'
 import { setSubtaskStarted, recordTurn, finalizeSubtaskMeta } from '../task/manager.js'
 import { bus } from './bus.js'
 import { buildUserEnv } from '../shared/user-env.js'
@@ -118,7 +119,15 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
 
   if (context?.signal?.aborted) throw new Error('任务已取消')
 
-  const resumeSessionId = context?.resumeSession
+  let resumeSessionId = context?.resumeSession
+  // 临时工(无 recipe)且调用方未指定 resume 时,按 domain 自动匹配历史记忆
+  if (!recipe && !resumeSessionId && domain) {
+    const matched = await findMatchingSessionByDomain(userId, domain, taskDescription).catch(() => undefined)
+    if (matched) {
+      resumeSessionId = matched
+      debug('adhoc reuse: matched session', matched.slice(0, 8), 'for domain', domain)
+    }
+  }
   const subtaskId = context?.subtaskId || `anon-${Date.now()}`
   const taskId = context?.taskId || 'unknown'
 
@@ -279,6 +288,17 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
   // 聚类主键是 domain（语义领域），cwd 仅作开发类任务的门牌号辅料（纯调研为空）
   await recordAgentSession(userId, finalSessionId, recipeId, taskDescription, domain, recordedCwd)
   debug('recorded agent session:', finalSessionId, 'domain:', domain)
+
+  // 临时工(无 recipe)才聚合到 adhoc 表;正式小弟不写
+  if (!recipe && domain) {
+    await upsertAdhocAgent(userId, {
+      domain,
+      taskDescription,
+      cwd: recordedCwd || undefined,
+      sessionId,  // 原始 sessionId(可能空),adhoc.ts 内部过滤 auto-;此处不传 finalSessionId
+      topics: extractKeywords(taskDescription),
+    }).catch(() => {})
+  }
 
   return result || '(无结果)'
 }
