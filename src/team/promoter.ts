@@ -40,7 +40,7 @@ export async function evaluatePromotion(userId: string): Promise<void> {
   }
 }
 
-interface DomainCluster {
+export interface DomainCluster {
   sessions: AgentSession[]
   taskCount: number
   topics: string[]
@@ -50,7 +50,7 @@ interface DomainCluster {
  * 按语义领域标签聚类——这是身份的主键。
  * 物理路径（cwd）不再参与聚类，只在专家沉淀后作为门牌号辅料。
  */
-function clusterByDomain(sessions: AgentSession[]): Map<string, DomainCluster> {
+export function clusterByDomain(sessions: AgentSession[]): Map<string, DomainCluster> {
   const map = new Map<string, DomainCluster>()
 
   for (const session of sessions) {
@@ -78,7 +78,7 @@ function clusterByDomain(sessions: AgentSession[]): Map<string, DomainCluster> {
  * 开发类领域会集中在一个 cwd（返回它当门牌号）；
  * 纯调研/生活类领域的 cwd 大多为空（返回空，专家不绑定任何路径）。
  */
-function dominantCwd(cluster: DomainCluster): string {
+export function dominantCwd(cluster: DomainCluster): string {
   const counts = new Map<string, number>()
   for (const s of cluster.sessions) {
     if (!s.cwd) continue

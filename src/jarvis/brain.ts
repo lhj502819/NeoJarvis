@@ -78,7 +78,7 @@ function withBrainLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
   return prev.then(fn).finally(() => resolve!())
 }
 
-function parseAction(text: string): ActionResponse | null {
+export function parseAction(text: string): ActionResponse | null {
   // 尝试匹配 ```json ... ``` 代码块（宽松：允许缩进、空行）
   const fenced = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/)
   if (fenced) {
@@ -98,13 +98,13 @@ function parseAction(text: string): ActionResponse | null {
   return null
 }
 
-async function llmCall(userId: string, prompt: string, onDelta?: (text: string) => void): Promise<string> {
+async function llmCall(userId: string, prompt: string, onDelta?: (text: string) => void, abortController?: AbortController): Promise<string> {
   const systemPrompt = await buildSystemPrompt(userId)
   const mcpServers: Record<string, McpServerConfig> = {
     'jarvis-system': createJarvisTools(userId),
     ...(await buildUserMcpServers(userId)),
   }
-  return withBrainLock(userId, () => rawLlmCall(userId, systemPrompt, prompt, onDelta, mcpServers))
+  return rawLlmCall(userId, systemPrompt, prompt, onDelta, mcpServers, abortController)
 }
 
 const DEBUG = process.env.JARVIS_DEBUG === '1' || process.argv.includes('--debug')
@@ -113,11 +113,11 @@ function debug(...args: any[]) {
   if (DEBUG) console.log('\x1b[2m[debug]\x1b[0m', ...args)
 }
 
-async function rawLlmCall(userId: string, systemPrompt: string, prompt: string, onDelta?: (text: string) => void, mcpServers?: Record<string, McpServerConfig>): Promise<string> {
+async function rawLlmCall(userId: string, systemPrompt: string, prompt: string, onDelta?: (text: string) => void, mcpServers?: Record<string, McpServerConfig>, abortController?: AbortController): Promise<string> {
   const t0 = Date.now()
   debug('rawLlmCall start, prompt length:', prompt.length)
   console.log(`[perf] rawLlmCall start, system prompt: ${systemPrompt.length} chars, user prompt: ${prompt.length} chars`)
-  let result = ''
+  let finalResult = ''
   let firstTokenTime = 0
   for await (const message of query({
     prompt,
@@ -130,20 +130,35 @@ async function rawLlmCall(userId: string, systemPrompt: string, prompt: string, 
       settingSources: [],
       env: await buildUserEnv(userId),
       maxTurns: 99999,
+      includePartialMessages: true,
       ...(mcpServers && { mcpServers }),
+      ...(abortController && { abortController }),
     },
   })) {
+    if (message.type === 'stream_event') {
+      const evt = (message as any).event
+      if (evt?.type === 'content_block_start' && evt.content_block?.type === 'thinking') {
+        debug('extended thinking block started')
+      }
+      if (evt?.type === 'content_block_delta' && evt.delta?.type === 'thinking_delta') {
+        if (!firstTokenTime) {
+          firstTokenTime = Date.now()
+          console.log(`[perf] first thinking token: ${firstTokenTime - t0}ms`)
+        }
+      }
+      if (evt?.type === 'content_block_delta' && evt.delta?.type === 'text_delta' && evt.delta.text) {
+        if (!firstTokenTime) {
+          firstTokenTime = Date.now()
+          console.log(`[perf] first token: ${firstTokenTime - t0}ms`)
+        }
+        onDelta?.(evt.delta.text)
+      }
+      continue
+    }
+
     debug('msg:', message.type, (message as any).subtype || '', (message as any).message?.content?.map((b: any) => b.type).join(',') || '')
     if (message.type === 'assistant' && message.message?.content) {
-      if (!firstTokenTime) {
-        firstTokenTime = Date.now()
-        console.log(`[perf] first token: ${firstTokenTime - t0}ms`)
-      }
       for (const block of message.message.content) {
-        if ('text' in block && block.text) {
-          result += block.text
-          onDelta?.(block.text)
-        }
         if ('type' in block && block.type === 'tool_use') {
           const toolName = (block as any).name || 'tool'
           debug('tool_use:', toolName)
@@ -152,19 +167,19 @@ async function rawLlmCall(userId: string, systemPrompt: string, prompt: string, 
       }
     }
     if (message.type === 'result') {
-      debug('result:', (message as any).subtype, 'text length:', result.length)
+      debug('result:', (message as any).subtype, 'text length:', finalResult.length)
       if (message.subtype === 'success') {
-        if (!result) result = message.result
+        finalResult = message.result
       } else {
         const err = (message as any).errors?.join('; ') || (message as any).subtype
         debug('result ERROR:', err)
-        if (!result) result = `[错误] ${err}`
+        finalResult = `[错误] ${err}`
       }
     }
   }
-  debug('rawLlmCall done, result length:', result.length)
-  console.log(`[perf] rawLlmCall done: ${Date.now() - t0}ms total, result: ${result.length} chars`)
-  return result
+  debug('rawLlmCall done, result length:', finalResult.length)
+  console.log(`[perf] rawLlmCall done: ${Date.now() - t0}ms total, result: ${finalResult.length} chars`)
+  return finalResult
 }
 
 async function executeSubTask(userId: string, taskId: string, subtaskId: string, description: string, assignee: string, signal: AbortSignal, resumeSession?: string, domain?: string, cwd?: string): Promise<string> {
@@ -298,12 +313,13 @@ export interface ThinkResult {
   artifact?: PendingArtifact
 }
 
-export async function think(userId: string, userMessage: string, onProgress?: (text: string) => void, onDelta?: (text: string) => void): Promise<ThinkResult> {
+export async function think(userId: string, userMessage: string, onProgress?: (text: string) => void, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<ThinkResult> {
   const t0 = Date.now()
   debug('think() called:', userMessage.slice(0, 50))
-  await addToBuffer(userId, 'user', userMessage)
 
   const taskContext = await getTaskSummary(userId)
+  if (signal?.aborted) throw new Error('aborted')
+
   const recipes = await listRecipes(userId)
   const teamInfo = recipes.map(r => `- ${r.name} (id: ${r.id}): ${r.description}`).join('\n')
 
@@ -314,8 +330,10 @@ export async function think(userId: string, userMessage: string, onProgress?: (t
   const memories = await searchMemory(userId, userMessage, 5)
   console.log(`[perf] searchMemory: ${Date.now() - t1}ms`)
   debug('memory done, length:', memories.length)
+  if (signal?.aborted) throw new Error('aborted')
 
   const recentConvo = await getRecentConversation(userId)
+  if (signal?.aborted) throw new Error('aborted')
 
   const contextualPrompt = `## 当前任务状态
 ${taskContext}
@@ -344,7 +362,13 @@ ${userMessage}`
     }
     onDelta(text)
   } : undefined
-  const llmResponse = await llmCall(userId, contextualPrompt, filteredDelta)
+  let ac: AbortController | undefined
+  if (signal) {
+    ac = new AbortController()
+    if (signal.aborted) ac.abort()
+    else signal.addEventListener('abort', () => ac!.abort(), { once: true })
+  }
+  const llmResponse = await llmCall(userId, contextualPrompt, filteredDelta, ac)
   console.log(`[perf] llmCall: ${Date.now() - t2}ms`)
   console.log(`[perf] total think(): ${Date.now() - t0}ms`)
 
@@ -505,7 +529,7 @@ async function saveArtifact(userId: string, artifact: PendingArtifact): Promise<
   return id
 }
 
-async function addToBuffer(userId: string, role: 'user' | 'jarvis', content: string, artifactId?: string) {
+export async function addToBuffer(userId: string, role: 'user' | 'jarvis', content: string, artifactId?: string) {
   const sessionId = await getOrCreateSession(userId)
   const now = Date.now()
 
@@ -517,27 +541,15 @@ async function addToBuffer(userId: string, role: 'user' | 'jarvis', content: str
     'UPDATE user_jarvis_sessions SET updated_at = $1 WHERE id = $2',
     [new Date().toISOString(), sessionId]
   )
-
-  // Keep max N turns per session
-  const { rows: countRows } = await pool.query(
-    'SELECT COUNT(*) as cnt FROM user_jarvis_messages WHERE session_id = $1',
-    [sessionId]
-  )
-  const count = parseInt(countRows[0].cnt, 10)
-  if (count > MAX_BUFFER_TURNS) {
-    await pool.query(`
-      DELETE FROM user_jarvis_messages WHERE id IN (
-        SELECT id FROM user_jarvis_messages WHERE session_id = $1 ORDER BY timestamp ASC LIMIT $2
-      )
-    `, [sessionId, count - MAX_BUFFER_TURNS])
-  }
 }
 
 async function getRecentConversation(userId: string): Promise<string> {
   const sessionId = await getOrCreateSession(userId)
   const { rows } = await pool.query(
-    `SELECT role, content FROM user_jarvis_messages WHERE session_id = $1 ORDER BY timestamp ASC`,
-    [sessionId]
+    `SELECT role, content FROM (
+      SELECT role, content, timestamp FROM user_jarvis_messages WHERE session_id = $1 ORDER BY timestamp DESC LIMIT $2
+    ) sub ORDER BY timestamp ASC`,
+    [sessionId, MAX_BUFFER_TURNS]
   )
 
   if (rows.length === 0) return ''
