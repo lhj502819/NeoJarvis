@@ -441,3 +441,12 @@
 .dash-stat-card-value { font-size: 26px; font-weight: 600; color: var(--accent); }
 .dash-stat-card-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 .dash-overview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+/* ═══ 团队页 + 小弟档案 ═══ */
+.dash-team-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.dash-clickable { cursor: pointer; transition: border-color 0.15s; }
+.dash-clickable:hover { border-color: var(--accent); }
+.dash-team-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.dash-profile-meta { display: flex; gap: 14px; font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+.dash-back-btn { background: transparent; border: none; color: var(--accent); cursor: pointer; font-size: 13px; margin-bottom: 10px; padding: 0; }
+.dash-empty-hint { font-size: 13px; color: var(--text-muted); padding: 12px 0; }

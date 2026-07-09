@@ -4,6 +4,7 @@ import { useSSE } from '../../api/hooks'
 import { Header } from '../../components/Header'
 import type { DashView } from './types'
 import { OverviewPage } from './OverviewPage'
+import { TeamPage } from './TeamPage'
 import './dashboard.css'
 
 const NAV: Array<{ id: DashView; icon: string; label: string }> = [
@@ -35,7 +36,7 @@ export function DashboardPage({ user, onLogout }: { user: AuthUser; onLogout: ()
         <main className="dash-content">
           {view === 'overview' && <OverviewPage />}
           {view === 'tasks' && <div className="dash-section-title">任务（待实现）</div>}
-          {view === 'team' && <div className="dash-section-title">团队（待实现）</div>}
+          {view === 'team' && <TeamPage />}
         </main>
       </div>
     </div>
