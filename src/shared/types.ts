@@ -84,6 +84,7 @@ export interface AgentRecipe {
   description: string
   systemPrompt: string
   tools: string[]
+  skills: string[]
   model: string
   context: Record<string, unknown>
   persistent: boolean
@@ -91,6 +92,20 @@ export interface AgentRecipe {
   createdBy: 'builtin' | 'jarvis'
   createdAt: string
   lastUsedAt: string
+}
+
+export interface AdhocAgent {
+  id: string
+  userId: string
+  domain: string
+  taskCount: number
+  lastTaskDescription: string
+  cwd?: string
+  topics: string[]
+  lastSessionId?: string
+  promoted: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 // ─── Message Types ───

@@ -214,6 +214,25 @@ ALTER TABLE jarvis_subtasks ADD COLUMN IF NOT EXISTS turn_count INTEGER;
 ALTER TABLE jarvis_subtasks ADD COLUMN IF NOT EXISTS retry_count INTEGER;
 ALTER TABLE jarvis_subtasks ADD COLUMN IF NOT EXISTS tokens_input INTEGER;
 ALTER TABLE jarvis_subtasks ADD COLUMN IF NOT EXISTS tokens_output INTEGER;
+
+-- ═══ 临时工(adhoc agent)聚合表 ═══
+CREATE TABLE IF NOT EXISTS jarvis_adhoc_agents (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  domain TEXT NOT NULL,
+  task_count INTEGER NOT NULL DEFAULT 0,
+  last_task_description TEXT NOT NULL,
+  cwd TEXT,
+  topics TEXT NOT NULL DEFAULT '[]',
+  last_session_id TEXT,
+  promoted INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jarvis_adhoc_user_domain ON jarvis_adhoc_agents(user_id, domain);
+
+-- ═══ recipe 挂载 skill 白名单 ═══
+ALTER TABLE jarvis_recipes ADD COLUMN IF NOT EXISTS skills TEXT DEFAULT '[]';
   `)
   } finally {
     await client.query('SELECT pg_advisory_unlock($1)', [918273]).catch(() => {})
