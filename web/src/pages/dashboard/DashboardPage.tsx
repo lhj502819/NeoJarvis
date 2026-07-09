@@ -4,6 +4,7 @@ import { useSSE } from '../../api/hooks'
 import { Header } from '../../components/Header'
 import type { DashView } from './types'
 import { OverviewPage } from './OverviewPage'
+import { TasksPage } from './TasksPage'
 import { TeamPage } from './TeamPage'
 import './dashboard.css'
 
@@ -35,7 +36,7 @@ export function DashboardPage({ user, onLogout }: { user: AuthUser; onLogout: ()
         </nav>
         <main className="dash-content">
           {view === 'overview' && <OverviewPage />}
-          {view === 'tasks' && <div className="dash-section-title">任务（待实现）</div>}
+          {view === 'tasks' && <TasksPage />}
           {view === 'team' && <TeamPage />}
         </main>
       </div>

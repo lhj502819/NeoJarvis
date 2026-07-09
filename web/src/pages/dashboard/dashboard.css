@@ -450,3 +450,8 @@
 .dash-profile-meta { display: flex; gap: 14px; font-size: 11px; color: var(--text-muted); margin-top: 6px; }
 .dash-back-btn { background: transparent; border: none; color: var(--accent); cursor: pointer; font-size: 13px; margin-bottom: 10px; padding: 0; }
 .dash-empty-hint { font-size: 13px; color: var(--text-muted); padding: 12px 0; }
+
+/* ═══ 任务页列表 ═══ */
+.dash-task-row-main { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.dash-task-row-foot { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+.dash-task-id-mono { font-family: var(--font-mono, monospace); }
