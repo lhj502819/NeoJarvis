@@ -9,6 +9,7 @@ function rowToRecipe(row: any): AgentRecipe {
     description: row.description,
     systemPrompt: row.system_prompt,
     tools: JSON.parse(row.tools),
+    skills: row.skills ? JSON.parse(row.skills) : [],
     model: row.model,
     context: JSON.parse(row.context),
     persistent: row.persistent === 1 || row.persistent === true,
@@ -42,6 +43,7 @@ export async function createRecipe(userId: string, params: {
   description: string
   systemPrompt: string
   tools: string[]
+  skills?: string[]
   model?: string
   context?: Record<string, unknown>
   persistent?: boolean
@@ -52,6 +54,7 @@ export async function createRecipe(userId: string, params: {
     description: params.description,
     systemPrompt: params.systemPrompt,
     tools: params.tools,
+    skills: params.skills || [],
     model: params.model || 'sonnet',
     context: params.context || {},
     persistent: params.persistent ?? false,
@@ -62,9 +65,9 @@ export async function createRecipe(userId: string, params: {
   }
 
   await pool.query(`
-    INSERT INTO jarvis_recipes (id, user_id, name, description, system_prompt, tools, model, context, persistent, usage_count, created_by, created_at, last_used_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-  `, [recipe.id, userId, recipe.name, recipe.description, recipe.systemPrompt, JSON.stringify(recipe.tools), recipe.model, JSON.stringify(recipe.context), recipe.persistent ? 1 : 0, recipe.usageCount, recipe.createdBy, recipe.createdAt, recipe.lastUsedAt || null])
+    INSERT INTO jarvis_recipes (id, user_id, name, description, system_prompt, tools, skills, model, context, persistent, usage_count, created_by, created_at, last_used_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+  `, [recipe.id, userId, recipe.name, recipe.description, recipe.systemPrompt, JSON.stringify(recipe.tools), JSON.stringify(recipe.skills), recipe.model, JSON.stringify(recipe.context), recipe.persistent ? 1 : 0, recipe.usageCount, recipe.createdBy, recipe.createdAt, recipe.lastUsedAt || null])
 
   return recipe
 }
