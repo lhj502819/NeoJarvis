@@ -3,6 +3,7 @@ import { execSync } from 'child_process'
 import { getPeerAgents } from './registry.js'
 import { getRecipe } from '../team/registry.js'
 import { recordAgentSession } from './history.js'
+import { setSubtaskStarted, recordTurn, finalizeSubtaskMeta } from '../task/manager.js'
 import { bus } from './bus.js'
 import { buildUserEnv } from '../shared/user-env.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
@@ -124,7 +125,7 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
   debug('dispatch start:', recipeId, 'task:', taskDescription.slice(0, 50), resumeSessionId ? `(resume: ${resumeSessionId.slice(0, 8)})` : '(new)')
 
   const userMcpServers = await buildUserMcpServers(userId)
-  const agentCommsMcp = createAgentCommsMcp(subtaskId, taskId, userId)
+  const agentCommsMcp = createAgentCommsMcp(subtaskId, taskId, userId, agentName)
   // 把 MCP servers 的工具通配符加进 allowedTools（bypassPermissions 模式下这是白名单）
   const mcpToolNames = Object.keys(userMcpServers).map(name => `mcp__${name}__*`)
   const allowedTools = [...tools, ...mcpToolNames, 'mcp__agent-comms__*']
@@ -153,10 +154,18 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
   let result = ''
   let sessionId = ''
 
+  // 开工时刻(排队等待不计入执行耗时)——只在首次真正开跑时记一次
+  await setSubtaskStarted(subtaskId, new Date().toISOString()).catch(() => {})
+  let totalTurns = 0
+  let tokensInput = 0
+  let tokensOutput = 0
+  let retriesUsed = 0
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (context?.signal?.aborted) throw new Error('任务已取消')
 
     if (attempt > 0) {
+      retriesUsed = attempt
       debug(`retry attempt ${attempt}/${MAX_RETRIES}, waiting ${RETRY_DELAYS[attempt - 1]}ms...`)
       await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt - 1]))
       if (context?.signal?.aborted) throw new Error('任务已取消')
@@ -199,7 +208,9 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
         debug('agent msg:', message.type, (message as any).subtype || '')
 
         if (message.type === 'assistant' && message.message?.content) {
+          const turnStart = new Date().toISOString()
           turnCount++
+          totalTurns++
           let turnText = ''
 
           for (const block of message.message.content) {
@@ -211,9 +222,13 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
             }
             if ('type' in block && block.type === 'tool_use') {
               const toolName = (block as any).name || 'tool'
+              turnText += `\n🔧 ${toolName}`
               progressLog.push(`[${turnCount}] 🔧 ${toolName}`)
             }
           }
+
+          // 落一条回合轨迹(text 空则记占位,避免 NOT NULL 违规)
+          recordTurn(subtaskId, totalTurns, turnText || '(无文本输出)', turnStart, new Date().toISOString()).catch(() => {})
 
           if (context?.onProgress) {
             const recent = progressLog.slice(-5).join('\n')
@@ -223,6 +238,11 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
 
         if (message.type === 'result') {
           sessionId = (message as any).session_id || (message as any).sessionId || ''
+          const usage = (message as any).usage
+          if (usage) {
+            tokensInput += usage.input_tokens || 0
+            tokensOutput += usage.output_tokens || 0
+          }
           if (message.subtype === 'success') {
             if (!result) result = message.result
             debug('agent done, session:', sessionId, 'result length:', result.length)
@@ -246,6 +266,14 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
     if (!apiError) break
     debug('retryable error detected, will retry:', lastError)
   }
+
+  // 写入执行元信息统计
+  await finalizeSubtaskMeta(subtaskId, {
+    turnCount: totalTurns,
+    retryCount: retriesUsed,
+    tokensInput,
+    tokensOutput,
+  }).catch(() => {})
 
   const finalSessionId = sessionId || `auto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   // 聚类主键是 domain（语义领域），cwd 仅作开发类任务的门牌号辅料（纯调研为空）
