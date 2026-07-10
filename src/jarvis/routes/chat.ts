@@ -59,11 +59,13 @@ export function chatRoutes(): Router {
     )
     if (sessionRows.length === 0) { res.json([]); return }
     const { rows } = await pool.query(
-      `SELECT m.role, m.content, m.timestamp, m.artifact_id,
-              a.type AS artifact_type, a.title AS artifact_title
-       FROM user_jarvis_messages m
-       LEFT JOIN jarvis_artifacts a ON m.artifact_id = a.id
-       WHERE m.session_id = $1 ORDER BY m.timestamp ASC`,
+      `SELECT role, content, timestamp, artifact_id, artifact_type, artifact_title FROM (
+        SELECT m.role, m.content, m.timestamp, m.artifact_id,
+               a.type AS artifact_type, a.title AS artifact_title
+        FROM user_jarvis_messages m
+        LEFT JOIN jarvis_artifacts a ON m.artifact_id = a.id
+        WHERE m.session_id = $1 ORDER BY m.timestamp DESC LIMIT 500
+      ) sub ORDER BY timestamp ASC`,
       [sessionRows[0].id]
     )
     res.json(rows.map(r => ({

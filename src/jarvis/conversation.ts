@@ -4,21 +4,13 @@ import { redactSecrets } from '../shared/redact.js'
 import { addMemory } from '../memory/everos.js'
 
 const MAX_BUFFER_TURNS = 20
-const CONVERSATION_TTL = 4 * 60 * 60 * 1000 // 4小时过期
 
 async function getOrCreateSession(userId: string): Promise<string> {
   const { rows } = await pool.query(
-    `SELECT id, updated_at FROM user_jarvis_sessions WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 1`,
+    `SELECT id FROM user_jarvis_sessions WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 1`,
     [userId]
   )
-  const row = rows[0]
-
-  if (row) {
-    const lastUpdate = new Date(row.updated_at).getTime()
-    if (Date.now() - lastUpdate < CONVERSATION_TTL) {
-      return row.id
-    }
-  }
+  if (rows[0]) return rows[0].id
 
   const id = randomUUID()
   const now = new Date().toISOString()
