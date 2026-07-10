@@ -6,6 +6,8 @@ import { DashboardPage } from './pages/dashboard/DashboardPage'
 import { LandingPage } from './pages/LandingPage'
 import { useChat, useSSE } from './api/hooks'
 import { checkAuth, logout, type AuthUser } from './api/auth'
+import { MonitorPanel } from './components/MonitorPanel'
+import { ExecutionModal } from './components/ExecutionModal'
 
 function useHashRoute() {
   const [hash, setHash] = useState(window.location.hash || '#/')
@@ -53,10 +55,9 @@ function ChatView({ user, onLogout }: { user: AuthUser; onLogout: () => void }) 
   const { messages, isLoading, send, applyLiveEvent } = useChat()
   const { connected, events } = useSSE('/events')
   const processedRef = useRef(0)
+  const [modal, setModal] = useState<{ taskId: string; subtaskId: string } | null>(null)
 
   useEffect(() => {
-    // 只处理新增的 /events 事件(events 是累积数组),交给 applyLiveEvent
-    // 驱动刷新恢复后的进行中气泡;发起方会在 applyLiveEvent 内部忽略。
     for (let i = processedRef.current; i < events.length; i++) {
       applyLiveEvent(events[i])
     }
@@ -66,9 +67,13 @@ function ChatView({ user, onLogout }: { user: AuthUser; onLogout: () => void }) 
   return (
     <div className="h-screen flex flex-col">
       <Header connected={connected} username={user.displayName || user.username} onLogout={onLogout} />
-      <div className="flex-1 overflow-hidden">
-        <ChatPanel messages={messages} isLoading={isLoading} onSend={send} />
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 overflow-hidden min-w-0">
+          <ChatPanel messages={messages} isLoading={isLoading} onSend={send} />
+        </div>
+        <MonitorPanel onOpen={(taskId, subtaskId) => setModal({ taskId, subtaskId })} />
       </div>
+      {modal && <ExecutionModal taskId={modal.taskId} subtaskId={modal.subtaskId} onClose={() => setModal(null)} />}
     </div>
   )
 }
