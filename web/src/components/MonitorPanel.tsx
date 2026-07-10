@@ -39,20 +39,23 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
   const { events } = useSSE('/events')
   const processedRef = useRef(0)
 
-  // 初始拉在跑列表
+  // 初始拉在跑列表——与 SSE 事件合并,避免快照(空)覆盖 SSE 已加的项
   useEffect(() => {
     fetchJSON<RunningTaskInit[]>('/api/agents').then(list => {
-      const map = new Map<string, MonitorItem>()
-      for (const r of list) {
-        map.set(r.subtaskId, {
-          subtaskId: r.subtaskId, taskId: r.taskId,
-          agentName: r.name || r.recipeId,
-          taskName: r.description.slice(0, 60),
-          status: 'running', turnCount: 0,
-          startedAtMs: r.startedAt,
-        })
-      }
-      setItems(map)
+      setItems(prev => {
+        const next = new Map(prev)
+        for (const r of list) {
+          if (next.has(r.subtaskId)) continue  // SSE 已带更新的 turnCount/currentTool,不覆盖
+          next.set(r.subtaskId, {
+            subtaskId: r.subtaskId, taskId: r.taskId,
+            agentName: r.name || r.recipeId,
+            taskName: r.description.slice(0, 60),
+            status: 'running', turnCount: 0,
+            startedAtMs: r.startedAt,
+          })
+        }
+        return next
+      })
     }).catch(() => {})
   }, [])
 
