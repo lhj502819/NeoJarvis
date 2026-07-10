@@ -250,6 +250,7 @@ export interface SSEEvent {
   type: string
   content: string
   timestamp?: string
+  _seq?: number  // useSSE 打的单调递增序号,供消费方去重(events 数组封顶后下标不可靠)
 }
 
 export interface SubtaskEvent {
@@ -279,6 +280,7 @@ export function useSSE(path: string) {
   const [connected, setConnected] = useState(false)
   const [events, setEvents] = useState<SSEEvent[]>([])
   const esRef = useRef<EventSource | null>(null)
+  const seqRef = useRef(0)
 
   useEffect(() => {
     const es = new EventSource(path)
@@ -288,6 +290,7 @@ export function useSSE(path: string) {
     es.onmessage = (e) => {
       try {
         const event = JSON.parse(e.data) as SSEEvent
+        event._seq = ++seqRef.current  // 单调序号,消费方按它去重(数组封顶后下标失效)
         setEvents(prev => [...prev.slice(-50), event])
       } catch {}
     }

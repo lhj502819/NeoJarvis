@@ -37,7 +37,7 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
   const [fading, setFading] = useState<Set<string>>(new Set())
   const [_tick, setTick] = useState(0)  // 每秒重渲染,驱动 elapsed 更新
   const { events } = useSSE('/events')
-  const processedRef = useRef(0)
+  const lastSeqRef = useRef(0)
 
   // 初始拉在跑列表——与 SSE 事件合并,避免快照(空)覆盖 SSE 已加的项
   useEffect(() => {
@@ -59,10 +59,12 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
     }).catch(() => {})
   }, [])
 
-  // 消费 SSE subtask 事件
+  // 消费 SSE subtask 事件——按 _seq 去重(events 数组封顶后下标不可靠,会丢事件)
   useEffect(() => {
-    for (let i = processedRef.current; i < events.length; i++) {
-      const evt = events[i]
+    for (const evt of events) {
+      const seq = evt._seq ?? 0
+      if (seq <= lastSeqRef.current) continue
+      lastSeqRef.current = seq
       if (evt.type !== 'subtask') continue
       const p = parseSubtaskEvent(evt.content)
       if (!p) continue
@@ -81,7 +83,6 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
         return next
       })
     }
-    processedRef.current = events.length
   }, [events])
 
   // done/failed 项 30s 后淡出并删除

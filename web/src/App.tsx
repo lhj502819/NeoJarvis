@@ -55,14 +55,16 @@ function App() {
 function ChatView({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
   const { messages, isLoading, send, applyLiveEvent } = useChat()
   const { connected, events } = useSSE('/events')
-  const processedRef = useRef(0)
+  const lastSeqRef = useRef(0)
   const [modal, setModal] = useState<{ taskId: string; subtaskId: string } | null>(null)
 
   useEffect(() => {
-    for (let i = processedRef.current; i < events.length; i++) {
-      applyLiveEvent(events[i])
+    for (const evt of events) {
+      const seq = evt._seq ?? 0
+      if (seq <= lastSeqRef.current) continue
+      lastSeqRef.current = seq
+      applyLiveEvent(evt)
     }
-    processedRef.current = events.length
   }, [events, applyLiveEvent])
 
   return (
