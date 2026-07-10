@@ -6,6 +6,7 @@ import { registerRunningTask, unregisterRunningTask } from '../a2a/registry.js'
 import { bus } from '../a2a/bus.js'
 import { broadcast } from './sse.js'
 import { buildSubtaskEvent } from './subtask-event.js'
+import { sanitizeCwd } from './cwd-guard.js'
 import { consumeArtifact } from './tools.js'
 import { onMessageHandled, onTaskCompleted } from './state.js'
 import { withBrainLock, rawLlmCall } from './llm.js'
@@ -120,12 +121,18 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
     const cwdMap = new Map<string, string>()
     for (const st of subtasks) {
       const assignee = st.assignee || 'general'
-      const sub = await addSubTask(userId, taskId, { name: st.name, description: st.description, assignee, domain: st.domain, cwd: st.cwd })
+      // 防线:Jarvis 可能幻觉出不存在的 cwd(如错误用户名 /Users/hh/...)。
+      // 校验后不存在的路径丢弃,广播提示,避免 spawn ENOENT 被 SDK 误包装成 libc 错误。
+      const safeCwd = sanitizeCwd(st.cwd)
+      if (st.cwd && !safeCwd) {
+        broadcast('progress', `⚠️ 忽略无效 cwd "${st.cwd}"(路径不存在),小弟改到用户工作区执行`, userId)
+      }
+      const sub = await addSubTask(userId, taskId, { name: st.name, description: st.description, assignee, domain: st.domain, cwd: safeCwd })
       if (st.resumeSession) {
         resumeMap.set(sub.id, st.resumeSession)
       }
       if (st.domain) domainMap.set(sub.id, st.domain)
-      if (st.cwd) cwdMap.set(sub.id, st.cwd)
+      if (safeCwd) cwdMap.set(sub.id, safeCwd)
     }
     await updateTask(userId, taskId, { status: 'executing' })
 
