@@ -1,0 +1,117 @@
+import { useEffect, useState, useRef } from 'react'
+import { fetchJSON } from '../api/client'
+import './ExecutionModal.css'
+
+interface SubTaskLite {
+  id: string
+  name: string
+  assignee: string
+  status: string
+  error?: string
+  turnCount?: number
+  retryCount?: number
+  tokensInput?: number
+  tokensOutput?: number
+  startedAt?: string
+}
+interface TurnLite {
+  id: string
+  subtaskId: string
+  turnIndex: number
+  text: string
+  startedAt: string
+  endedAt?: string
+}
+interface TaskDetail {
+  task: { id: string; name: string; status: string; subtasks: SubTaskLite[] }
+  turnsBySubtask: Record<string, TurnLite[]>
+}
+
+function fmtDuration(startIso?: string, endIso?: string): string {
+  if (!startIso) return '—'
+  const start = new Date(startIso).getTime()
+  const end = endIso ? new Date(endIso).getTime() : Date.now()
+  const s = Math.max(0, Math.round((end - start) / 1000))
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
+}
+
+export function ExecutionModal({ taskId, subtaskId, onClose }: { taskId: string; subtaskId: string; onClose: () => void }) {
+  const [detail, setDetail] = useState<TaskDetail | null>(null)
+  const [loading, setLoading] = useState(true)
+  const timerRef = useRef<number | null>(null)
+
+  // 拉详情;running 时 2s 轮询
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const d = await fetchJSON<TaskDetail>(`/api/task/${taskId}`)
+        if (cancelled) return
+        setDetail(d)
+        setLoading(false)
+        const sub = d.task.subtasks.find(s => s.id === subtaskId)
+        const active = sub && !['completed', 'failed', 'cancelled'].includes(sub.status)
+        if (active) {
+          timerRef.current = window.setTimeout(load, 2000)
+        }
+      } catch { if (!cancelled) setLoading(false) }
+    }
+    load()
+    return () => { cancelled = true; if (timerRef.current) clearTimeout(timerRef.current) }
+  }, [taskId, subtaskId])
+
+  // Esc 关闭
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const sub = detail?.task.subtasks.find(s => s.id === subtaskId)
+  const turns = detail?.turnsBySubtask[subtaskId] || []
+  const uiState = sub?.status === 'running' ? 'running' :
+                  sub?.status === 'completed' ? 'done' :
+                  sub?.status === 'failed' ? 'failed' : 'done'
+  const lastEnd = turns.length ? turns[turns.length - 1].endedAt : undefined
+  const elapsed = fmtDuration(sub?.startedAt, uiState === 'running' ? undefined : lastEnd)
+
+  return (
+    <div className="exm-mask" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="exm" data-state={uiState}>
+        {loading ? (
+          <div className="exm-loading">加载中…</div>
+        ) : !sub ? (
+          <div className="exm-empty">子任务不存在</div>
+        ) : (
+          <>
+            <div className="exm-head">
+              <span className="exm-dot"></span>
+              <span className="exm-title">{sub.assignee}</span>
+              <span className="exm-status">
+                {uiState === 'running' ? '执行中' : uiState === 'done' ? '已完成' : '执行失败'}
+              </span>
+              <button className="exm-close" onClick={onClose}>✕</button>
+            </div>
+            <div className="exm-stats">
+              <span>回合 <b>{sub.turnCount ?? turns.length}</b></span>
+              <span>耗时 <b>{elapsed}</b></span>
+              {sub.retryCount ? <span>重试 <b>{sub.retryCount}</b></span> : null}
+              {(sub.tokensInput || sub.tokensOutput) ? <span>token <b>{sub.tokensInput || 0}/{sub.tokensOutput || 0}</b></span> : null}
+            </div>
+            {sub.error && <div className="exm-error">{sub.error}</div>}
+            <div className="exm-body">
+              {turns.length === 0 ? (
+                <div className="exm-empty">暂无轨迹记录</div>
+              ) : turns.map(t => (
+                <div className="exm-turn" key={t.id}>
+                  <div className="exm-turn-idx">{String(t.turnIndex).padStart(2, '0')}</div>
+                  <div className="exm-turn-text">{t.text}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
