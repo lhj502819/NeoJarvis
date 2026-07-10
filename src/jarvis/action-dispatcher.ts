@@ -5,6 +5,7 @@ import { dispatchToAgent, interruptAgent } from '../a2a/client.js'
 import { registerRunningTask, unregisterRunningTask } from '../a2a/registry.js'
 import { bus } from '../a2a/bus.js'
 import { broadcast } from './sse.js'
+import { buildSubtaskEvent } from './subtask-event.js'
 import { consumeArtifact } from './tools.js'
 import { onMessageHandled, onTaskCompleted } from './state.js'
 import { withBrainLock, rawLlmCall } from './llm.js'
@@ -71,6 +72,7 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
   }
 
   registerRunningTask(userId, taskId, subtaskId, agentId, description)
+  const startedAtMs = Date.now()
   try {
     const result = await dispatchToAgent(assignee, description, {
       userId,
@@ -81,7 +83,18 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
       signal,
       resumeSession,
       onProgress: (progress) => {
-        updateSubTask(userId, taskId, subtaskId, { progress }).catch(() => {})
+        updateSubTask(userId, taskId, subtaskId, { progress: progress.text }).catch(() => {})
+        const payload = buildSubtaskEvent({
+          subtaskId, taskId,
+          agentName: recipe?.name || assignee,
+          taskName: description.slice(0, 60),
+          status: 'running',
+          turnCount: progress.turnCount,
+          currentAction: progress.currentAction,
+          currentTool: progress.currentTool,
+          startedAt: startedAtMs,
+        })
+        broadcast('subtask', JSON.stringify(payload), userId)
       },
     })
     return result
@@ -141,16 +154,30 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
 
       for (let i = 0; i < runnables.length; i++) {
         const r = results[i]
+        const st = runnables[i]
+        // 拿 agent 名(有 recipe 用 recipe.name,否则用 assignee)
+        const recipe = await getRecipe(userId, st.assignee)
+        const agentName = recipe?.name || st.assignee
         if (r.status === 'fulfilled') {
-          await handleSubTaskComplete(userId, taskId, runnables[i].id, r.value)
+          await handleSubTaskComplete(userId, taskId, st.id, r.value)
           completed++
-          broadcast('progress', `✅ [${completed}/${subtasks.length}] ${runnables[i].name} — 完成`, userId)
+          broadcast('progress', `✅ [${completed}/${subtasks.length}] ${st.name} — 完成`, userId)
+          broadcast('subtask', JSON.stringify(buildSubtaskEvent({
+            subtaskId: st.id, taskId,
+            agentName, taskName: st.name,
+            status: 'done', turnCount: 0,  // turnCount 前端已从 running 事件累积到最终值,此处不需要精确
+          })), userId)
           await onTaskCompleted(userId)
         } else {
           const errMsg = r.reason?.message || 'unknown'
           if (errMsg.includes('取消')) continue
-          await handleSubTaskFailed(userId, taskId, runnables[i].id, errMsg)
-          broadcast('progress', `❌ ${runnables[i].name} — 失败`, userId)
+          await handleSubTaskFailed(userId, taskId, st.id, errMsg)
+          broadcast('progress', `❌ ${st.name} — 失败`, userId)
+          broadcast('subtask', JSON.stringify(buildSubtaskEvent({
+            subtaskId: st.id, taskId,
+            agentName, taskName: st.name,
+            status: 'failed', turnCount: 0, error: errMsg,
+          })), userId)
         }
       }
     }
