@@ -1,3 +1,4 @@
+import { homedir, userInfo } from 'os'
 import { listRecipes } from '../team/registry.js'
 import { bus } from '../a2a/bus.js'
 import { searchMemory } from '../memory/everos.js'
@@ -7,6 +8,7 @@ import { getTaskSummary } from '../task/manager.js'
 import { debug, withBrainLock, rawLlmCall, llmCall } from './llm.js'
 import { addToBuffer, getRecentConversation, saveConversation, saveArtifact } from './conversation.js'
 import { parseAction, dispatchAction } from './action-dispatcher.js'
+import { getUserWorkspace } from '../shared/user-workspace.js'
 
 export { parseAction } from './action-dispatcher.js'
 export { addToBuffer } from './conversation.js'
@@ -59,7 +61,19 @@ export async function think(userId: string, userMessage: string, onProgress?: (t
   const recentConvo = await getRecentConversation(userId)
   if (signal?.aborted) throw new Error('aborted')
 
-  const contextualPrompt = `## 当前任务状态
+  const runtimeEnv = `## 运行环境(代码注入,可信)
+当前系统用户名: ${userInfo().username}
+HOME 目录: ${homedir()}
+小弟默认工作区(临时产物落这): ${getUserWorkspace(userId)}
+
+**cwd 字段填写规则(严格):**
+- 只填**你确认存在**的绝对路径——最近对话里 Sir 明确说过的、或以上 HOME 目录下你亲眼见过的
+- **不要凭想象编用户名或路径**——尤其别自己"简写"HOME 里的用户名
+- 没把握就**留空**(小弟会去用户工作区跑,永远安全)`
+
+  const contextualPrompt = `${runtimeEnv}
+
+## 当前任务状态
 ${taskContext}
 
 ## 可用团队成员
