@@ -252,6 +252,29 @@ export interface SSEEvent {
   timestamp?: string
 }
 
+export interface SubtaskEvent {
+  subtaskId: string
+  taskId: string
+  agentName: string
+  taskName: string
+  status: 'running' | 'done' | 'failed'
+  turnCount: number
+  currentAction?: string
+  currentTool?: string
+  elapsedMs?: number
+  error?: string
+}
+
+export function parseSubtaskEvent(content: string): SubtaskEvent | null {
+  try {
+    const obj = JSON.parse(content)
+    if (typeof obj?.subtaskId !== 'string') return null
+    if (typeof obj?.taskId !== 'string') return null
+    if (obj.status !== 'running' && obj.status !== 'done' && obj.status !== 'failed') return null
+    return obj as SubtaskEvent
+  } catch { return null }
+}
+
 export function useSSE(path: string) {
   const [connected, setConnected] = useState(false)
   const [events, setEvents] = useState<SSEEvent[]>([])
