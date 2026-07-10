@@ -30,6 +30,7 @@ function App() {
   const handleLogout = async () => {
     await logout()
     setUser(null)
+    window.location.hash = '#/landing'
   }
 
   if (user === undefined) {
