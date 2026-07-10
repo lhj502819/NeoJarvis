@@ -36,7 +36,7 @@ export interface DispatchContext {
   cwd?: string
   signal?: AbortSignal
   resumeSession?: string
-  onProgress?: (progress: string) => void
+  onProgress?: (progress: { text: string; turnCount: number; currentTool?: string; currentAction?: string }) => void
 }
 
 const activeQueries = new Map<string, Query>()
@@ -184,7 +184,10 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
       debug(`retry attempt ${attempt}/${MAX_RETRIES}, waiting ${RETRY_DELAYS[attempt - 1]}ms...`)
       await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt - 1]))
       if (context?.signal?.aborted) throw new Error('任务已取消')
-      context?.onProgress?.(`⚠️ API 错误，第 ${attempt} 次重试中...`)
+      context?.onProgress?.({
+        text: `⚠️ API 错误，第 ${attempt} 次重试中...`,
+        turnCount: 0,
+      })
     }
 
     result = ''
@@ -247,7 +250,16 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
 
           if (context?.onProgress) {
             const recent = progressLog.slice(-5).join('\n')
-            context.onProgress(`回合 ${turnCount} | 已执行 ${progressLog.length} 步\n${recent}`)
+            const text = `回合 ${turnCount} | 已执行 ${progressLog.length} 步\n${recent}`
+            // 从最新 progressLog 里抓最后一条工具/文本作 currentAction/currentTool
+            const lastLog = progressLog[progressLog.length - 1] || ''
+            const toolMatch = lastLog.match(/🔧 (\S+)/)
+            context.onProgress({
+              text,
+              turnCount,
+              currentTool: toolMatch ? toolMatch[1] : undefined,
+              currentAction: lastLog.replace(/^\[\d+\] /, '').slice(0, 80),
+            })
           }
         }
 
