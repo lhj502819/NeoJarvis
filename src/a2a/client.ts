@@ -45,6 +45,15 @@ export function getActiveQuery(subtaskId: string): Query | undefined {
   return activeQueries.get(subtaskId)
 }
 
+// 小弟实际写过的文件路径(按写入顺序),供任务完成时确定性挑成品预览。
+// 不依赖 LLM 主动调 render_preview——那会偷懒/幻觉。
+const writtenFilesMap = new Map<string, string[]>()
+export function takeWrittenFiles(subtaskId: string): string[] {
+  const files = writtenFilesMap.get(subtaskId) || []
+  writtenFilesMap.delete(subtaskId)
+  return files
+}
+
 export async function sendToAgent(subtaskId: string, message: string): Promise<boolean> {
   const q = activeQueries.get(subtaskId)
   if (!q) return false
@@ -175,6 +184,7 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
   let tokensInput = 0
   let tokensOutput = 0
   let retriesUsed = 0
+  let writtenFiles: string[] = []
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (context?.signal?.aborted) throw new Error('任务已取消')
@@ -195,6 +205,7 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
     let turnCount = 0
     const progressLog: string[] = []
     let apiError = false
+    writtenFiles = []
 
     // 注册到 bus — handler 处理 Jarvis/其他 agent 发来的消息
     bus.register(subtaskId, `${agentName}#${subtaskId.slice(0, 6)}`, async (msg) => {
@@ -240,6 +251,11 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
             }
             if ('type' in block && block.type === 'tool_use') {
               const toolName = (block as any).name || 'tool'
+              // 抓写文件动作,供任务完成时确定性挑成品预览
+              const fp = (block as any).input?.file_path
+              if (typeof fp === 'string' && ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(toolName)) {
+                writtenFiles.push(fp)
+              }
               turnText += `\n🔧 ${toolName}`
               progressLog.push(`[${turnCount}] 🔧 ${toolName}`)
             }
@@ -301,6 +317,9 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
     tokensInput,
     tokensOutput,
   }).catch(() => {})
+
+  // 记下小弟写过的文件,供任务完成时确定性挑成品预览
+  if (writtenFiles.length) writtenFilesMap.set(subtaskId, writtenFiles)
 
   const finalSessionId = sessionId || `auto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   // 聚类主键是 domain（语义领域），cwd 仅作开发类任务的门牌号辅料（纯调研为空）

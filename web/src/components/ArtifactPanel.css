@@ -47,6 +47,29 @@
   border-radius: 4px;
 }
 
+.artifact-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.artifact-panel-download {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  line-height: 1;
+  padding: 5px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: background 0.15s, color 0.15s;
+}
+.artifact-panel-download:hover {
+  background: var(--bg-subtle);
+  color: var(--accent);
+}
+
 .artifact-panel-close {
   background: none;
   border: none;

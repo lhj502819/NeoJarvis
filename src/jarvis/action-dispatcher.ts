@@ -1,7 +1,7 @@
 import { createTask, updateTask, addSubTask, getTask, getTaskSummary, listTasks, updateSubTask } from '../task/manager.js'
 import { scheduleAllRunnable, handleSubTaskComplete, handleSubTaskFailed, checkTaskCompletion } from '../task/scheduler.js'
 import { listRecipes, getRecipe, incrementUsage } from '../team/registry.js'
-import { dispatchToAgent, interruptAgent } from '../a2a/client.js'
+import { dispatchToAgent, interruptAgent, takeWrittenFiles } from '../a2a/client.js'
 import { registerRunningTask, unregisterRunningTask } from '../a2a/registry.js'
 import { bus } from '../a2a/bus.js'
 import { broadcast } from './sse.js'
@@ -12,6 +12,43 @@ import { onMessageHandled, onTaskCompleted } from './state.js'
 import { withBrainLock, rawLlmCall } from './llm.js'
 import { addToBuffer, saveArtifact } from './conversation.js'
 import { onShutdown } from './lifecycle.js'
+import { readFileSync, statSync } from 'fs'
+import { extname, basename } from 'path'
+import type { PendingArtifact } from './tools.js'
+
+// 成品文件扩展名 → 预览类型。只挑"可展示的成品",不含中间代码文件。
+const PREVIEW_EXT: Record<string, PendingArtifact['type']> = {
+  '.html': 'html', '.htm': 'html',
+  '.md': 'markdown', '.markdown': 'markdown',
+  '.mmd': 'mermaid', '.mermaid': 'mermaid',
+}
+const PREVIEW_MAX_BYTES = 5 * 1024 * 1024
+
+// 从小弟写过的文件里确定性挑一个主成品,读出来建预览 artifact。
+// 优先级:html > markdown > mermaid;同类取最后写的(通常是最终成品)。
+export function buildPreviewFromFiles(files: string[]): PendingArtifact | null {
+  const pick = (types: Array<PendingArtifact['type']>) => {
+    for (let i = files.length - 1; i >= 0; i--) {
+      const t = PREVIEW_EXT[extname(files[i]).toLowerCase()]
+      if (t && types.includes(t)) return files[i]
+    }
+    return null
+  }
+  const path = pick(['html']) || pick(['markdown']) || pick(['mermaid'])
+  if (!path) return null
+  try {
+    if (statSync(path).size > PREVIEW_MAX_BYTES) return null
+    const content = readFileSync(path, 'utf-8')
+    if (!content.trim()) return null
+    return {
+      type: PREVIEW_EXT[extname(path).toLowerCase()],
+      title: basename(path),
+      content,
+    }
+  } catch {
+    return null
+  }
+}
 
 interface ActionResponse {
   action: string
@@ -197,6 +234,14 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
       if (finalTask?.status === 'completed' && finalTask.result) {
         broadcast('progress', `正在为您整理汇报...`, userId)
 
+        // 确定性挑成品预览:汇总本任务所有子任务写过的文件,代码层面挑主成品,
+        // 不靠 LLM 主动调 render_preview(它会偷懒/幻觉"已推送预览"却没真调)
+        const producedFiles = finalTask.subtasks.flatMap(st => takeWrittenFiles(st.id))
+        const autoArtifact = buildPreviewFromFiles(producedFiles)
+
+        const previewNote = autoArtifact
+          ? `\n\n【已自动预览】团队产出的成品「${autoArtifact.title}」已推送到右侧预览面板,汇报时可以自然提一句"已在右侧预览"。`
+          : ''
         const reportPrompt = `你是 Jarvis，一个有幽默感的私人管家。称呼用户为 Sir。\n` +
           `你刚刚完成了任务「${finalTask.name}」。以下是团队交回的原始结果：\n\n${finalTask.result}\n\n` +
           `请向 Sir 汇报结果。要求：\n` +
@@ -204,12 +249,17 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
           `- 保留关键信息，去掉冗余\n` +
           `- 用清晰的结构（列表、表格都行）\n` +
           `- 语气像管家汇报，不是写文档\n` +
-          `- 太长就给精华摘要，说一句"详细版随时可以展开"`
+          `- 太长就给精华摘要，说一句"详细版随时可以展开"${previewNote}`
 
         const summary = await withBrainLock(userId, () => rawLlmCall(userId, reportPrompt, '请汇报'))
         const report = summary || finalTask.result
+
+        // 优先用确定性挑出的成品;若无,兜底看 LLM 是否手动 render_preview 过
+        const artifact = autoArtifact || consumeArtifact(userId)
+        const artifactId = artifact ? await saveArtifact(userId, artifact) : undefined
         broadcast('response', report, userId)
-        await addToBuffer(userId, 'jarvis', report)
+        if (artifact) broadcast('artifact', JSON.stringify(artifact), userId)
+        await addToBuffer(userId, 'jarvis', report, artifactId)
       }
     }
   })().catch(err => {
