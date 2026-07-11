@@ -5,12 +5,17 @@ export interface ChatEvent {
   content: string
 }
 
-export async function* streamChat(message: string, signal?: AbortSignal): AsyncGenerator<ChatEvent> {
+export interface ChatImagePayload {
+  mediaType: string
+  data: string   // base64,不含 data URL 前缀
+}
+
+export async function* streamChat(message: string, signal?: AbortSignal, images?: ChatImagePayload[]): AsyncGenerator<ChatEvent> {
   const res = await fetch(`${BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, ...(images && images.length ? { images } : {}) }),
     signal,
   })
 

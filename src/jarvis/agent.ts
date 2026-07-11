@@ -82,7 +82,7 @@ class JarvisExecutor implements AgentExecutor {
 
 export function startJarvisServer(): express.Express {
   const app = express()
-  app.use(express.json())
+  app.use(express.json({ limit: '15mb' }))  // 放大以容纳 base64 图片
   app.use(cookieParser())
   app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*')

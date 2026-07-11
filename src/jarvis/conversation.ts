@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import pool from '../shared/db.js'
 import { redactSecrets } from '../shared/redact.js'
 import { addMemory } from '../memory/everos.js'
+import type { ChatImage } from '../shared/types.js'
 
 const MAX_BUFFER_TURNS = 20
 
@@ -21,18 +22,42 @@ async function getOrCreateSession(userId: string): Promise<string> {
   return id
 }
 
-export async function addToBuffer(userId: string, role: 'user' | 'jarvis', content: string, artifactId?: string) {
+export async function addToBuffer(userId: string, role: 'user' | 'jarvis', content: string, artifactId?: string, imageIds?: string[]) {
   const sessionId = await getOrCreateSession(userId)
   const now = Date.now()
 
   await pool.query(
-    'INSERT INTO user_jarvis_messages (session_id, user_id, role, content, timestamp, artifact_id) VALUES ($1, $2, $3, $4, $5, $6)',
-    [sessionId, userId, role, content, now, artifactId || null]
+    'INSERT INTO user_jarvis_messages (session_id, user_id, role, content, timestamp, artifact_id, image_ids) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+    [sessionId, userId, role, content, now, artifactId || null, imageIds && imageIds.length ? JSON.stringify(imageIds) : null]
   )
   await pool.query(
     'UPDATE user_jarvis_sessions SET updated_at = $1 WHERE id = $2',
     [new Date().toISOString(), sessionId]
   )
+}
+
+// 存用户发来的图片(base64),返回 id 列表,供挂到消息 image_ids
+export async function saveChatImages(userId: string, images: ChatImage[]): Promise<string[]> {
+  const ids: string[] = []
+  for (const img of images) {
+    const id = randomUUID()
+    await pool.query(
+      'INSERT INTO jarvis_chat_images (id, user_id, media_type, data, created_at) VALUES ($1, $2, $3, $4, $5)',
+      [id, userId, img.mediaType, img.data, Date.now()]
+    )
+    ids.push(id)
+  }
+  return ids
+}
+
+// 按 id 取回图片(供 /api/chat-image/:id)
+export async function getChatImage(userId: string, id: string): Promise<{ mediaType: string; data: string } | null> {
+  const { rows } = await pool.query(
+    'SELECT media_type, data FROM jarvis_chat_images WHERE id = $1 AND user_id = $2',
+    [id, userId]
+  )
+  if (!rows[0]) return null
+  return { mediaType: rows[0].media_type, data: rows[0].data }
 }
 
 export async function getRecentConversation(userId: string): Promise<string> {

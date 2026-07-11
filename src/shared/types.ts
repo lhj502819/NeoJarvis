@@ -134,3 +134,10 @@ export interface Intent {
   taskId?: string
   detail?: string
 }
+
+// ─── Chat Image (用户发给 Jarvis 的图片) ───
+
+export interface ChatImage {
+  mediaType: string   // image/png | image/jpeg | image/webp | image/gif
+  data: string        // base64(不含 data URL 前缀)
+}

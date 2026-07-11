@@ -1,5 +1,7 @@
 import { think, addToBuffer } from './brain.js'
+import { saveChatImages } from './conversation.js'
 import { broadcast } from './sse.js'
+import type { ChatImage } from '../shared/types.js'
 
 const BUFFER_WINDOW_MS = 1500
 const BUFFER_QUICK_MS = 100
@@ -15,6 +17,7 @@ export interface SSEWriter {
 
 interface BufferedMessage {
   text: string
+  images?: ChatImage[]
   timestamp: number
   writer: SSEWriter
 }
@@ -66,15 +69,15 @@ function allWritersClosed(session: UserSession): boolean {
   return session.writers.length > 0 && session.writers.every(w => w.closed)
 }
 
-export async function enqueueMessage(userId: string, text: string, writer: SSEWriter): Promise<void> {
+export async function enqueueMessage(userId: string, text: string, writer: SSEWriter, images?: ChatImage[]): Promise<void> {
   const session = getSession(userId)
   session.writers.push(writer)
-  console.log(`[orchestrator] enqueue: userId=${userId}, state=${session.state}, text="${text.slice(0, 30)}"`)
+  console.log(`[orchestrator] enqueue: userId=${userId}, state=${session.state}, text="${text.slice(0, 30)}"${images?.length ? ` +${images.length}img` : ''}`)
 
   switch (session.state) {
     case 'idle':
       session.state = 'buffering'
-      session.buffer = [{ text, timestamp: Date.now(), writer }]
+      session.buffer = [{ text, images, timestamp: Date.now(), writer }]
       session.bufferStart = Date.now()
       session.bufferTimer = setTimeout(() => {
         flushBuffer(userId, session).catch(handleFlushError(session))
@@ -82,11 +85,11 @@ export async function enqueueMessage(userId: string, text: string, writer: SSEWr
       break
 
     case 'buffering':
-      extendBuffer(userId, session, text, writer)
+      extendBuffer(userId, session, text, writer, images)
       break
 
     case 'thinking':
-      await interruptAndRebuffer(userId, session, text, writer)
+      await interruptAndRebuffer(userId, session, text, writer, images)
       break
   }
 }
@@ -112,8 +115,8 @@ export function getStatus(userId: string): { state: string; liveContent: string 
   return { state: session?.state || 'idle', liveContent: session?.liveContent || '' }
 }
 
-function extendBuffer(userId: string, session: UserSession, text: string, writer: SSEWriter) {
-  session.buffer.push({ text, timestamp: Date.now(), writer })
+function extendBuffer(userId: string, session: UserSession, text: string, writer: SSEWriter, images?: ChatImage[]) {
+  session.buffer.push({ text, images, timestamp: Date.now(), writer })
 
   if (session.buffer.length >= MAX_BUFFER_MESSAGES) {
     if (session.bufferTimer) clearTimeout(session.bufferTimer)
@@ -143,7 +146,7 @@ function handleFlushError(session: UserSession) {
   }
 }
 
-async function interruptAndRebuffer(userId: string, session: UserSession, text: string, writer: SSEWriter) {
+async function interruptAndRebuffer(userId: string, session: UserSession, text: string, writer: SSEWriter, images?: ChatImage[]) {
   if (session.abortController) session.abortController.abort()
 
   const oldWriters = session.writers.filter(w => w !== writer)
@@ -156,7 +159,7 @@ async function interruptAndRebuffer(userId: string, session: UserSession, text: 
   endAllWriters(oldWriters)
 
   session.state = 'buffering'
-  session.buffer = [{ text, timestamp: Date.now(), writer }]
+  session.buffer = [{ text, images, timestamp: Date.now(), writer }]
   session.writers = [writer]
   session.bufferStart = Date.now()
   session.bufferTimer = setTimeout(() => {
@@ -168,20 +171,23 @@ async function flushBuffer(userId: string, session: UserSession) {
   session.bufferTimer = null
   const messages = session.buffer.map(b => b.text)
   const merged = messages.join('\n')
-  console.log(`[orchestrator] flush: ${messages.length} msgs, merged="${merged.slice(0, 50)}"`)
+  const images = session.buffer.flatMap(b => b.images ?? [])
+  console.log(`[orchestrator] flush: ${messages.length} msgs, merged="${merged.slice(0, 50)}"${images.length ? ` +${images.length}img` : ''}`)
 
   session.buffer = []
-  await executeThink(userId, session, merged)
+  await executeThink(userId, session, merged, images)
 }
 
-async function executeThink(userId: string, session: UserSession, mergedMessage: string) {
+async function executeThink(userId: string, session: UserSession, mergedMessage: string, images: ChatImage[] = []) {
   session.state = 'thinking'
   session.liveContent = ''
 
   const ac = new AbortController()
   session.abortController = ac
 
-  await addToBuffer(userId, 'user', mergedMessage)
+  // 先存图拿 id,再落 user 消息并挂上 image_ids(供刷新/历史回看)
+  const imageIds = images.length ? await saveChatImages(userId, images) : undefined
+  await addToBuffer(userId, 'user', mergedMessage, undefined, imageIds)
 
   const activeWriters = session.writers.filter(w => !w.closed)
 
@@ -215,7 +221,7 @@ async function executeThink(userId: string, session: UserSession, mergedMessage:
         if (!gotFirstDelta) { gotFirstDelta = true; clearInterval(heartbeat) }
         session.liveContent += delta
         emit('delta', delta)
-      }, ac.signal)
+      }, ac.signal, images)
 
       if (ac.signal.aborted) return
 

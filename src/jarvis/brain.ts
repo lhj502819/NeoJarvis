@@ -9,6 +9,7 @@ import { debug, withBrainLock, rawLlmCall, llmCall } from './llm.js'
 import { addToBuffer, getRecentConversation, saveConversation, saveArtifact } from './conversation.js'
 import { parseAction, dispatchAction } from './action-dispatcher.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
+import type { ChatImage } from '../shared/types.js'
 
 export { parseAction } from './action-dispatcher.js'
 export { addToBuffer } from './conversation.js'
@@ -40,9 +41,9 @@ export interface ThinkResult {
   artifact?: PendingArtifact
 }
 
-export async function think(userId: string, userMessage: string, onProgress?: (text: string) => void, onDelta?: (text: string) => void, signal?: AbortSignal): Promise<ThinkResult> {
+export async function think(userId: string, userMessage: string, onProgress?: (text: string) => void, onDelta?: (text: string) => void, signal?: AbortSignal, images?: ChatImage[]): Promise<ThinkResult> {
   const t0 = Date.now()
-  debug('think() called:', userMessage.slice(0, 50))
+  debug('think() called:', userMessage.slice(0, 50), images?.length ? `+${images.length}img` : '')
 
   const taskContext = await getTaskSummary(userId)
   if (signal?.aborted) throw new Error('aborted')
@@ -106,7 +107,7 @@ ${userMessage}`
     if (signal.aborted) ac.abort()
     else signal.addEventListener('abort', () => ac!.abort(), { once: true })
   }
-  const llmResponse = await llmCall(userId, contextualPrompt, filteredDelta, ac)
+  const llmResponse = await llmCall(userId, contextualPrompt, filteredDelta, ac, images)
   console.log(`[perf] llmCall: ${Date.now() - t2}ms`)
   console.log(`[perf] total think(): ${Date.now() - t0}ms`)
 

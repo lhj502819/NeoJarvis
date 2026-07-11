@@ -1,10 +1,18 @@
 import { Router } from 'express'
 import * as orchestrator from '../orchestrator.js'
 import { addSSEClient } from '../sse.js'
+import { getChatImage } from '../conversation.js'
 import pool from '../../shared/db.js'
 
 export function chatRoutes(): Router {
   const router = Router()
+
+  const safeParseIds = (raw: string): string[] | undefined => {
+    try {
+      const arr = JSON.parse(raw)
+      return Array.isArray(arr) && arr.length ? arr : undefined
+    } catch { return undefined }
+  }
 
   router.get('/events', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream')
@@ -18,8 +26,16 @@ export function chatRoutes(): Router {
   })
 
   router.post('/chat', async (req, res) => {
-    const { message } = req.body
-    if (!message) {
+    const { message, images } = req.body
+    // 校验图片:media_type 白名单 + 单张 base64 上限(~5MB 原图 → base64 约 6.8MB 字符)
+    const ALLOWED = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+    const MAX_B64 = 7_000_000
+    const cleanImages: Array<{ mediaType: string; data: string }> = Array.isArray(images)
+      ? images.filter((im: any) =>
+          im && typeof im.data === 'string' && ALLOWED.includes(im.mediaType) && im.data.length <= MAX_B64
+        ).map((im: any) => ({ mediaType: im.mediaType, data: im.data }))
+      : []
+    if (!message && cleanImages.length === 0) {
       res.status(400).json({ error: 'message is required' })
       return
     }
@@ -45,11 +61,21 @@ export function chatRoutes(): Router {
       orchestrator.handleDisconnect(req.userId!, writer.id)
     })
 
-    await orchestrator.enqueueMessage(req.userId!, message, writer)
+    await orchestrator.enqueueMessage(req.userId!, message || '', writer, cleanImages)
   })
 
   router.get('/api/chat/status', (req, res) => {
     res.json(orchestrator.getStatus(req.userId!))
+  })
+
+  // 取回对话图片(base64 → data URL)
+  router.get('/api/chat-image/:id', async (req, res) => {
+    const img = await getChatImage(req.userId!, req.params.id)
+    if (!img) { res.status(404).json({ error: 'not found' }); return }
+    const buf = Buffer.from(img.data, 'base64')
+    res.setHeader('Content-Type', img.mediaType)
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable')
+    res.send(buf)
   })
 
   router.get('/api/conversation', async (req, res) => {
@@ -59,8 +85,8 @@ export function chatRoutes(): Router {
     )
     if (sessionRows.length === 0) { res.json([]); return }
     const { rows } = await pool.query(
-      `SELECT role, content, timestamp, artifact_id, artifact_type, artifact_title FROM (
-        SELECT m.role, m.content, m.timestamp, m.artifact_id,
+      `SELECT role, content, timestamp, artifact_id, artifact_type, artifact_title, image_ids FROM (
+        SELECT m.role, m.content, m.timestamp, m.artifact_id, m.image_ids,
                a.type AS artifact_type, a.title AS artifact_title
         FROM user_jarvis_messages m
         LEFT JOIN jarvis_artifacts a ON m.artifact_id = a.id
@@ -73,6 +99,7 @@ export function chatRoutes(): Router {
       content: r.content,
       timestamp: r.timestamp,
       artifact: r.artifact_id ? { id: r.artifact_id, type: r.artifact_type, title: r.artifact_title } : undefined,
+      imageIds: r.image_ids ? safeParseIds(r.image_ids) : undefined,
     })))
   })
 

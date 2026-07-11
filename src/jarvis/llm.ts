@@ -1,8 +1,9 @@
-import { query, type McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
+import { query, type McpServerConfig, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { execSync } from 'child_process'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import { buildSystemPrompt } from './prompt.js'
+import type { ChatImage } from '../shared/types.js'
 
 const JARVIS_PLUGIN_DIR = join(dirname(fileURLToPath(import.meta.url)), 'plugins', 'jarvis')
 import { createJarvisTools } from './tools.js'
@@ -28,23 +29,46 @@ export function withBrainLock<T>(userId: string, fn: () => Promise<T>): Promise<
   return prev.then(fn).finally(() => resolve!())
 }
 
-export async function llmCall(userId: string, prompt: string, onDelta?: (text: string) => void, abortController?: AbortController): Promise<string> {
+export async function llmCall(userId: string, prompt: string, onDelta?: (text: string) => void, abortController?: AbortController, images?: ChatImage[]): Promise<string> {
   const systemPrompt = await buildSystemPrompt(userId)
   const mcpServers: Record<string, McpServerConfig> = {
     'jarvis-system': createJarvisTools(userId),
     ...(await buildUserMcpServers(userId)),
   }
-  return rawLlmCall(userId, systemPrompt, prompt, onDelta, mcpServers, abortController)
+  return rawLlmCall(userId, systemPrompt, prompt, onDelta, mcpServers, abortController, images)
 }
 
-export async function rawLlmCall(userId: string, systemPrompt: string, prompt: string, onDelta?: (text: string) => void, mcpServers?: Record<string, McpServerConfig>, abortController?: AbortController): Promise<string> {
+// 有图片时,把纯文本 prompt 换成一条带 image content block 的 SDKUserMessage。
+// SDK 的 query prompt 支持 string | AsyncIterable<SDKUserMessage>;吐一条后 generator
+// 结束 → stdin EOF → SDK 处理这一轮并返回 result。
+function buildImagePrompt(text: string, images: ChatImage[]): AsyncIterable<SDKUserMessage> {
+  return (async function* () {
+    yield {
+      type: 'user',
+      parent_tool_use_id: null,
+      message: {
+        role: 'user',
+        content: [
+          { type: 'text', text },
+          ...images.map(img => ({
+            type: 'image' as const,
+            source: { type: 'base64' as const, media_type: img.mediaType as any, data: img.data },
+          })),
+        ],
+      },
+    } as SDKUserMessage
+  })()
+}
+
+export async function rawLlmCall(userId: string, systemPrompt: string, prompt: string, onDelta?: (text: string) => void, mcpServers?: Record<string, McpServerConfig>, abortController?: AbortController, images?: ChatImage[]): Promise<string> {
   const t0 = Date.now()
-  debug('rawLlmCall start, prompt length:', prompt.length)
+  debug('rawLlmCall start, prompt length:', prompt.length, images?.length ? `+${images.length} images` : '')
   console.log(`[perf] rawLlmCall start, system prompt: ${systemPrompt.length} chars, user prompt: ${prompt.length} chars`)
+  const promptInput = images && images.length > 0 ? buildImagePrompt(prompt, images) : prompt
   let finalResult = ''
   let firstTokenTime = 0
   for await (const message of query({
-    prompt,
+    prompt: promptInput,
     options: {
       systemPrompt,
       pathToClaudeCodeExecutable: CLAUDE_PATH,

@@ -2,30 +2,61 @@ import { useState, useRef, useEffect } from 'react'
 import { MessageBubble } from './MessageBubble'
 import { JarvisOrb, type OrbMood } from './JarvisOrb'
 import { ArtifactPanel, type Artifact } from './ArtifactPanel'
-import { fetchArtifact } from '../api/client'
+import { fetchArtifact, type ChatImagePayload } from '../api/client'
 import type { Message, MessageArtifact } from '../api/hooks'
 
 interface Props {
   messages: Message[]
   isLoading: boolean
-  onSend: (text: string) => void
+  onSend: (text: string, images?: ChatImagePayload[]) => void
+}
+
+const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+const MAX_BYTES = 5 * 1024 * 1024  // 单张 5MB
+
+function fileToPayload(file: File): Promise<ChatImagePayload | null> {
+  return new Promise(resolve => {
+    if (!ALLOWED_TYPES.includes(file.type) || file.size > MAX_BYTES) { resolve(null); return }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      const comma = result.indexOf(',')
+      resolve(comma >= 0 ? { mediaType: file.type, data: result.slice(comma + 1) } : null)
+    }
+    reader.onerror = () => resolve(null)
+    reader.readAsDataURL(file)
+  })
 }
 
 export function ChatPanel({ messages, onSend }: Props) {
   const [input, setInput] = useState('')
+  const [pending, setPending] = useState<ChatImagePayload[]>([])
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  const addFiles = async (files: FileList | File[]) => {
+    const payloads = (await Promise.all(Array.from(files).map(fileToPayload))).filter((p): p is ChatImagePayload => !!p)
+    if (payloads.length) setPending(prev => [...prev, ...payloads])
+  }
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const imgs = Array.from(e.clipboardData.files).filter(f => f.type.startsWith('image/'))
+    if (imgs.length) { e.preventDefault(); addFiles(imgs) }
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const text = input.trim()
-    if (!text) return
+    if (!text && pending.length === 0) return
     setInput('')
-    onSend(text)
+    const images = pending
+    setPending([])
+    onSend(text, images.length ? images : undefined)
   }
 
   // Raw signal straight from the message stream.
@@ -91,27 +122,71 @@ export function ChatPanel({ messages, onSend }: Props) {
           onSubmit={handleSubmit}
           style={{ padding: '10px 20px 16px', flexShrink: 0 }}
         >
-          <div style={{ maxWidth: 680, margin: '0 auto', display: 'flex', gap: 8, alignItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '6px 6px 6px 16px', boxShadow: 'var(--shadow-sm)' }}>
-            <input
-              type="text"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder="对 Jarvis 说点什么..."
-              style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 14, outline: 'none', color: 'var(--text)', fontFamily: 'var(--font)' }}
-            />
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              style={{
-                width: 34, height: 34, borderRadius: '50%', border: 'none',
-                background: 'var(--accent)', color: '#fff', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                opacity: !input.trim() ? 0.4 : 1,
-                transition: 'opacity 0.15s, transform 0.15s',
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-5-5 12-2-5-5-2z" fill="currentColor"/></svg>
-            </button>
+          <div style={{ maxWidth: 680, margin: '0 auto' }}>
+            {/* 待发图片缩略图 */}
+            {pending.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                {pending.map((im, i) => (
+                  <div key={i} style={{ position: 'relative', width: 56, height: 56 }}>
+                    <img
+                      src={`data:${im.mediaType};base64,${im.data}`}
+                      style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPending(prev => prev.filter((_, j) => j !== i))}
+                      style={{
+                        position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%',
+                        border: 'none', background: 'var(--red, #e5484d)', color: '#fff', cursor: 'pointer',
+                        fontSize: 11, lineHeight: '18px', padding: 0, textAlign: 'center',
+                      }}
+                    >×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '6px 6px 6px 10px', boxShadow: 'var(--shadow-sm)' }}>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                multiple
+                style={{ display: 'none' }}
+                onChange={e => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }}
+              />
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                title="添加图片"
+                style={{
+                  width: 30, height: 30, borderRadius: '50%', border: 'none', background: 'transparent',
+                  color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+              </button>
+              <input
+                type="text"
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onPaste={handlePaste}
+                placeholder="对 Jarvis 说点什么..."
+                style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 14, outline: 'none', color: 'var(--text)', fontFamily: 'var(--font)' }}
+              />
+              <button
+                type="submit"
+                disabled={!input.trim() && pending.length === 0}
+                style={{
+                  width: 34, height: 34, borderRadius: '50%', border: 'none',
+                  background: 'var(--accent)', color: '#fff', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  opacity: (!input.trim() && pending.length === 0) ? 0.4 : 1,
+                  transition: 'opacity 0.15s, transform 0.15s',
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-5-5 12-2-5-5-2z" fill="currentColor"/></svg>
+              </button>
+            </div>
           </div>
         </form>
       </div>

@@ -233,6 +233,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_jarvis_adhoc_user_domain ON jarvis_adhoc_a
 
 -- ═══ recipe 挂载 skill 白名单 ═══
 ALTER TABLE jarvis_recipes ADD COLUMN IF NOT EXISTS skills TEXT DEFAULT '[]';
+
+-- ═══ 对话图片(用户发给 Jarvis 的图,base64 存库供预览/回看) ═══
+CREATE TABLE IF NOT EXISTS jarvis_chat_images (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  media_type TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_chat_images_user ON jarvis_chat_images(user_id);
+
+-- 用户消息挂载图片 id 列表(JSON 数组)
+ALTER TABLE user_jarvis_messages ADD COLUMN IF NOT EXISTS image_ids TEXT;
   `)
   } finally {
     await client.query('SELECT pg_advisory_unlock($1)', [918273]).catch(() => {})

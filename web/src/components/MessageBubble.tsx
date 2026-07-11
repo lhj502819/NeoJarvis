@@ -76,12 +76,27 @@ export function MessageBubble({ message, onArtifactClick }: Props) {
           {isUser ? 'SIR' : 'JARVIS'}
         </div>
 
+        {message.imageUrls && message.imageUrls.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: message.content ? 8 : 0 }}>
+            {message.imageUrls.map((url, i) => (
+              <a key={i} href={url} target="_blank" rel="noreferrer">
+                <img
+                  src={url}
+                  style={{ maxWidth: 180, maxHeight: 180, borderRadius: 8, border: '1px solid rgba(255,255,255,0.25)', display: 'block' }}
+                />
+              </a>
+            ))}
+          </div>
+        )}
+
         {message.status === 'thinking' ? (
           <ThinkingIndicator content={message.content} />
         ) : (
-          <div className="markdown-body">
-            <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
-          </div>
+          message.content && (
+            <div className="markdown-body">
+              <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
+            </div>
+          )
         )}
 
         {message.artifact && onArtifactClick && (

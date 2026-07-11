@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { fetchJSON, streamChat } from './client'
+import { fetchJSON, streamChat, type ChatImagePayload } from './client'
 
 export interface MessageArtifact {
   id?: string
@@ -15,6 +15,15 @@ export interface Message {
   content: string
   status?: 'thinking' | 'streaming' | 'done'
   artifact?: MessageArtifact
+  imageUrls?: string[]   // 用户消息附带的图片(展示用 URL:刚发的用 data URL,历史用 /api/chat-image/id)
+}
+
+// 找最后一条 jarvis 消息的下标(artifact 事件总在 response 后到达,需挂到已 done 的消息上)
+function findLastJarvisIndex(msgs: Message[]): number {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role === 'jarvis') return i
+  }
+  return -1
 }
 
 export function useChat() {
@@ -37,7 +46,7 @@ export function useChat() {
     // 串行:先铺历史(整体替换),再追加进行中的思考气泡,避免两次 setMessages 竞态覆盖
     ;(async () => {
       try {
-        const turns = await fetchJSON<Array<{ role: string; content: string; timestamp: number; artifact?: { id: string; type: string; title: string } }>>('/api/conversation')
+        const turns = await fetchJSON<Array<{ role: string; content: string; timestamp: number; artifact?: { id: string; type: string; title: string }; imageIds?: string[] }>>('/api/conversation')
         if (turns.length > 0) {
           const msgs: Message[] = turns.map((t, i) => ({
             id: `h-${t.timestamp}-${i}`,
@@ -45,6 +54,7 @@ export function useChat() {
             content: t.content,
             status: 'done' as const,
             artifact: t.artifact ? { type: t.artifact.type as MessageArtifact['type'], title: t.artifact.title, content: '', id: t.artifact.id } : undefined,
+            imageUrls: t.imageIds?.map(id => `/api/chat-image/${id}`),
           }))
           // 保留 /events 可能已抢先追加的进行中气泡,避免整体替换把它冲掉
           setMessages(prev => {
@@ -96,9 +106,10 @@ export function useChat() {
     step()
   }, [])
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (text: string, images?: ChatImagePayload[]) => {
     // Don't abort previous — orchestrator handles buffering/merging server-side
-    const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: text, status: 'done' }
+    const imageUrls = images?.map(im => `data:${im.mediaType};base64,${im.data}`)
+    const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: text, status: 'done', imageUrls }
     const jarvisMsg: Message = { id: `j-${Date.now()}`, role: 'jarvis', content: '', status: 'thinking' }
 
     setMessages(prev => [...prev, userMsg, jarvisMsg])
@@ -108,7 +119,7 @@ export function useChat() {
     abortRef.current = controller
 
     try {
-      for await (const event of streamChat(text, controller.signal)) {
+      for await (const event of streamChat(text, controller.signal, images)) {
         // response 指纹记录在 setMessages 外(纯 ref),供 /events 去重用
         if (event.type === 'response') rememberResponse(event.content)
         setMessages(prev => {
@@ -150,8 +161,10 @@ export function useChat() {
           if (event.type === 'artifact') {
             try {
               const artifact = JSON.parse(event.content) as MessageArtifact
-              return msgs.map((m, i) => i === msgs.length - 1 ? { ...m, artifact } : m)
+              const idx = findLastJarvisIndex(msgs)
+              if (idx >= 0) return msgs.map((m, i) => i === idx ? { ...m, artifact } : m)
             } catch { return msgs }
+            return msgs
           }
           return msgs
         })
@@ -209,7 +222,9 @@ export function useChat() {
         case 'artifact': {
           try {
             const artifact = JSON.parse(event.content) as MessageArtifact
-            if (isLiveJarvis) return updateLast({ artifact })
+            // artifact 总在 response 之后到达,此时消息已 done。挂到最后一条 jarvis 消息(不论状态)
+            const idx = findLastJarvisIndex(prev)
+            if (idx >= 0) return prev.map((m, i) => i === idx ? { ...m, artifact } : m)
           } catch { /* ignore */ }
           return prev
         }
