@@ -8,7 +8,7 @@
 
 ## 1. 一句话定位
 
-把 Jarvis 做成一个 **macOS 原生桌面应用**,让 Sir(以及内测用户)能装到本机、常驻菜单栏、随叫随到 —— 并且能操作本机文件/终端。第一版是**单机全家桶**:应用内自带并托管 Jarvis 内核,用户装完填个 API key 就能用。
+把 Jarvis 做成一个 **macOS 原生桌面应用**,让 Sir(以及内测用户)能装到本机、常驻菜单栏、随叫随到 —— 并且能操作本机文件/终端。第一版是**应用托管内核的单机版**:`.app` 里带着 Jarvis 内核,由应用用系统 Node 自动拉起(用户不起任何服务);用户装好 Node、填个 key 就能用。
 
 ---
 
@@ -38,7 +38,9 @@
 
 ## 4. 内核如何随应用分发(关键)
 
-第一版是**全家桶单机**:内核不再靠 `npm run dev` 手动起,而是打包进 `.app`,由 Swift 应用用 `Process` 拉起/守护/退出。
+第一版走 **B2:应用托管内核 · 用系统 Node**。内核不再靠 `npm run dev` 手动起,而是把**内核源码 + `node_modules`**(含 §4.1 的 Agent SDK 二进制)打进 `.app`,由 Swift 应用用 `Process` 调**系统 Node** 拉起 `kernel/index.js`,并守护/退出。用户**不起任何服务**,只需机器上装了 **Node 22+**。
+
+> **为什么不内嵌 Node 运行时(全家桶 A):** 内嵌 Node 会引入"给内嵌运行时签名/公证"的重活(macOS 公证要求 .app 内每个可执行文件都签名)。B2 用系统 Node 躲掉这块,代价仅是"用户需装 Node" —— 对第一版内测人群(本就要搞 API key)门槛一致。面向非技术公众发布时再升级到内嵌 Node(A),或那时已转 §13 远端、内核不在客户端。
 
 ### 4.1 LLM 运行时:Agent SDK 自带二进制
 
@@ -108,9 +110,10 @@ Claude Code(= Agent SDK 运行时)认 `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOK
 ## 8. sidecar 生命周期与错误处理
 
 - Swift 应用用 `Process` 拉起 Node 内核 sidecar,监督其存活,退出应用时终止。
+- 启动检查:探测系统 **Node 是否存在且 ≥22**,缺失/过旧给引导(装 Node);再用 `Process` 拉起 `node kernel/index.js`。
 - 启动探测:`GET 127.0.0.1:<端口>` 健康检查,连上才进主界面;失败给**说人话的提示**(而非白屏)。
 - SSE 断线自动重连(内核崩溃/重启后 view 自恢复)。
-- 内核打包方式(Node SEA / 打包 Node 运行时 + 源码 + node_modules 到 `.app` Resources)留给规划;需保证 §4.1 的 Agent SDK 平台二进制被正确带上、且内核能在运行时 spawn 它。
+- 内核打包(B2):把内核源码 + `node_modules` 放进 `.app` Resources,用系统 Node 拉起。**需保证 §4.1 的 Agent SDK 平台二进制被正确带进 node_modules、且运行时能被 spawn。** 不内嵌 Node 运行时(见 §4)。
 
 ---
 
@@ -139,9 +142,9 @@ Claude Code(= Agent SDK 运行时)认 `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOK
 | # | 项 | 级别 | 说明 |
 |---|---|---|---|
 | #2 | 数据层抽象 | 🟡 | 裸 PG SQL → query builder,SQLite 默认 + 兼容 PG |
-| #3 | Node 内核打包 sidecar | 🟡 | 含把 Agent SDK 平台二进制打进包、运行时可 spawn |
+| #3 | Node 内核打包(B2) | 🟡 | 内核源码+node_modules(含 Agent SDK 二进制)进 .app,用系统 Node 拉起;**不内嵌 Node 运行时** |
 | #4 | SwiftUI 界面全新写 + Swift HTTP/SSE 客户端 | 🔴 | 本版最大工作量(现有 React UI 作废,重写) |
-| #5 | API key 引导 UX | 🟢 | 首次启动引导填 key;用户自付费 |
+| #5 | 首次启动引导:Node 检测(≥22) + API key 填写 | 🟢 | 用户前提=Node+key;用户自付费 |
 | #6 | 多厂商 provider 维度 | 🟡 | `buildUserEnv` 加维度(小)+ **spike 验证 DeepSeek 对 vision/thinking/MCP 兼容度** + ToS 灰区评估 |
 
 > 原 🔴#1(claude CLI 分发/合规)已**溶解** —— Agent SDK 自带二进制、商用 ToS 授权分发,降为 #3 的一个打包细节。
