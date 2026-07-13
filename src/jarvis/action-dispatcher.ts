@@ -99,7 +99,7 @@ export function parseAction(text: string): ActionResponse | null {
   return null
 }
 
-async function executeSubTask(userId: string, taskId: string, subtaskId: string, description: string, assignee: string, signal: AbortSignal, resumeSession?: string, domain?: string, cwd?: string): Promise<string> {
+async function executeSubTask(userId: string, taskId: string, subtaskId: string, description: string, assignee: string, signal: AbortSignal, resumeSession?: string, domain?: string, cwd?: string, skills?: string[]): Promise<string> {
   if (signal.aborted) throw new Error('任务已取消')
 
   const recipe = await getRecipe(userId, assignee)
@@ -118,6 +118,7 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
       subtaskId,
       domain,
       cwd,
+      skills,
       signal,
       resumeSession,
       onProgress: (progress) => {
@@ -146,7 +147,7 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
   }
 }
 
-export function executeTaskInBackground(userId: string, taskId: string, subtasks: Array<{ name: string; description: string; assignee?: string; resumeSession?: string; domain?: string; cwd?: string }>) {
+export function executeTaskInBackground(userId: string, taskId: string, subtasks: Array<{ name: string; description: string; assignee?: string; resumeSession?: string; domain?: string; cwd?: string; skills?: string[] }>) {
   ;(async () => {
     const task = await getTask(userId, taskId)
     if (!task) return
@@ -157,6 +158,7 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
     const resumeMap = new Map<string, string>()
     const domainMap = new Map<string, string>()
     const cwdMap = new Map<string, string>()
+    const skillsMap = new Map<string, string[]>()
     for (const st of subtasks) {
       const assignee = st.assignee || 'general'
       // 防线:Jarvis 可能幻觉出不存在的 cwd(如错误用户名 /Users/hh/...)。
@@ -171,6 +173,7 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
       }
       if (st.domain) domainMap.set(sub.id, st.domain)
       if (safeCwd) cwdMap.set(sub.id, safeCwd)
+      if (st.skills?.length) skillsMap.set(sub.id, st.skills)
     }
     await updateTask(userId, taskId, { status: 'executing' })
 
@@ -192,7 +195,7 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
       }
 
       const results = await Promise.allSettled(
-        runnables.map(st => executeSubTask(userId, taskId, st.id, st.description, st.assignee, signal, resumeMap.get(st.id), domainMap.get(st.id), cwdMap.get(st.id)))
+        runnables.map(st => executeSubTask(userId, taskId, st.id, st.description, st.assignee, signal, resumeMap.get(st.id), domainMap.get(st.id), cwdMap.get(st.id), skillsMap.get(st.id)))
       )
 
       if (signal.aborted) break

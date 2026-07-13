@@ -1,0 +1,5 @@
+{
+  "name": "skills-hub",
+  "description": "聚合 Claude Code / Codex 全局 skill,供 Jarvis 与团队成员共享使用",
+  "version": "1.0.0"
+}

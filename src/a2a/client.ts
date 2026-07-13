@@ -5,6 +5,7 @@ import { dirname, join } from 'path'
 import { getPeerAgents } from './registry.js'
 
 const JARVIS_PLUGIN_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'jarvis', 'plugins', 'jarvis')
+const SKILLS_HUB_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'jarvis', 'plugins', 'skills-hub')
 import { getRecipe } from '../team/registry.js'
 import { recordAgentSession, findMatchingSessionByDomain, extractKeywords } from './history.js'
 import { upsertAdhocAgent } from './adhoc.js'
@@ -36,6 +37,7 @@ export interface DispatchContext {
   cwd?: string
   signal?: AbortSignal
   resumeSession?: string
+  skills?: string[]
   onProgress?: (progress: { text: string; turnCount: number; currentTool?: string; currentAction?: string }) => void
 }
 
@@ -160,8 +162,11 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,
     settingSources: [],
-    plugins: [{ type: 'local', path: JARVIS_PLUGIN_DIR }],
-    ...(recipe?.skills?.length ? { skills: recipe.skills } : {}),
+    plugins: [{ type: 'local', path: JARVIS_PLUGIN_DIR }, { type: 'local', path: SKILLS_HUB_DIR }],
+    ...(() => {
+      const merged = [...new Set([...(recipe?.skills || []), ...(context?.skills || [])])]
+      return merged.length ? { skills: merged } : {}
+    })(),
     env: await buildUserEnv(userId),
     maxTurns: 99999,
     mcpServers: { ...userMcpServers, 'agent-comms': agentCommsMcp },

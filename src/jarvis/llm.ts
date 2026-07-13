@@ -6,6 +6,7 @@ import { buildSystemPrompt } from './prompt.js'
 import type { ChatImage } from '../shared/types.js'
 
 const JARVIS_PLUGIN_DIR = join(dirname(fileURLToPath(import.meta.url)), 'plugins', 'jarvis')
+const SKILLS_HUB_DIR = join(dirname(fileURLToPath(import.meta.url)), 'plugins', 'skills-hub')
 import { createJarvisTools } from './tools.js'
 import { broadcast } from './sse.js'
 import { buildUserEnv } from '../shared/user-env.js'
@@ -76,8 +77,8 @@ export async function rawLlmCall(userId: string, systemPrompt: string, prompt: s
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       settingSources: [],
-      plugins: [{ type: 'local', path: JARVIS_PLUGIN_DIR }],
-      skills: ['promote-agent'],
+      plugins: [{ type: 'local', path: JARVIS_PLUGIN_DIR }, { type: 'local', path: SKILLS_HUB_DIR }],
+      skills: 'all',
       env: await buildUserEnv(userId),
       maxTurns: 99999,
       includePartialMessages: true,
