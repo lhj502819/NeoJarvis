@@ -1,7 +1,9 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import { listRecipes, createRecipe } from '../team/registry.js'
-import { listTasks, getTask } from '../task/manager.js'
+import { listTasks, getTask, createTask, updateTask } from '../task/manager.js'
+import { interruptAgent } from '../a2a/client.js'
+import { bus } from '../a2a/bus.js'
 import { listAgentSessions, getSessionsByDomain } from '../a2a/history.js'
 import { addMcpServer, listMcpServers, removeMcpServer } from '../auth/mcp-servers.js'
 import { getAdhocAgent, markAdhocPromoted, listAdhocAgents } from '../a2a/adhoc.js'
@@ -334,6 +336,85 @@ export function createJarvisTools(userId: string) {
             broadcast('artifact_updated', JSON.stringify({ id: rows[0].id, type: rows[0].type, title: rows[0].title, content: rows[0].content, language: rows[0].language, version: rows[0].version }), userId)
           }
           return { content: [{ type: 'text' as const, text: `已更新「${rows[0]?.title || ''}」→ v${rows[0]?.version}，Sir 面板已刷新。` }] }
+        }
+      ),
+
+      // ═══ 任务派发(agent 模式:Jarvis 在对话中直接调用)═══
+      tool(
+        'create_task',
+        '把一个需要耗时或复杂执行的任务派给团队成员。你(Jarvis)自己能快速答的问题不要派任务,直接回答即可。' +
+          '每个子任务必填 domain(稳定可复用的能力领域名,如"技术调研"/"差旅出行"/"jarvis开发",同类任务 domain 务必一致,系统靠它累积执行次数)。' +
+          'assignee 优先填现有团队成员的 recipe ID(见上下文「可用团队成员」);没有合适的就填描述性角色名(通常与 domain 一致),系统会创建临时执行者。绝不填"通用"或"general"。' +
+          'cwd 只在涉及具体仓库的开发类任务填(仓库绝对路径),调研/生活类不填。' +
+          'skills 可选:从可用 skill 里挑出与该子任务相关的(如调研类挂 deep-research),小弟会加载对应方法论。' +
+          'resumeSession 可选:若该任务与某历史 agent 做过的事相关,填其 sessionId(仅真实 UUID 有效,auto- 开头无效)让它带记忆继续干。',
+        {
+          name: z.string().describe('任务名(简短)'),
+          description: z.string().describe('任务原始需求描述'),
+          subtasks: z.array(z.object({
+            name: z.string().describe('子任务名'),
+            description: z.string().describe('这个子任务具体做什么'),
+            assignee: z.string().describe('执行者:团队成员 recipe ID 或描述性角色名'),
+            domain: z.string().describe('能力领域名(稳定可复用)'),
+            cwd: z.string().optional().describe('仅开发类任务填,仓库绝对路径'),
+            skills: z.array(z.string()).optional().describe('挂载的 skill 名列表(可选)'),
+            resumeSession: z.string().optional().describe('历史 session UUID(可选)'),
+          })).describe('子任务列表'),
+        },
+        async (args) => {
+          const task = await createTask(userId, args.name, args.description)
+          await updateTask(userId, task.id, { status: 'planning' })
+          const { executeTaskInBackground } = await import('./action-dispatcher.js')
+          executeTaskInBackground(userId, task.id, args.subtasks)
+          const list = args.subtasks.map((st, i) => `  ${i + 1}. ${st.name}（${st.assignee}）`).join('\n')
+          return { content: [{ type: 'text' as const, text: `已创建任务「${args.name}」(${task.id})并派发执行:\n${list}\n有进展会通知 Sir。` }] }
+        }
+      ),
+
+      tool(
+        'cancel_task',
+        '取消一个或全部进行中的任务。taskId 传具体 ID 取消单个,传 "all" 取消全部活跃任务。',
+        {
+          taskId: z.string().describe('任务 ID,或 "all" 取消全部'),
+          reason: z.string().optional().describe('取消原因(可选)'),
+        },
+        async (args) => {
+          const { abortTask } = await import('./action-dispatcher.js')
+          if (args.taskId === 'all') {
+            const active = (await listTasks(userId)).filter(t => !['completed', 'failed', 'cancelled'].includes(t.status))
+            for (const t of active) { await updateTask(userId, t.id, { status: 'cancelled' }); abortTask(t.id) }
+            return { content: [{ type: 'text' as const, text: `已取消全部 ${active.length} 个任务。${args.reason ? `原因:${args.reason}` : ''}` }] }
+          }
+          const task = await getTask(userId, args.taskId)
+          if (!task) return { content: [{ type: 'text' as const, text: '未找到该任务。' }] }
+          await updateTask(userId, args.taskId, { status: 'cancelled' })
+          abortTask(args.taskId)
+          return { content: [{ type: 'text' as const, text: `已取消任务「${task.name}」。` }] }
+        }
+      ),
+
+      tool(
+        'send_message',
+        '给一个运行中的子任务(小弟)发消息,补充指令或纠正方向。只能对上下文里带 (subtaskId: xxx) 标记的运行中子任务操作。',
+        {
+          subtaskId: z.string().describe('运行中子任务的 subtaskId'),
+          message: z.string().describe('要传达的内容'),
+        },
+        async (args) => {
+          bus.notify('jarvis', args.subtaskId, args.subtaskId, args.message)
+          const online = bus.isRegistered(args.subtaskId)
+          broadcast('progress', `💬 Jarvis → Agent: ${args.message.slice(0, 40)}`, userId)
+          return { content: [{ type: 'text' as const, text: online ? `已把消息发给小弟 (${args.subtaskId.slice(0, 6)})。` : `消息已记录(小弟当前不在线,下次恢复时可读)。` }] }
+        }
+      ),
+
+      tool(
+        'interrupt_agent',
+        '打断一个运行中的子任务(小弟)。同样只能对带 (subtaskId: xxx) 标记的运行中子任务操作。',
+        { subtaskId: z.string().describe('运行中子任务的 subtaskId') },
+        async (args) => {
+          const ok = await interruptAgent(args.subtaskId)
+          return { content: [{ type: 'text' as const, text: ok ? `已打断小弟 (${args.subtaskId.slice(0, 6)})。` : `打断失败,该小弟可能已结束。` }] }
         }
       ),
     ],

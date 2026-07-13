@@ -7,7 +7,7 @@ import { onMessageHandled } from './state.js'
 import { getTaskSummary } from '../task/manager.js'
 import { debug, withBrainLock, rawLlmCall, llmCall } from './llm.js'
 import { addToBuffer, getRecentConversation, saveConversation, saveArtifact } from './conversation.js'
-import { parseAction, dispatchAction } from './action-dispatcher.js'
+import { parseAction } from './action-dispatcher.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
 import { getPinnedArtifactId } from './orchestrator.js'
 import pool from '../shared/db.js'
@@ -110,40 +110,22 @@ ${userMessage}`
   onProgress?.('正在分析你的需求...')
   const t2 = Date.now()
   console.log(`[perf] prompt built, length: ${contextualPrompt.length} chars`)
-  let accum = ''
-  let codeBlockHit = false
-  const filteredDelta = onDelta ? (text: string) => {
-    if (codeBlockHit) return
-    accum += text
-    if (accum.includes('```')) {
-      codeBlockHit = true
-      return
-    }
-    onDelta(text)
-  } : undefined
   let ac: AbortController | undefined
   if (signal) {
     ac = new AbortController()
     if (signal.aborted) ac.abort()
     else signal.addEventListener('abort', () => ac!.abort(), { once: true })
   }
-  const llmResponse = await llmCall(userId, contextualPrompt, filteredDelta, ac, images)
+  // agent 模式:LLM 在 loop 内自主调工具(create_task 等),文字实时流式给前端。
+  // rawLlmCall 跑完整 agent loop 并返回最终文字,不再需要 parseAction/dispatchAction。
+  const llmResponse = await llmCall(userId, contextualPrompt, onDelta, ac, images)
   console.log(`[perf] llmCall: ${Date.now() - t2}ms`)
   console.log(`[perf] total think(): ${Date.now() - t0}ms`)
 
-  const action = parseAction(llmResponse)
-
-  if (!action) {
-    const cleaned = llmResponse.replace(/```(?:json)?[\s\S]*?```/g, '').trim()
-    const finalResponse = cleaned || llmResponse
-    const noActionArtifact = consumeArtifact(userId)
-    const artifactId = noActionArtifact ? await saveArtifact(userId, noActionArtifact) : undefined
-    await addToBuffer(userId, 'jarvis', finalResponse, artifactId)
-    await saveConversation(userId, userMessage, finalResponse)
-    return { response: finalResponse, artifact: noActionArtifact || undefined }
-  }
-
-  const { response, artifact } = await dispatchAction(userId, action, llmResponse, userMessage)
-  await saveConversation(userId, userMessage, response)
-  return { response, artifact }
+  const finalResponse = llmResponse
+  const artifact = consumeArtifact(userId)
+  const artifactId = artifact ? await saveArtifact(userId, artifact) : undefined
+  await addToBuffer(userId, 'jarvis', finalResponse, artifactId)
+  await saveConversation(userId, userMessage, finalResponse)
+  return { response: finalResponse, artifact: artifact || undefined }
 }
