@@ -1,10 +1,11 @@
 import { Router } from 'express'
-import { getTaskSummary, listTasks, getTaskDetail } from '../../task/manager.js'
+import { getTaskSummary, listTasks, getTaskDetail, listSubtasksByAssignee } from '../../task/manager.js'
 import { getState } from '../state.js'
 import { listAllRunningTasks } from '../../a2a/registry.js'
 import { listAgentSessions } from '../../a2a/history.js'
 import { listRecipes } from '../../team/registry.js'
 import { listCredentials, addCredential, updateCredential, deleteCredential } from '../../auth/credentials.js'
+import pool from '../../shared/db.js'
 
 export function dashboardRoutes(): Router {
   const router = Router()
@@ -33,6 +34,30 @@ export function dashboardRoutes(): Router {
 
   router.get('/api/recipes', async (req, res) => {
     res.json(await listRecipes(req.userId!))
+  })
+
+  router.get('/api/recipe/:recipeId/subtasks', async (req, res) => {
+    const subtasks = await listSubtasksByAssignee(req.userId!, req.params.recipeId)
+    res.json(subtasks)
+  })
+
+  router.get('/api/artifacts', async (req, res) => {
+    const type = req.query.type as string | undefined
+    const q = req.query.q as string | undefined
+    const limit = Math.min(Number(req.query.limit) || 50, 100)
+    const offset = Number(req.query.offset) || 0
+
+    const conditions: string[] = ['user_id = $1']
+    const params: unknown[] = [req.userId!]
+    let idx = 2
+    if (type) { conditions.push(`type = $${idx}`); params.push(type); idx++ }
+    if (q) { conditions.push(`(title ILIKE $${idx} OR content ILIKE $${idx})`); params.push(`%${q}%`); idx++ }
+
+    const [{ rows: countRows }, { rows }] = await Promise.all([
+      pool.query(`SELECT COUNT(*) FROM jarvis_artifacts WHERE ${conditions.join(' AND ')}`, params),
+      pool.query(`SELECT id, type, title, language, version, created_at, updated_at FROM jarvis_artifacts WHERE ${conditions.join(' AND ')} ORDER BY COALESCE(updated_at, created_at) DESC LIMIT ${limit} OFFSET ${offset}`, params),
+    ])
+    res.json({ total: Number(countRows[0].count), items: rows })
   })
 
   router.get('/api/credentials', async (req, res) => {

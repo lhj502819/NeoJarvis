@@ -1,7 +1,8 @@
 import { randomUUID } from 'crypto'
-import type { Task, SubTask, SubTaskTurn, TaskDetail, TaskStatus, SubTaskStatus } from '../shared/types.js'
+import type { Task, SubTask, SubTaskTurn, TaskDetail, TaskStatus, SubTaskStatus, SubtaskMessage } from '../shared/types.js'
 import pool from '../shared/db.js'
 import { bus } from '../a2a/bus.js'
+import { listRecipesByIds } from '../team/registry.js'
 
 function rowToSubTask(row: any): SubTask {
   return {
@@ -30,7 +31,22 @@ function rowToSubTask(row: any): SubTask {
 
 async function loadSubTasks(taskId: string): Promise<SubTask[]> {
   const { rows } = await pool.query('SELECT * FROM jarvis_subtasks WHERE task_id = $1', [taskId])
-  return rows.map(rowToSubTask)
+  const subtasks = rows.map(rowToSubTask)
+
+  // 批量查 recipe 判定身份
+  const assigneeIds = [...new Set(subtasks.map(s => s.assignee))]
+  const recipeMap = await listRecipesByIds(assigneeIds)
+  for (const st of subtasks) {
+    const recipe = recipeMap.get(st.assignee)
+    if (recipe) {
+      st.agentType = 'permanent'
+      st.agentName = recipe.name
+    } else {
+      st.agentType = 'adhoc'
+      st.agentName = st.assignee
+    }
+  }
+  return subtasks
 }
 
 async function rowToTask(row: any): Promise<Task> {
@@ -250,13 +266,37 @@ export async function getSubtaskTurns(subtaskId: string): Promise<SubTaskTurn[]>
   }))
 }
 
+export async function listSubtasksByAssignee(userId: string, assignee: string): Promise<Array<{ id: string; taskId: string; name: string; description: string; status: string; domain?: string; turnCount?: number; createdAt: string }>> {
+  const { rows } = await pool.query(
+    'SELECT id, task_id, name, description, status, domain, turn_count, created_at FROM jarvis_subtasks WHERE user_id = $1 AND assignee = $2 ORDER BY created_at DESC LIMIT 50',
+    [userId, assignee]
+  )
+  return rows.map(r => ({
+    id: r.id,
+    taskId: r.task_id,
+    name: r.name,
+    description: r.description,
+    status: r.status,
+    domain: r.domain || undefined,
+    turnCount: r.turn_count ?? undefined,
+    createdAt: r.created_at,
+  }))
+}
+
 export async function getTaskDetail(userId: string, taskId: string): Promise<TaskDetail | undefined> {
   const task = await getTask(userId, taskId)
   if (!task) return undefined
 
   const turnsBySubtask: Record<string, SubTaskTurn[]> = {}
+  const messagesBySubtask: Record<string, SubtaskMessage[]> = {}
   for (const st of task.subtasks) {
     turnsBySubtask[st.id] = await getSubtaskTurns(st.id)
+    const stConv = await bus.getConversation(st.id)
+    messagesBySubtask[st.id] = stConv ? stConv.messages.map(m => ({
+      id: m.id, from: m.from, to: m.to, role: m.role,
+      parts: m.parts.map(p => ({ kind: p.kind, text: p.text })),
+      timestamp: m.timestamp,
+    })) : []
   }
 
   const conv = await bus.getConversation(taskId)
@@ -270,5 +310,14 @@ export async function getTaskDetail(userId: string, taskId: string): Promise<Tas
     })),
   } : null
 
-  return { task, turnsBySubtask, conversation }
+  const { rows: artRows } = await pool.query(
+    'SELECT id, type, title, language, version, created_at FROM jarvis_artifacts WHERE task_id = $1 AND user_id = $2 ORDER BY created_at ASC',
+    [taskId, userId]
+  )
+  const artifacts = artRows.map(r => ({
+    id: r.id, type: r.type, title: r.title, language: r.language || undefined,
+    version: r.version, createdAt: r.created_at,
+  }))
+
+  return { task, turnsBySubtask, messagesBySubtask, conversation, artifacts }
 }

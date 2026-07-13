@@ -1,77 +1,253 @@
+/* ===== Jarvis Orb — Holographic Globe (Reference: Earth network topology) ===== */
+
 .jarvis-orb {
-  width: 80px;
-  height: 44px;
+  width: 72px;
+  height: 72px;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
 }
 
-/* Waveform — a row of five bars that pulse with mood */
-.jarvis-orb-wave {
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
+/* --- Central Glow Backdrop --- */
+.jarvis-orb-glow {
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--accent) 30%, transparent) 0%,
+    color-mix(in srgb, var(--accent) 10%, transparent) 50%,
+    transparent 70%
+  );
+  animation: orb-glow-breathe 3.5s ease-in-out infinite;
+  z-index: 0;
 }
 
-.jarvis-orb-wave span {
-  width: 3px;
-  height: 10px;
-  border-radius: 3px;
-  background: linear-gradient(to top, var(--accent), var(--accent-hover));
-  box-shadow: 0 0 8px var(--accent-light);
-  transform-origin: center;
-  animation: orb-wave-idle 2.6s ease-in-out infinite;
+@keyframes orb-glow-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50%      { transform: scale(1.15); opacity: 1; }
 }
 
-.jarvis-orb-wave span:nth-child(1) { animation-delay: 0s;    }
-.jarvis-orb-wave span:nth-child(2) { animation-delay: 0.18s; }
-.jarvis-orb-wave span:nth-child(3) { animation-delay: 0.36s; }
-.jarvis-orb-wave span:nth-child(4) { animation-delay: 0.54s; }
-.jarvis-orb-wave span:nth-child(5) { animation-delay: 0.72s; }
-
-/* Idle — quiet, shallow breathing so it clearly reads as "at rest" */
-@keyframes orb-wave-idle {
-  0%, 100% { transform: scaleY(1);   opacity: 0.35; }
-  50%      { transform: scaleY(1.6); opacity: 0.65; }
+/* --- HUD Rings (SVG) --- */
+.jarvis-hud-ring {
+  position: absolute;
+  inset: -6px;
+  width: calc(100% + 12px);
+  height: calc(100% + 12px);
+  z-index: 3;
 }
 
-/* Thinking — fast, tall, brightly lit; a tight stagger makes a flowing wave
-   that reads as unmistakably "working", not "resting". */
-.jarvis-orb-wave[data-mood="thinking"] span {
-  animation-name: orb-wave-active;
-  animation-duration: 0.62s;
-  background: linear-gradient(to top, var(--accent-hover), var(--accent));
-  box-shadow: 0 0 10px var(--accent-hover), 0 0 4px var(--accent);
-}
-.jarvis-orb-wave[data-mood="thinking"] span:nth-child(1) { animation-delay: 0s;   }
-.jarvis-orb-wave[data-mood="thinking"] span:nth-child(2) { animation-delay: 0.1s; }
-.jarvis-orb-wave[data-mood="thinking"] span:nth-child(3) { animation-delay: 0.2s; }
-.jarvis-orb-wave[data-mood="thinking"] span:nth-child(4) { animation-delay: 0.3s; }
-.jarvis-orb-wave[data-mood="thinking"] span:nth-child(5) { animation-delay: 0.4s; }
-
-@keyframes orb-wave-active {
-  0%, 100% { transform: scaleY(1);   opacity: 0.55; }
-  50%      { transform: scaleY(3.8); opacity: 1;    }
+.jarvis-hud-outer {
+  animation: hud-ring-rotate 30s linear infinite;
 }
 
-/* Happy — medium, settled energy */
-.jarvis-orb-wave[data-mood="happy"] span {
-  animation-name: orb-wave-happy;
-  animation-duration: 1.6s;
+.jarvis-hud-inner {
+  inset: -2px;
+  width: calc(100% + 4px);
+  height: calc(100% + 4px);
+  animation: hud-ring-rotate 20s linear infinite reverse;
 }
 
-@keyframes orb-wave-happy {
-  0%, 100% { transform: scaleY(1.1); opacity: 0.6;  }
-  50%      { transform: scaleY(2.6); opacity: 0.95; }
+.jarvis-hud-ring .ring-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.5;
+  opacity: 0.5;
 }
 
+.jarvis-hud-inner .ring-line {
+  stroke-width: 0.4;
+  opacity: 0.35;
+}
+
+.jarvis-hud-ring .tick-major {
+  stroke: var(--accent);
+  stroke-width: 0.8;
+  opacity: 0.6;
+}
+
+.jarvis-hud-ring .tick-minor {
+  stroke: var(--accent);
+  stroke-width: 0.4;
+  opacity: 0.3;
+}
+
+@keyframes hud-ring-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* --- Globe Wireframe --- */
+.jarvis-globe {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  z-index: 2;
+  animation: globe-rotate 20s linear infinite;
+}
+
+@keyframes globe-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Globe latitude/longitude lines */
+.globe-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.4;
+  opacity: 0.4;
+}
+
+.globe-equator {
+  stroke-width: 0.6;
+  opacity: 0.6;
+}
+
+.globe-lat, .globe-lat-upper, .globe-lat-lower {
+  opacity: 0.3;
+  stroke-width: 0.35;
+}
+
+.globe-lon {
+  opacity: 0.35;
+}
+
+.globe-lon-center {
+  opacity: 0.25;
+  stroke-width: 0.3;
+}
+
+/* Network triangulation lines */
+.globe-network line {
+  stroke: var(--accent);
+  stroke-width: 0.6;
+  opacity: 0.5;
+  stroke-linecap: round;
+}
+
+/* Particle dots */
+.globe-dots circle {
+  fill: var(--accent);
+  opacity: 0.8;
+  animation: dot-pulse 2.5s ease-in-out infinite;
+}
+
+.globe-dots circle:nth-child(odd) {
+  animation-delay: -1.2s;
+}
+
+.globe-dots circle:nth-child(3n) {
+  animation-delay: -0.6s;
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
+}
+
+/* ===== Mood Variations ===== */
+
+/* Thinking — energized globe, faster rotation, brighter glow */
+.jarvis-orb[data-mood="thinking"] .jarvis-globe {
+  animation-duration: 6s;
+}
+
+.jarvis-orb[data-mood="thinking"] .jarvis-hud-outer {
+  animation-duration: 8s;
+}
+
+.jarvis-orb[data-mood="thinking"] .jarvis-hud-inner {
+  animation-duration: 5s;
+}
+
+.jarvis-orb[data-mood="thinking"] .jarvis-hud-ring .ring-line {
+  opacity: 0.8;
+  stroke: var(--accent-hover);
+}
+
+.jarvis-orb[data-mood="thinking"] .jarvis-hud-ring .tick-major {
+  opacity: 0.9;
+  stroke: var(--accent-hover);
+}
+
+.jarvis-orb[data-mood="thinking"] .jarvis-orb-glow {
+  animation: orb-glow-think 0.8s ease-in-out infinite;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--accent-hover) 50%, transparent) 0%,
+    color-mix(in srgb, var(--accent) 25%, transparent) 50%,
+    transparent 70%
+  );
+}
+
+@keyframes orb-glow-think {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50%      { transform: scale(1.2); opacity: 1; }
+}
+
+.jarvis-orb[data-mood="thinking"] .globe-network line {
+  opacity: 0.8;
+  stroke: var(--accent-hover);
+  stroke-width: 0.8;
+  animation: network-flash 1.5s ease-in-out infinite;
+}
+
+@keyframes network-flash {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
+}
+
+.jarvis-orb[data-mood="thinking"] .globe-dots circle {
+  animation-duration: 0.8s;
+  fill: var(--accent-hover);
+}
+
+.jarvis-orb[data-mood="thinking"] .globe-line {
+  opacity: 0.6;
+  stroke: var(--accent-hover);
+}
+
+/* Happy — calm glow, gentle pace, satisfied */
+.jarvis-orb[data-mood="happy"] .jarvis-globe {
+  animation-duration: 28s;
+}
+
+.jarvis-orb[data-mood="happy"] .jarvis-hud-outer {
+  animation-duration: 40s;
+}
+
+.jarvis-orb[data-mood="happy"] .jarvis-hud-inner {
+  animation-duration: 30s;
+}
+
+.jarvis-orb[data-mood="happy"] .jarvis-orb-glow {
+  animation-duration: 4.5s;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--accent) 35%, transparent) 0%,
+    color-mix(in srgb, var(--accent) 15%, transparent) 50%,
+    transparent 70%
+  );
+}
+
+.jarvis-orb[data-mood="happy"] .globe-network line {
+  opacity: 0.6;
+}
+
+.jarvis-orb[data-mood="happy"] .globe-dots circle {
+  animation-duration: 3.5s;
+}
+
+/* ===== Label ===== */
 .jarvis-orb-label {
-  margin-top: 8px;
+  margin-top: 10px;
   font-size: 11px;
   font-family: var(--font-mono);
   color: var(--text-muted);
   text-align: center;
+  letter-spacing: 0.5px;
 }

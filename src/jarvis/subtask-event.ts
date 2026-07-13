@@ -2,6 +2,7 @@ export interface SubtaskEventPayload {
   subtaskId: string
   taskId: string
   agentName: string
+  agentType: 'permanent' | 'adhoc'
   taskName: string
   status: 'running' | 'done' | 'failed'
   turnCount: number
@@ -15,6 +16,7 @@ export function buildSubtaskEvent(input: {
   subtaskId: string
   taskId: string
   agentName: string
+  agentType?: 'permanent' | 'adhoc'
   taskName: string
   status: 'running' | 'done' | 'failed'
   turnCount: number
@@ -27,6 +29,7 @@ export function buildSubtaskEvent(input: {
     subtaskId: input.subtaskId,
     taskId: input.taskId,
     agentName: input.agentName,
+    agentType: input.agentType || 'adhoc',
     taskName: input.taskName,
     status: input.status,
     turnCount: input.turnCount,

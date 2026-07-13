@@ -35,6 +35,18 @@ interface UserSession {
 
 const sessions = new Map<string, UserSession>()
 
+// ─── Pin state (per-user, in-memory) ───
+const pinnedArtifacts = new Map<string, string>()
+
+export function pinArtifact(userId: string, artifactId: string | null): void {
+  if (artifactId) pinnedArtifacts.set(userId, artifactId)
+  else pinnedArtifacts.delete(userId)
+}
+
+export function getPinnedArtifactId(userId: string): string | null {
+  return pinnedArtifacts.get(userId) || null
+}
+
 function getSession(userId: string): UserSession {
   let s = sessions.get(userId)
   if (!s) {

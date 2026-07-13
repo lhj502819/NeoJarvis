@@ -272,6 +272,7 @@ export interface SubtaskEvent {
   subtaskId: string
   taskId: string
   agentName: string
+  agentType?: 'permanent' | 'adhoc'
   taskName: string
   status: 'running' | 'done' | 'failed'
   turnCount: number

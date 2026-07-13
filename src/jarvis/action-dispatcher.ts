@@ -109,7 +109,7 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
     await incrementUsage(userId, recipe.id)
   }
 
-  registerRunningTask(userId, taskId, subtaskId, agentId, description)
+  registerRunningTask(userId, taskId, subtaskId, agentId, description, recipe ? 'permanent' : 'adhoc', recipe?.name || assignee)
   const startedAtMs = Date.now()
   try {
     const result = await dispatchToAgent(assignee, description, {
@@ -125,6 +125,7 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
         const payload = buildSubtaskEvent({
           subtaskId, taskId,
           agentName: recipe?.name || assignee,
+          agentType: recipe ? 'permanent' : 'adhoc',
           taskName: description.slice(0, 60),
           status: 'running',
           turnCount: progress.turnCount,
@@ -208,8 +209,9 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
           broadcast('progress', `✅ [${completed}/${subtasks.length}] ${st.name} — 完成`, userId)
           broadcast('subtask', JSON.stringify(buildSubtaskEvent({
             subtaskId: st.id, taskId,
-            agentName, taskName: st.name,
-            status: 'done', turnCount: 0,  // turnCount 前端已从 running 事件累积到最终值,此处不需要精确
+            agentName, agentType: recipe ? 'permanent' : 'adhoc',
+            taskName: st.name,
+            status: 'done', turnCount: 0,
           })), userId)
           await onTaskCompleted(userId)
         } else {
@@ -219,7 +221,8 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
           broadcast('progress', `❌ ${st.name} — 失败`, userId)
           broadcast('subtask', JSON.stringify(buildSubtaskEvent({
             subtaskId: st.id, taskId,
-            agentName, taskName: st.name,
+            agentName, agentType: recipe ? 'permanent' : 'adhoc',
+            taskName: st.name,
             status: 'failed', turnCount: 0, error: errMsg,
           })), userId)
         }
@@ -256,7 +259,7 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
 
         // 优先用确定性挑出的成品;若无,兜底看 LLM 是否手动 render_preview 过
         const artifact = autoArtifact || consumeArtifact(userId)
-        const artifactId = artifact ? await saveArtifact(userId, artifact) : undefined
+        const artifactId = artifact ? await saveArtifact(userId, artifact, taskId) : undefined
         broadcast('response', report, userId)
         if (artifact) broadcast('artifact', JSON.stringify(artifact), userId)
         await addToBuffer(userId, 'jarvis', report, artifactId)
@@ -345,13 +348,14 @@ export async function dispatchAction(
 
     case 'send_message': {
       const { subtaskId, message: msg } = action.data as { subtaskId: string; message: string }
+      // 无论 agent 是否在线,都持久化消息(前端可展示、agent 恢复时可读)
+      bus.notify('jarvis', subtaskId, subtaskId, msg)
       if (bus.isRegistered(subtaskId)) {
-        bus.notify('jarvis', subtaskId, subtaskId, msg)
         response = `已把消息发给 agent (${subtaskId.slice(0, 6)})：「${msg.slice(0, 40)}」`
-        broadcast('progress', `💬 Jarvis → Agent: ${msg.slice(0, 40)}`, userId)
       } else {
-        response = `发送失败，该 agent 可能已完成或不在运行中。`
+        response = `消息已记录(agent 当前不在线,下次恢复时可读)：「${msg.slice(0, 40)}」`
       }
+      broadcast('progress', `💬 Jarvis → Agent: ${msg.slice(0, 40)}`, userId)
       break
     }
 

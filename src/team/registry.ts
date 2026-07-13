@@ -25,6 +25,14 @@ export async function listRecipes(userId: string): Promise<AgentRecipe[]> {
   return rows.map(rowToRecipe)
 }
 
+export async function listRecipesByIds(ids: string[]): Promise<Map<string, AgentRecipe>> {
+  if (ids.length === 0) return new Map()
+  const { rows } = await pool.query('SELECT * FROM jarvis_recipes WHERE id = ANY($1)', [ids])
+  const map = new Map<string, AgentRecipe>()
+  for (const row of rows) map.set(row.id, rowToRecipe(row))
+  return map
+}
+
 export async function getRecipe(userId: string, id: string): Promise<AgentRecipe | undefined> {
   const { rows } = await pool.query('SELECT * FROM jarvis_recipes WHERE id = $1 AND user_id = $2', [id, userId])
   return rows[0] ? rowToRecipe(rows[0]) : undefined

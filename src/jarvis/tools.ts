@@ -7,6 +7,8 @@ import { addMcpServer, listMcpServers, removeMcpServer } from '../auth/mcp-serve
 import { getAdhocAgent, markAdhocPromoted, listAdhocAgents } from '../a2a/adhoc.js'
 import { buildDomainExpertPrompt, buildExpertDescription, dominantCwd, type DomainCluster } from '../team/promoter.js'
 import { broadcast } from './sse.js'
+import { pinArtifact, getPinnedArtifactId } from './orchestrator.js'
+import pool from '../shared/db.js'
 
 export interface PendingArtifact {
   type: 'html' | 'markdown' | 'code' | 'mermaid'
@@ -244,6 +246,94 @@ export function createJarvisTools(userId: string) {
               text: `已渲染预览「${args.title}」(${args.type})，Sir 可以在右侧面板查看。`,
             }],
           }
+        }
+      ),
+
+      // ═══ 制品管理 ═══
+      tool(
+        'search_artifacts',
+        '搜索 Sir 的制品库。按标题/内容模糊匹配、类型筛选、时间范围。返回匹配列表供 Sir 选择。',
+        {
+          query: z.string().optional().describe('标题/内容关键词'),
+          type: z.enum(['html', 'markdown', 'code', 'mermaid']).optional().describe('按类型筛选'),
+          days: z.number().optional().describe('只看最近 N 天内'),
+          limit: z.number().optional().describe('返回条数上限,默认 10'),
+        },
+        async (args) => {
+          const conditions: string[] = ['user_id = $1']
+          const params: unknown[] = [userId]
+          let idx = 2
+          if (args.query) {
+            conditions.push(`(title ILIKE $${idx} OR content ILIKE $${idx})`)
+            params.push(`%${args.query}%`)
+            idx++
+          }
+          if (args.type) {
+            conditions.push(`type = $${idx}`)
+            params.push(args.type)
+            idx++
+          }
+          if (args.days) {
+            conditions.push(`created_at >= $${idx}`)
+            params.push(Date.now() - args.days * 86400000)
+            idx++
+          }
+          const limit = Math.min(args.limit || 10, 20)
+          const { rows } = await pool.query(
+            `SELECT id, type, title, language, version, created_at, updated_at FROM jarvis_artifacts WHERE ${conditions.join(' AND ')} ORDER BY COALESCE(updated_at, created_at) DESC LIMIT ${limit}`,
+            params
+          )
+          if (rows.length === 0) return { content: [{ type: 'text' as const, text: '未找到匹配的制品。' }] }
+          const summary = rows.map((r: any) => ({ id: r.id, type: r.type, title: r.title, language: r.language, version: r.version, createdAt: r.created_at }))
+          return { content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 2) }] }
+        }
+      ),
+
+      tool(
+        'pin_artifact',
+        '钉住一个制品到当前对话上下文。钉住后你能看到完整内容并可用 update_artifact 编辑。传 null 取消钉住。',
+        {
+          artifactId: z.string().nullable().describe('制品 ID,传 null 取消钉住'),
+        },
+        async (args) => {
+          if (!args.artifactId) {
+            pinArtifact(userId, null)
+            broadcast('artifact_pinned', JSON.stringify({ pinned: false }), userId)
+            return { content: [{ type: 'text' as const, text: '已取消钉住。' }] }
+          }
+          const { rows } = await pool.query(
+            'SELECT id, type, title, content, language, version FROM jarvis_artifacts WHERE id = $1 AND user_id = $2',
+            [args.artifactId, userId]
+          )
+          if (!rows[0]) return { content: [{ type: 'text' as const, text: '制品不存在或无权访问。' }] }
+          pinArtifact(userId, args.artifactId)
+          const a = rows[0]
+          broadcast('artifact_pinned', JSON.stringify({ pinned: true, id: a.id, type: a.type, title: a.title, content: a.content, language: a.language, version: a.version }), userId)
+          return { content: [{ type: 'text' as const, text: `已钉住「${a.title}」(v${a.version})，我能看到完整内容了。` }] }
+        }
+      ),
+
+      tool(
+        'update_artifact',
+        '修改当前钉住的制品内容(原地更新,版本号+1)。必须先 pin 再改。',
+        {
+          content: z.string().describe('替换后的完整内容'),
+          title: z.string().optional().describe('可选:同时更新标题'),
+        },
+        async (args) => {
+          const pinnedId = getPinnedArtifactId(userId)
+          if (!pinnedId) return { content: [{ type: 'text' as const, text: '当前没有钉住的制品,请先 pin_artifact。' }] }
+          const now = Date.now()
+          if (args.title) {
+            await pool.query('UPDATE jarvis_artifacts SET content = $1, title = $2, version = version + 1, updated_at = $3 WHERE id = $4 AND user_id = $5', [args.content, args.title, now, pinnedId, userId])
+          } else {
+            await pool.query('UPDATE jarvis_artifacts SET content = $1, version = version + 1, updated_at = $2 WHERE id = $3 AND user_id = $4', [args.content, now, pinnedId, userId])
+          }
+          const { rows } = await pool.query('SELECT id, type, title, content, language, version FROM jarvis_artifacts WHERE id = $1', [pinnedId])
+          if (rows[0]) {
+            broadcast('artifact_updated', JSON.stringify({ id: rows[0].id, type: rows[0].type, title: rows[0].title, content: rows[0].content, language: rows[0].language, version: rows[0].version }), userId)
+          }
+          return { content: [{ type: 'text' as const, text: `已更新「${rows[0]?.title || ''}」→ v${rows[0]?.version}，Sir 面板已刷新。` }] }
         }
       ),
     ],

@@ -1,14 +1,43 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { MessageBubble } from './MessageBubble'
 import { JarvisOrb, type OrbMood } from './JarvisOrb'
 import { ArtifactPanel, type Artifact } from './ArtifactPanel'
+export type { Artifact }
 import { fetchArtifact, type ChatImagePayload } from '../api/client'
 import type { Message, MessageArtifact } from '../api/hooks'
+
+function ResizeHandle({ baseWidth, onResize, onDragStart, onDragEnd }: { baseWidth: number; onResize: (newWidth: number) => void; onDragStart: () => void; onDragEnd: () => void }) {
+  const onMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const base = baseWidth
+    const maxWidth = window.innerWidth - 200
+    onDragStart()
+    const onMove = (ev: MouseEvent) => {
+      const delta = startX - ev.clientX
+      onResize(Math.max(280, Math.min(maxWidth, base + delta)))
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      onDragEnd()
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }
+  return <div className="chat-resize-handle" onMouseDown={onMouseDown} />
+}
 
 interface Props {
   messages: Message[]
   isLoading: boolean
   onSend: (text: string, images?: ChatImagePayload[]) => void
+  pinnedArtifact?: Artifact | null
+  onUnpin?: () => void
 }
 
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
@@ -28,15 +57,25 @@ function fileToPayload(file: File): Promise<ChatImagePayload | null> {
   })
 }
 
-export function ChatPanel({ messages, onSend }: Props) {
+export function ChatPanel({ messages, onSend, pinnedArtifact, onUnpin }: Props) {
   const [input, setInput] = useState('')
   const [pending, setPending] = useState<ChatImagePayload[]>([])
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null)
+  const [artifactWidth, setArtifactWidth] = useState(440)
+  const [artifactFullscreen, setArtifactFullscreen] = useState(false)
+  const [resizing, setResizing] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const initialScrollDone = useRef(false)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (!messages.length) return
+    if (!initialScrollDone.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'instant' })
+      initialScrollDone.current = true
+    } else {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [messages])
 
   const addFiles = async (files: FileList | File[]) => {
@@ -83,7 +122,7 @@ export function ChatPanel({ messages, onSend }: Props) {
 
   const mood: OrbMood = showThinking ? 'thinking' : hasMessages ? 'happy' : 'idle'
 
-  const handleArtifactClick = async (artifact: MessageArtifact) => {
+  const handleArtifactClick = useCallback(async (artifact: MessageArtifact) => {
     if (artifact.content) {
       setActiveArtifact(artifact as Artifact)
       return
@@ -92,12 +131,13 @@ export function ChatPanel({ messages, onSend }: Props) {
       const full = await fetchArtifact(artifact.id)
       setActiveArtifact(full as Artifact)
     }
-  }
+  }, [])
 
   return (
     <div style={{ display: 'flex', height: '100%' }}>
       {/* Chat main */}
-      <div style={{ flex: activeArtifact ? '0 0 440px' : '1', display: 'flex', flexDirection: 'column', transition: 'flex 0.3s ease', minWidth: 0, borderRight: activeArtifact ? '1px solid var(--border)' : 'none' }}>
+      {!artifactFullscreen && (
+      <div style={{ flex: '1', display: 'flex', flexDirection: 'column', minWidth: 200, borderRight: activeArtifact ? '1px solid var(--border)' : 'none' }}>
         {/* Orb */}
         <JarvisOrb mood={mood} />
 
@@ -145,7 +185,7 @@ export function ChatPanel({ messages, onSend }: Props) {
                 ))}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '6px 6px 6px 10px', boxShadow: 'var(--shadow-sm)' }}>
+            <div className="chat-composer" style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--glass)', border: '1px solid var(--border-focus)', borderRadius: 'var(--radius)', padding: '6px 6px 6px 10px', backdropFilter: 'blur(8px)', boxShadow: 'inset 0 0 20px rgba(34, 211, 238, 0.04)' }}>
               <input
                 ref={fileRef}
                 type="file"
@@ -178,10 +218,11 @@ export function ChatPanel({ messages, onSend }: Props) {
                 disabled={!input.trim() && pending.length === 0}
                 style={{
                   width: 34, height: 34, borderRadius: '50%', border: 'none',
-                  background: 'var(--accent)', color: '#fff', cursor: 'pointer',
+                  background: 'var(--accent)', color: 'var(--text-on-accent)', cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   opacity: (!input.trim() && pending.length === 0) ? 0.4 : 1,
-                  transition: 'opacity 0.15s, transform 0.15s',
+                  boxShadow: (!input.trim() && pending.length === 0) ? 'none' : 'var(--glow)',
+                  transition: 'opacity 0.15s, transform 0.15s, box-shadow 0.15s',
                 }}
               >
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-5-5 12-2-5-5-2z" fill="currentColor"/></svg>
@@ -190,11 +231,27 @@ export function ChatPanel({ messages, onSend }: Props) {
           </div>
         </form>
       </div>
-
-      {/* Artifact Panel */}
-      {activeArtifact && (
-        <ArtifactPanel artifact={activeArtifact} onClose={() => setActiveArtifact(null)} />
       )}
+
+      {/* Artifact Panel — pinned artifact takes priority over click-opened */}
+      {(pinnedArtifact || activeArtifact) && (() => {
+        const showing = pinnedArtifact || activeArtifact!
+        const isPinned = !!pinnedArtifact
+        return (
+          <>
+            {!artifactFullscreen && <ResizeHandle baseWidth={artifactWidth} onResize={setArtifactWidth} onDragStart={() => setResizing(true)} onDragEnd={() => setResizing(false)} />}
+            <div style={{ width: artifactFullscreen ? '100%' : artifactWidth, flex: artifactFullscreen ? '1' : undefined, flexShrink: 0, height: '100%', position: 'relative' }}>
+              {resizing && <div style={{ position: 'absolute', inset: 0, zIndex: 20, cursor: 'col-resize' }} />}
+              <ArtifactPanel
+                artifact={showing}
+                fullscreen={artifactFullscreen}
+                onToggleFullscreen={() => setArtifactFullscreen(f => !f)}
+                onClose={() => { if (isPinned) onUnpin?.(); else { setActiveArtifact(null); setArtifactFullscreen(false) } }}
+              />
+            </div>
+          </>
+        )
+      })()}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, memo } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Message, MessageArtifact } from '../api/hooks'
@@ -29,7 +29,7 @@ function ThinkingIndicator({ content }: { content: string }) {
   )
 }
 
-export function MessageBubble({ message, onArtifactClick }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, onArtifactClick }: Props) {
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
 
@@ -58,9 +58,12 @@ export function MessageBubble({ message, onArtifactClick }: Props) {
           maxWidth: '100%',
           padding: '14px 18px',
           borderRadius: 12,
-          background: isUser ? 'var(--accent)' : 'var(--bg-elevated)',
-          color: isUser ? 'var(--text-on-accent)' : 'var(--text)',
-          border: isUser ? 'none' : '1px solid var(--border)',
+          background: isUser ? 'linear-gradient(135deg, rgba(34,211,238,0.16), rgba(34,211,238,0.06))' : 'var(--glass)',
+          color: 'var(--text)',
+          border: isUser ? '1px solid var(--border-focus)' : '1px solid var(--border)',
+          borderLeft: isUser ? '1px solid var(--border-focus)' : '2px solid var(--accent)',
+          backdropFilter: 'blur(4px)',
+          boxShadow: isUser ? 'inset 0 0 16px rgba(34,211,238,0.06)' : 'none',
           fontSize: 14,
           lineHeight: 1.7,
         }}
@@ -70,8 +73,9 @@ export function MessageBubble({ message, onArtifactClick }: Props) {
           fontFamily: 'var(--font-mono)',
           fontWeight: 500,
           marginBottom: 6,
-          color: isUser ? 'rgba(255,255,255,0.6)' : 'var(--accent)',
-          letterSpacing: '0.05em',
+          color: isUser ? 'var(--accent-hover)' : 'var(--accent)',
+          letterSpacing: '0.14em',
+          textShadow: 'var(--glow-text)',
         }}>
           {isUser ? 'SIR' : 'JARVIS'}
         </div>
@@ -108,14 +112,14 @@ export function MessageBubble({ message, onArtifactClick }: Props) {
               alignItems: 'center',
               gap: 6,
               padding: '6px 10px',
-              background: isUser ? 'rgba(255,255,255,0.15)' : 'var(--accent-light)',
-              border: 'none',
-              borderRadius: 6,
+              background: 'var(--bg-subtle)',
+              border: '1px solid var(--border-focus)',
+              borderRadius: 8,
               cursor: 'pointer',
               fontSize: 11,
-              color: isUser ? '#fff' : 'var(--accent)',
+              color: 'var(--accent)',
               fontFamily: 'var(--font-mono)',
-              transition: 'opacity 0.15s',
+              transition: 'box-shadow 0.15s',
             }}
           >
             {message.artifact.type === 'html' && '🌐'}
@@ -129,4 +133,4 @@ export function MessageBubble({ message, onArtifactClick }: Props) {
       </div>
     </div>
   )
-}
+})

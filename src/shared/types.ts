@@ -54,6 +54,10 @@ export interface SubTask {
   tokensOutput?: number
   createdAt: string
   updatedAt: string
+  /** 'permanent' = 正式团队成员(recipe), 'adhoc' = 临时工 */
+  agentType?: 'permanent' | 'adhoc'
+  /** 可读的 agent 名 */
+  agentName?: string
 }
 
 export interface SubTaskTurn {
@@ -66,14 +70,25 @@ export interface SubTaskTurn {
   createdAt: string
 }
 
+export interface SubtaskMessage {
+  id: string
+  from: string
+  to: string
+  role: string
+  parts: Array<{ kind: string; text?: string }>
+  timestamp: string
+}
+
 export interface TaskDetail {
   task: Task
   turnsBySubtask: Record<string, SubTaskTurn[]>
+  messagesBySubtask: Record<string, SubtaskMessage[]>
   conversation: {
     contextId: string
     participants: string[]
-    messages: Array<{ id: string; from: string; to: string; role: string; parts: Array<{ kind: string; text?: string }>; timestamp: string }>
+    messages: SubtaskMessage[]
   } | null
+  artifacts?: Array<{ id: string; type: string; title: string; language?: string; version: number; createdAt: number }>
 }
 
 // ─── Agent Recipe Types ───

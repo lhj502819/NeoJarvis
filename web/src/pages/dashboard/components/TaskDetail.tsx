@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchJSON } from '../../../api/client'
 import type { TaskDetail as TaskDetailData, SubTaskTurn } from '../types'
+import { parseTurnsToSteps, countTools, toolIcon, toolLabel } from '../../../lib/turnSteps'
+import { ArtifactPanel, type Artifact } from '../../../components/ArtifactPanel'
+
+const ART_ICONS: Record<string, string> = { html: '🌐', markdown: '📄', code: '💻', mermaid: '📊' }
 
 function fmtDuration(startIso?: string, endIso?: string): string {
   if (!startIso) return '—'
@@ -27,12 +31,29 @@ function SubtaskTree({ subtask, turns }: { subtask: TaskDetailData['task']['subt
       </div>
       {open && (
         <div className="dash-turns">
-          {turns.length > 0 ? turns.map(t => (
-            <div className="dash-turn" key={t.id}>
-              <span className="dash-turn-idx">[{t.turnIndex}]</span>
-              <span className="dash-turn-text">{t.text.slice(0, 200)}</span>
-            </div>
-          )) : <div className="dash-empty-hint">无轨迹记录</div>}
+          {(() => {
+            const steps = parseTurnsToSteps(turns)
+            if (steps.length === 0) return <div className="dash-empty-hint">无轨迹记录</div>
+            return steps.map(step => step.kind === 'thought' ? (
+              <div className="dash-step-thought" key={step.key}>{step.text}</div>
+            ) : (
+              <div className="dash-step-tools" key={step.key}>
+                {countTools(step.tools).map((t, i) => (
+                  <span className="dash-tool-chip" key={i}>
+                    <span>{toolIcon(t.name)}</span>
+                    <span className="dash-tool-name">{toolLabel(t.name)}</span>
+                    {t.count > 1 && <span className="dash-tool-count">×{t.count}</span>}
+                  </span>
+                ))}
+              </div>
+            ))
+          })()}
+        </div>
+      )}
+      {open && subtask.result && (
+        <div className="dash-subtask-result">
+          <div className="dash-subtask-result-label">✅ 交付结果</div>
+          <div className="dash-subtask-result-text">{subtask.result}</div>
         </div>
       )}
     </div>
@@ -42,6 +63,7 @@ function SubtaskTree({ subtask, turns }: { subtask: TaskDetailData['task']['subt
 export function TaskDetail({ taskId, onBack }: { taskId: string; onBack: () => void }) {
   const [detail, setDetail] = useState<TaskDetailData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [preview, setPreview] = useState<Artifact | null>(null)
   const timerRef = useRef<number | null>(null)
 
   useEffect(() => {
@@ -68,6 +90,14 @@ export function TaskDetail({ taskId, onBack }: { taskId: string; onBack: () => v
   if (!detail) return <div><button className="dash-back-btn" onClick={onBack}>← 返回任务</button><div className="dash-empty-hint">任务不存在</div></div>
 
   const { task, turnsBySubtask, conversation } = detail
+  const artifacts = detail.artifacts || []
+
+  const openArtifact = async (id: string) => {
+    try {
+      const full = await fetchJSON<Artifact>(`/api/artifact/${id}`)
+      setPreview(full)
+    } catch { /* ignore */ }
+  }
   const totalTurns = task.subtasks.reduce((s, st) => s + (st.turnCount ?? 0), 0)
   const totalTokIn = task.subtasks.reduce((s, st) => s + (st.tokensInput ?? 0), 0)
   const totalTokOut = task.subtasks.reduce((s, st) => s + (st.tokensOutput ?? 0), 0)
@@ -114,6 +144,30 @@ export function TaskDetail({ taskId, onBack }: { taskId: string; onBack: () => v
           <div className="dash-section-title" style={{ marginTop: 16 }}>结果</div>
           <div className="dash-card dash-result-box">{task.result}</div>
         </>
+      )}
+
+      {artifacts.length > 0 && (
+        <>
+          <div className="dash-section-title" style={{ marginTop: 16 }}>产出制品 ({artifacts.length})</div>
+          <div className="dash-artifact-list">
+            {artifacts.map(a => (
+              <div className="dash-card dash-clickable dash-artifact-item" key={a.id} onClick={() => openArtifact(a.id)}>
+                <span className="dash-artifact-ico">{ART_ICONS[a.type] || '📎'}</span>
+                <span className="dash-artifact-title">{a.title}</span>
+                <span className="dash-artifact-type">{a.type}</span>
+                {a.version > 1 && <span className="dash-artifact-ver">v{a.version}</span>}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {preview && (
+        <div className="dash-artifact-overlay" onClick={e => { if (e.target === e.currentTarget) setPreview(null) }}>
+          <div className="dash-artifact-overlay-panel">
+            <ArtifactPanel artifact={preview} onClose={() => setPreview(null)} />
+          </div>
+        </div>
       )}
     </div>
   )

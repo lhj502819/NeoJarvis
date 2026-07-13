@@ -6,12 +6,14 @@ import type { DashView } from './types'
 import { OverviewPage } from './OverviewPage'
 import { TasksPage } from './TasksPage'
 import { TeamPage } from './TeamPage'
+import { ArtifactsPage } from './ArtifactsPage'
 import './dashboard.css'
 
 const NAV: Array<{ id: DashView; icon: string; label: string }> = [
   { id: 'overview', icon: '📊', label: '概览' },
   { id: 'tasks', icon: '📋', label: '任务' },
   { id: 'team', icon: '👥', label: '团队' },
+  { id: 'artifacts', icon: '📦', label: '制品库' },
 ]
 
 export function DashboardPage({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
@@ -38,6 +40,7 @@ export function DashboardPage({ user, onLogout }: { user: AuthUser; onLogout: ()
           {view === 'overview' && <OverviewPage />}
           {view === 'tasks' && <TasksPage />}
           {view === 'team' && <TeamPage />}
+          {view === 'artifacts' && <ArtifactsPage />}
         </main>
       </div>
     </div>

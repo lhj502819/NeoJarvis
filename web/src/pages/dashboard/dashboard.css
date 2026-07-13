@@ -444,8 +444,8 @@
 
 /* ═══ 团队页 + 小弟档案 ═══ */
 .dash-team-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.dash-clickable { cursor: pointer; transition: border-color 0.15s; }
-.dash-clickable:hover { border-color: var(--accent); }
+.dash-clickable { cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+.dash-clickable:hover { border-color: var(--accent); box-shadow: var(--glow); }
 .dash-team-card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .dash-profile-meta { display: flex; gap: 14px; font-size: 11px; color: var(--text-muted); margin-top: 6px; }
 .dash-back-btn { background: transparent; border: none; color: var(--accent); cursor: pointer; font-size: 13px; margin-bottom: 10px; padding: 0; }
@@ -466,9 +466,49 @@
 .dash-subtask-tree-head { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
 .dash-subtask-tree-meta { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 .dash-accent-text { color: var(--accent); }
-.dash-turns { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
+.dash-turns { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 10px; }
 .dash-turn { display: flex; gap: 8px; font-size: 12px; padding: 3px 0; color: var(--text-secondary); }
 .dash-turn-idx { color: var(--accent); flex-shrink: 0; font-family: var(--font-mono, monospace); }
+.dash-step-thought {
+  font-size: 12.5px; color: var(--text-secondary); line-height: 1.7;
+  font-style: italic; white-space: pre-wrap; word-break: break-word;
+}
+.dash-step-thought::before { content: '💭 '; font-style: normal; opacity: 0.7; }
+.dash-step-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.dash-tool-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: var(--radius-sm);
+  background: var(--bg-subtle); border: 1px solid var(--border);
+  font-family: var(--font-mono, monospace); font-size: 11.5px; color: var(--text-secondary);
+}
+.dash-tool-name { color: var(--text); }
+.dash-tool-count { color: var(--accent); font-weight: 600; }
+.dash-subtask-result {
+  margin-top: 8px; padding: 10px 12px;
+  background: var(--green-bg); border: 1px solid var(--green); border-radius: var(--radius-sm);
+}
+.dash-subtask-result-label { font-size: 11.5px; font-weight: 600; color: var(--green); margin-bottom: 6px; }
+.dash-subtask-result-text { font-size: 12.5px; color: var(--text); line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+
+/* 产出制品列表 */
+.dash-artifact-list { display: flex; flex-direction: column; gap: 8px; }
+.dash-artifact-item { display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+.dash-artifact-ico { font-size: 15px; }
+.dash-artifact-title { font-size: 13.5px; font-weight: 600; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-artifact-type { font-family: var(--font-mono, monospace); font-size: 11px; color: var(--text-muted); }
+.dash-artifact-ver { font-size: 11px; color: var(--accent); }
+/* 制品预览 overlay */
+.dash-artifact-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+}
+.dash-artifact-overlay-panel {
+  width: min(860px, 92vw); height: 84vh;
+  background: var(--bg-elevated); border: 1px solid var(--border);
+  border-radius: 14px; overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+}
 .dash-conv-msg { display: flex; gap: 8px; padding: 6px 10px; border-radius: 8px; margin-bottom: 6px; font-size: 12px; }
 .dash-conv-msg.from-jarvis { background: var(--accent-light); }
 .dash-conv-msg.from-agent { background: var(--bg-subtle); }

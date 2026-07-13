@@ -84,11 +84,11 @@ export async function saveConversation(userId: string, userMessage: string, jarv
   ]).catch(() => {})
 }
 
-export async function saveArtifact(userId: string, artifact: { type: string; title: string; content: string; language?: string }): Promise<string> {
+export async function saveArtifact(userId: string, artifact: { type: string; title: string; content: string; language?: string }, taskId?: string): Promise<string> {
   const id = randomUUID()
   await pool.query(
-    'INSERT INTO jarvis_artifacts (id, user_id, type, title, content, language, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-    [id, userId, artifact.type, artifact.title, artifact.content, artifact.language || null, Date.now()]
+    'INSERT INTO jarvis_artifacts (id, user_id, type, title, content, language, created_at, task_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+    [id, userId, artifact.type, artifact.title, artifact.content, artifact.language || null, Date.now(), taskId || null]
   )
   return id
 }

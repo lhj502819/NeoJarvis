@@ -7,6 +7,7 @@ interface MonitorItem {
   subtaskId: string
   taskId: string
   agentName: string
+  agentType: 'permanent' | 'adhoc'
   taskName: string
   status: 'running' | 'done' | 'failed'
   turnCount: number
@@ -35,7 +36,7 @@ function fmtElapsed(ms: number): string {
 export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: string) => void }) {
   const [items, setItems] = useState<Map<string, MonitorItem>>(new Map())
   const [fading, setFading] = useState<Set<string>>(new Set())
-  const [_tick, setTick] = useState(0)  // 每秒重渲染,驱动 elapsed 更新
+  const [_tick, setTick] = useState(0)
   const { events } = useSSE('/events')
   const lastSeqRef = useRef(0)
 
@@ -49,6 +50,7 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
           next.set(r.subtaskId, {
             subtaskId: r.subtaskId, taskId: r.taskId,
             agentName: r.name || r.recipeId,
+            agentType: r.agentType || 'adhoc',
             taskName: r.description.slice(0, 60),
             status: 'running', turnCount: 0,
             startedAtMs: r.startedAt,
@@ -73,7 +75,8 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
         const existing = next.get(p.subtaskId)
         next.set(p.subtaskId, {
           subtaskId: p.subtaskId, taskId: p.taskId,
-          agentName: p.agentName, taskName: p.taskName,
+          agentName: p.agentName, agentType: p.agentType || 'adhoc',
+          taskName: p.taskName,
           status: p.status, turnCount: p.turnCount,
           currentTool: p.currentTool,
           startedAtMs: existing?.startedAtMs || (Date.now() - (p.elapsedMs || 0)),
@@ -109,16 +112,14 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
     return () => clearInterval(timer)
   }, [])
 
-  // 空 Map -> 整栏收起
-  if (items.size === 0) return null
-
   const list = Array.from(items.values()).sort((a, b) => {
-    // running 排前,同状态按开始时间倒序(新的在上)
     if (a.status === 'running' && b.status !== 'running') return -1
     if (b.status === 'running' && a.status !== 'running') return 1
     return b.startedAtMs - a.startedAtMs
   })
   const runningCount = list.filter(x => x.status === 'running').length
+
+  if (items.size === 0) return null
 
   return (
     <aside className="monitor">
@@ -127,6 +128,7 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
         {runningCount > 0 && <span className="monitor-badge">{runningCount}</span>}
       </div>
       <div className="monitor-list">
+        {list.length === 0 && <div className="mon-empty">暂无执行中任务</div>}
         {list.map(item => {
           const elapsed = item.status === 'running'
             ? Date.now() - item.startedAtMs
@@ -140,6 +142,9 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
             >
               <div className="mon-row1">
                 <span className="mon-dot"></span>
+                <span className={`mon-type-badge ${item.agentType}`}>
+                  {item.agentType === 'permanent' ? '正式' : '临时'}
+                </span>
                 <span className="mon-name">{item.agentName}</span>
                 <span className="mon-spacer"></span>
                 <span className="mon-status">

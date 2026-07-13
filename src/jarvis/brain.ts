@@ -9,6 +9,8 @@ import { debug, withBrainLock, rawLlmCall, llmCall } from './llm.js'
 import { addToBuffer, getRecentConversation, saveConversation, saveArtifact } from './conversation.js'
 import { parseAction, dispatchAction } from './action-dispatcher.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
+import { getPinnedArtifactId } from './orchestrator.js'
+import pool from '../shared/db.js'
 import type { ChatImage } from '../shared/types.js'
 
 export { parseAction } from './action-dispatcher.js'
@@ -62,6 +64,24 @@ export async function think(userId: string, userMessage: string, onProgress?: (t
   const recentConvo = await getRecentConversation(userId)
   if (signal?.aborted) throw new Error('aborted')
 
+  // Pinned artifact context
+  let pinnedContext = ''
+  const pinnedId = getPinnedArtifactId(userId)
+  if (pinnedId) {
+    const { rows } = await pool.query(
+      'SELECT id, type, title, content, language, version FROM jarvis_artifacts WHERE id = $1 AND user_id = $2',
+      [pinnedId, userId]
+    )
+    if (rows[0]) {
+      const a = rows[0]
+      const LIMIT = 40000
+      const truncated = a.content.length > LIMIT
+        ? a.content.slice(0, LIMIT) + `\n\n[...内容过长已截断, 完整 ${a.content.length} 字符。若需修改被截断部分,先说明,我会分段处理]`
+        : a.content
+      pinnedContext = `## 当前钉住的制品(完整内容如下,你能直接看到)\nID: ${a.id} | 标题: ${a.title} | 类型: ${a.type}${a.language ? ` (${a.language})` : ''} | 版本: v${a.version}\n---\n${truncated}\n---\n**这就是完整制品内容,不要再去别处捞。** 用户接下来大概率要改它——直接用 update_artifact 传入修改后的完整内容即可(整篇替换,不是 diff)。\n`
+    }
+  }
+
   const runtimeEnv = `## 运行环境(代码注入,可信)
 当前系统用户名: ${userInfo().username}
 HOME 目录: ${homedir()}
@@ -74,7 +94,7 @@ HOME 目录: ${homedir()}
 
   const contextualPrompt = `${runtimeEnv}
 
-## 当前任务状态
+${pinnedContext}## 当前任务状态
 ${taskContext}
 
 ## 可用团队成员

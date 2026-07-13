@@ -246,6 +246,11 @@ CREATE INDEX IF NOT EXISTS idx_jarvis_chat_images_user ON jarvis_chat_images(use
 
 -- 用户消息挂载图片 id 列表(JSON 数组)
 ALTER TABLE user_jarvis_messages ADD COLUMN IF NOT EXISTS image_ids TEXT;
+
+-- 制品版本管理
+ALTER TABLE jarvis_artifacts ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE jarvis_artifacts ADD COLUMN IF NOT EXISTS updated_at BIGINT;
+ALTER TABLE jarvis_artifacts ADD COLUMN IF NOT EXISTS task_id TEXT;
   `)
   } finally {
     await client.query('SELECT pg_advisory_unlock($1)', [918273]).catch(() => {})

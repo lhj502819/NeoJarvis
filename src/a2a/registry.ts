@@ -8,12 +8,14 @@ interface RunningTask {
   description: string
   startedAt: number
   userId: string
+  agentType: 'permanent' | 'adhoc'
+  agentName: string
 }
 
 const runningTasks: RunningTask[] = []
 
-export function registerRunningTask(userId: string, taskId: string, subtaskId: string, recipeId: string, description: string) {
-  runningTasks.push({ userId, taskId, subtaskId, recipeId, description, startedAt: Date.now() })
+export function registerRunningTask(userId: string, taskId: string, subtaskId: string, recipeId: string, description: string, agentType: 'permanent' | 'adhoc' = 'adhoc', agentName?: string) {
+  runningTasks.push({ userId, taskId, subtaskId, recipeId, description, startedAt: Date.now(), agentType, agentName: agentName || recipeId })
 }
 
 export function unregisterRunningTask(subtaskId: string) {
@@ -53,8 +55,9 @@ export function listAllRunningTasks(userId?: string) {
   return filtered.map(t => {
     const url = getAgentUrl(t.recipeId)
     return {
-      name: t.recipeId,
+      name: t.agentName,
       recipeId: t.recipeId,
+      agentType: t.agentType,
       url: url || null,
       taskId: t.taskId,
       subtaskId: t.subtaskId,
