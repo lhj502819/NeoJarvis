@@ -73,6 +73,79 @@ class SubtaskMapperTest {
         assertThat(rows.get(0).taskId()).isEqualTo("task-1");
     }
 
+    @Test
+    void insertAndFindByIdAndUserRoundTrip() {
+        // When: insert via the mapper (status forced to 'pending', depends_on JSON stored raw)
+        mapper.insert("s-ins", "task-1", "u1", "sub", "d", "worker-a", "coding", "/tmp",
+                "[\"a\",\"b\"]", "2026-07-15T00:00:00Z", "2026-07-15T00:00:00Z");
+
+        // Then: reads back with pending status and raw depends_on preserved
+        SubTaskRow r = mapper.findByIdAndUser("s-ins", "u1").orElseThrow();
+        assertThat(r.status()).isEqualTo("pending");
+        assertThat(r.assignee()).isEqualTo("worker-a");
+        assertThat(r.domain()).isEqualTo("coding");
+        assertThat(r.cwd()).isEqualTo("/tmp");
+        assertThat(r.dependsOn()).isEqualTo("[\"a\",\"b\"]");
+        // wrong user -> absent
+        assertThat(mapper.findByIdAndUser("s-ins", "u2")).isEmpty();
+    }
+
+    @Test
+    void insertAllowsNullOptionalColumns() {
+        mapper.insert("s-min", "task-1", "u1", "sub", "d", "worker-a", null, null, null,
+                "2026-07-15T00:00:00Z", "2026-07-15T00:00:00Z");
+        SubTaskRow r = mapper.findByIdAndUser("s-min", "u1").orElseThrow();
+        assertThat(r.domain()).isNull();
+        assertThat(r.dependsOn()).isNull();
+    }
+
+    @Test
+    void updateFieldsOverwritesMutableColumns() {
+        mapper.insert("s-upd", "task-1", "u1", "sub", "d", "worker-a", null, null, null,
+                "2026-07-15", "2026-07-15");
+        // When: merged full update
+        mapper.updateFields("s-upd", "running", "50%", "partial", null, "waiting on x",
+                "2026-07-15T09:00:00Z");
+        // Then
+        SubTaskRow r = mapper.findByIdAndUser("s-upd", "u1").orElseThrow();
+        assertThat(r.status()).isEqualTo("running");
+        assertThat(r.progress()).isEqualTo("50%");
+        assertThat(r.result()).isEqualTo("partial");
+        assertThat(r.error()).isNull();
+        assertThat(r.blockedReason()).isEqualTo("waiting on x");
+        assertThat(r.updatedAt()).isEqualTo("2026-07-15T09:00:00Z");
+    }
+
+    @Test
+    void setStartedAndFinalizeMetaPersist() {
+        mapper.insert("s-meta", "task-1", "u1", "sub", "d", "worker-a", null, null, null,
+                "2026-07-15", "2026-07-15");
+        mapper.setStarted("s-meta", "2026-07-15T08:00:00Z");
+        mapper.finalizeMeta("s-meta", 4, 1, 1200, 800);
+        SubTaskRow r = mapper.findByIdAndUser("s-meta", "u1").orElseThrow();
+        assertThat(r.startedAt()).isEqualTo("2026-07-15T08:00:00Z");
+        assertThat(r.turnCount()).isEqualTo(4);
+        assertThat(r.retryCount()).isEqualTo(1);
+        assertThat(r.tokensInput()).isEqualTo(1200);
+        assertThat(r.tokensOutput()).isEqualTo(800);
+    }
+
+    @Test
+    void cancelStaleCancelsRunningAndPendingForUserOnly() {
+        insertSub("s-run", "worker-a", "2026-07-15");
+        jdbc.update("UPDATE jarvis_subtasks SET status = 'running' WHERE id = 's-run'");
+        insertSub("s-pend", "worker-a", "2026-07-15");
+        jdbc.update("UPDATE jarvis_subtasks SET status = 'pending' WHERE id = 's-pend'");
+        insertSub("s-done", "worker-a", "2026-07-15"); // completed via insertSub helper
+
+        int affected = mapper.cancelStale("u1", "2026-07-15T00:00:00Z");
+
+        assertThat(affected).isEqualTo(2);
+        assertThat(mapper.findByIdAndUser("s-run", "u1").orElseThrow().status()).isEqualTo("cancelled");
+        assertThat(mapper.findByIdAndUser("s-pend", "u1").orElseThrow().status()).isEqualTo("cancelled");
+        assertThat(mapper.findByIdAndUser("s-done", "u1").orElseThrow().status()).isEqualTo("completed");
+    }
+
     private void insertSub(String id, String assignee, String createdAt) {
         jdbc.update("""
                 INSERT INTO jarvis_subtasks

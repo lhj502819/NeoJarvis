@@ -42,6 +42,22 @@ public final class Json {
         return (raw == null || raw.isBlank()) ? null : stringList(raw);
     }
 
+    /**
+     * Serialise a string list to JSON TEXT for storage, returning {@code null} when the
+     * list is null so an absent {@code dependsOn} stays NULL (mirrors TS
+     * {@code value ? JSON.stringify(value) : null}). An empty list serialises to {@code "[]"}.
+     */
+    public static String stringify(List<String> list) {
+        if (list == null) {
+            return null;
+        }
+        try {
+            return MAPPER.writeValueAsString(list);
+        } catch (Exception e) {
+            throw new IllegalStateException("failed to serialise JSON string array", e);
+        }
+    }
+
     /** Parse a JSON object, returning an empty map when the column is null/blank. */
     public static Map<String, Object> map(String raw) {
         if (raw == null || raw.isBlank()) {

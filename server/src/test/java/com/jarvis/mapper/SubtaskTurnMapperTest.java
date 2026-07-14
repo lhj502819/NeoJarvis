@@ -41,6 +41,21 @@ class SubtaskTurnMapperTest {
         assertThat(rows.get(0).id()).isEqualTo("t1");
     }
 
+    @Test
+    void insertRoundTripsWithNullEndedAt() {
+        // When: insert an in-flight turn (ended_at null) via the mapper
+        mapper.insert("t-new", "s3", 1, "some body", "2026-07-15T00:00:00Z", null,
+                "2026-07-15T00:00:00Z");
+
+        // Then: reads back with the values written and ended_at omitted (null)
+        var rows = mapper.listBySubtask("s3");
+        assertThat(rows).hasSize(1);
+        SubTaskTurn turn = rows.get(0);
+        assertThat(turn.text()).isEqualTo("some body");
+        assertThat(turn.startedAt()).isEqualTo("2026-07-15T00:00:00Z");
+        assertThat(turn.endedAt()).isNull();
+    }
+
     private void insertTurn(String id, String subtaskId, int turnIndex) {
         jdbc.update("""
                 INSERT INTO jarvis_subtask_turns

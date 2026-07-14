@@ -58,6 +58,71 @@ class TaskMapperTest {
         assertThat(mapper.findByIdAndUser("missing", "u1")).isEmpty();
     }
 
+    @Test
+    void insertRoundTrips() {
+        // When: a fresh task inserted via the mapper
+        mapper.insert("t-ins", "u1", "fresh", "a description", "created",
+                "2026-07-15T00:00:00Z", "2026-07-15T00:00:00Z");
+
+        // Then: it reads back with the values written
+        var row = mapper.findByIdAndUser("t-ins", "u1").orElseThrow();
+        assertThat(row.name()).isEqualTo("fresh");
+        assertThat(row.description()).isEqualTo("a description");
+        assertThat(row.status()).isEqualTo("created");
+        assertThat(row.createdAt()).isEqualTo("2026-07-15T00:00:00Z");
+    }
+
+    @Test
+    void updateFieldsOverwritesOnlyGivenColumnsAndBumpsUpdatedAt() {
+        // Given the pre-seeded t-new (status 'executing', null plan/result/error)
+        // When: a merged full update (service overlays non-null over stored values)
+        mapper.updateFields("t-new", "u1", "completed", "the plan", "done", null,
+                "2026-07-15T09:00:00Z");
+
+        // Then
+        var row = mapper.findByIdAndUser("t-new", "u1").orElseThrow();
+        assertThat(row.status()).isEqualTo("completed");
+        assertThat(row.plan()).isEqualTo("the plan");
+        assertThat(row.result()).isEqualTo("done");
+        assertThat(row.error()).isNull();
+        assertThat(row.updatedAt()).isEqualTo("2026-07-15T09:00:00Z");
+    }
+
+    @Test
+    void updateFieldsScopedToUser() {
+        // t-other belongs to u2; an update as u1 must not touch it
+        mapper.updateFields("t-other", "u1", "completed", null, null, null, "2026-07-15T00:00:00Z");
+        assertThat(mapper.findByIdAndUser("t-other", "u2").orElseThrow().status())
+                .isEqualTo("executing");
+    }
+
+    @Test
+    void touchBumpsOnlyUpdatedAt() {
+        mapper.touch("t-old", "2026-07-15T12:00:00Z");
+        var row = mapper.findByIdAndUser("t-old", "u1").orElseThrow();
+        assertThat(row.updatedAt()).isEqualTo("2026-07-15T12:00:00Z");
+        assertThat(row.status()).isEqualTo("executing"); // untouched
+    }
+
+    @Test
+    void cancelStaleCancelsExecutingAndPlanningForUserOnly() {
+        // Given: u1 t-new is 'executing'; add a 'planning' and a 'completed' task
+        jdbc.update("UPDATE jarvis_tasks SET status = 'planning' WHERE id = 't-old'");
+        insertTask("t-done", "u1", "done", "2026-07-14", "2026-07-14");
+        jdbc.update("UPDATE jarvis_tasks SET status = 'completed' WHERE id = 't-done'");
+
+        // When
+        int affected = mapper.cancelStale("u1", "进程重启，任务自动取消", "2026-07-15T00:00:00Z");
+
+        // Then: executing + planning cancelled with the message; completed & other user untouched
+        assertThat(affected).isEqualTo(2);
+        var newRow = mapper.findByIdAndUser("t-new", "u1").orElseThrow();
+        assertThat(newRow.status()).isEqualTo("cancelled");
+        assertThat(newRow.error()).isEqualTo("进程重启，任务自动取消");
+        assertThat(mapper.findByIdAndUser("t-done", "u1").orElseThrow().status()).isEqualTo("completed");
+        assertThat(mapper.findByIdAndUser("t-other", "u2").orElseThrow().status()).isEqualTo("executing");
+    }
+
     private void insertTask(String id, String userId, String name, String createdAt, String updatedAt) {
         jdbc.update("""
                 INSERT INTO jarvis_tasks (id, user_id, name, description, status, created_at, updated_at)
