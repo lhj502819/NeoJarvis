@@ -132,7 +132,7 @@ function MainArea({ view, user }: { view: View; user: AuthUser }) {
         {view === 'artifacts' && <div className="main-page-wrap"><ArtifactsPage /></div>}
         {view === 'skills' && <div className="main-page-wrap"><SkillsPage /></div>}
       </div>
-      <MonitorPanel onOpen={(taskId, subtaskId) => setModal({ taskId, subtaskId })} />
+      {view !== 'tasks' && <MonitorPanel onOpen={(taskId, subtaskId) => setModal({ taskId, subtaskId })} />}
       {modal && <ExecutionModal taskId={modal.taskId} subtaskId={modal.subtaskId} onClose={() => setModal(null)} />}
     </div>
   )
