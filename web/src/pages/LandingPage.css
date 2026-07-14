@@ -1,19 +1,21 @@
 /* LandingPage.css — v3 深色科技风 + 重动效 */
 
-/* ═══ Landing 专有 tokens（覆盖全局） ═══ */
+/* ═══ Landing 专有 tokens（对齐 Aurora Design System） ═══ */
 .landing-root {
-  --landing-bg: #0c0c14;
-  --landing-card: #12121c;
-  --landing-elevated: #181824;
-  --landing-text: rgba(255,255,255,0.94);
-  --landing-text-dim: rgba(255,255,255,0.6);
-  --landing-text-muted: rgba(255,255,255,0.32);
-  --landing-accent: #7c6aff;
-  --landing-accent-glow: rgba(124,106,255,0.4);
-  --landing-accent2: #00d4ff;
-  --landing-accent2-glow: rgba(0,212,255,0.3);
-  --landing-border: rgba(255,255,255,0.07);
-  --landing-border-glow: rgba(124,106,255,0.25);
+  --landing-bg: #030014;
+  --landing-card: rgba(255,255,255,0.02);
+  --landing-elevated: #0a1520;
+  --landing-text: rgba(236,240,255,0.96);
+  --landing-text-dim: rgba(190,200,235,0.62);
+  --landing-text-muted: rgba(160,172,215,0.38);
+  --landing-accent: #9381ff;
+  --landing-accent-glow: rgba(147,129,255,0.4);
+  --landing-accent2: #2ea7ff;
+  --landing-accent2-glow: rgba(46,167,255,0.3);
+  --landing-accent3: #13ddc4;
+  --landing-accent3-glow: rgba(19,221,196,0.28);
+  --landing-border: rgba(255,255,255,0.08);
+  --landing-border-glow: rgba(147,129,255,0.28);
   --landing-mono: 'SF Mono', 'JetBrains Mono', monospace;
   --landing-radius: 12px;
 
@@ -35,22 +37,26 @@
   pointer-events: none;
 }
 
-/* ═══ 光效（hero 顶部） ═══ */
+/* ═══ Aurora 三色极光（hero 顶部） ═══ */
 .landing-hero-glow {
   position: absolute;
-  top: -200px;
+  top: -220px;
   left: 50%;
   transform: translateX(-50%);
-  width: 900px;
-  height: 600px;
-  background: radial-gradient(ellipse at center, var(--landing-accent-glow) 0%, rgba(124,106,255,0.08) 40%, transparent 70%);
-  animation: landing-glow-pulse 6s ease-in-out infinite;
+  width: 1100px;
+  height: 720px;
+  background:
+    radial-gradient(ellipse 55% 60% at 32% 45%, var(--landing-accent-glow) 0%, transparent 62%),
+    radial-gradient(ellipse 55% 55% at 70% 42%, var(--landing-accent2-glow) 0%, transparent 65%),
+    radial-gradient(ellipse 65% 55% at 50% 60%, var(--landing-accent3-glow) 0%, transparent 68%);
+  filter: blur(8px);
+  animation: landing-glow-pulse 8s ease-in-out infinite;
   pointer-events: none;
 }
 
 @keyframes landing-glow-pulse {
-  0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
-  50% { opacity: 1; transform: translateX(-50%) scale(1.1); }
+  0%, 100% { opacity: 0.75; transform: translateX(-50%) scale(1); }
+  50% { opacity: 1; transform: translateX(-50%) scale(1.05); }
 }
 
 /* 水平光线扫过 */
@@ -119,6 +125,14 @@
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--landing-text);
+}
+.landing-nav-logo-orb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--landing-accent) 0%, var(--landing-accent2) 100%);
+  box-shadow: 0 0 12px var(--landing-accent-glow), 0 0 24px var(--landing-accent2-glow);
+  flex-shrink: 0;
 }
 
 .landing-nav-links { display: flex; gap: 28px; }
@@ -213,12 +227,13 @@
 }
 
 .landing-hero h1 {
+  font-family: 'Inter Tight', 'Inter', system-ui, sans-serif;
   font-size: clamp(48px, 7vw, 80px);
-  font-weight: 800;
-  letter-spacing: -0.04em;
+  font-weight: 700;
+  letter-spacing: -0.035em;
   line-height: 1.05;
   margin-bottom: 20px;
-  background: linear-gradient(135deg, #fff 0%, var(--landing-accent) 50%, var(--landing-accent2) 100%);
+  background: linear-gradient(90deg, var(--landing-accent) 0%, var(--landing-accent2) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

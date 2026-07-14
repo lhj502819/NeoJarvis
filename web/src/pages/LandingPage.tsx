@@ -125,7 +125,7 @@ export function LandingPage() {
       {/* Nav */}
       <nav className="landing-nav">
         <div className="landing-nav-logo">
-          <img src="/jarvis-logo.png" alt="" style={{ width: 28, height: 28, borderRadius: '50%' }} />
+          <span className="landing-nav-logo-orb" aria-hidden />
           Jarvis
         </div>
         <div className="landing-nav-links">
@@ -135,7 +135,7 @@ export function LandingPage() {
           <a href="#architecture">架构</a>
         </div>
         <div className="landing-nav-actions">
-          <a className="landing-nav-cta" href="#cta">开始使用</a>
+          <a className="landing-nav-cta" href="#/">开始使用</a>
         </div>
       </nav>
 
@@ -154,7 +154,7 @@ export function LandingPage() {
           Jarvis 是你的私人 AI 管家——一句话下达意图，<br />他替你拆解、分派、执行、交付。
         </p>
         <div className="landing-hero-ctas landing-fade-in landing-fade-in-d3">
-          <a className="landing-btn-primary" href="#cta">部署你的管家 →</a>
+          <a className="landing-btn-primary" href="#/">部署你的管家 →</a>
           <a className="landing-btn-ghost" href="#demo">看一段对话</a>
         </div>
       </section>
