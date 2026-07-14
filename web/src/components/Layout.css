@@ -102,15 +102,15 @@
   color: var(--text);
 }
 .sidebar-nav-item.active {
-  background: linear-gradient(90deg, rgba(34, 211, 238, 0.14), rgba(34, 211, 238, 0.02));
+  background: linear-gradient(90deg, rgba(147, 129, 255, 0.16), rgba(46, 167, 255, 0.03));
   color: var(--accent);
   font-weight: 600;
   border-color: var(--border-focus);
-  box-shadow: inset 0 0 12px rgba(34, 211, 238, 0.08);
+  box-shadow: inset 0 0 12px rgba(147, 129, 255, 0.1);
 }
 .sidebar-nav-item.active::before {
   content: ''; position: absolute; left: -1px; top: 22%; height: 56%; width: 2px;
-  background: var(--accent); box-shadow: var(--glow); border-radius: 2px;
+  background: var(--gradient-aurora); box-shadow: var(--glow); border-radius: 2px;
 }
 .sidebar-nav-icon {
   font-size: 15px;

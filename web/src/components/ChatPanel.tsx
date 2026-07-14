@@ -185,7 +185,7 @@ export function ChatPanel({ messages, onSend, pinnedArtifact, onUnpin }: Props) 
                 ))}
               </div>
             )}
-            <div className="chat-composer" style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--glass)', border: '1px solid var(--border-focus)', borderRadius: 'var(--radius)', padding: '6px 6px 6px 10px', backdropFilter: 'blur(8px)', boxShadow: 'inset 0 0 20px rgba(34, 211, 238, 0.04)' }}>
+            <div className="chat-composer" style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--glass)', border: '1px solid var(--border-focus)', borderRadius: 'var(--radius)', padding: '6px 6px 6px 10px', backdropFilter: 'blur(8px)', boxShadow: 'inset 0 0 20px rgba(147, 129, 255, 0.05)' }}>
               <input
                 ref={fileRef}
                 type="file"

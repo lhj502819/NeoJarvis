@@ -5,54 +5,62 @@
    切换方式：document.documentElement.setAttribute('data-theme', 'light')
    ═══════════════════════════════════════════════════════════════ */
 
-/* ─── Dark (default) — HUD 青蓝霓虹 / 深空科技风 ─── */
+/* ─── Glass Vision OS Aurora · Purple-Cyan ─── */
 :root {
-  --bg: #060d16;
+  --bg: #030014;
   --bg-elevated: #0a1520;
-  --bg-subtle: #0e1c2b;
-  --bg-hover: #14293d;
-  --bg-active: #1b3752;
+  --bg-subtle: #0c1424;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-active: rgba(255, 255, 255, 0.08);
 
-  --text: rgba(214, 240, 255, 0.95);
-  --text-secondary: rgba(140, 190, 225, 0.62);
-  --text-muted: rgba(110, 160, 200, 0.4);
-  --text-on-accent: #041018;
+  --text: rgba(236, 240, 255, 0.96);
+  --text-secondary: rgba(190, 200, 235, 0.6);
+  --text-muted: rgba(160, 172, 215, 0.38);
+  --text-on-accent: #ffffff;
 
-  --border: rgba(56, 189, 248, 0.16);
-  --border-light: rgba(56, 189, 248, 0.08);
-  --border-focus: rgba(34, 211, 238, 0.6);
+  --border: rgba(255, 255, 255, 0.1);
+  --border-light: rgba(255, 255, 255, 0.05);
+  --border-focus: rgba(147, 129, 255, 0.55);
 
-  --accent: #22d3ee;
-  --accent-light: rgba(34, 211, 238, 0.12);
-  --accent-hover: #4fe3ff;
+  /* Aurora 三强调色 */
+  --accent-cyan: #2ea7ff;
+  --accent-purple: #9381ff;
+  --accent-teal: #13ddc4;
+  --gradient-aurora: linear-gradient(135deg, #9381ff 0%, #2ea7ff 100%);
 
-  --green: #34e0c0;
-  --green-bg: rgba(52, 224, 192, 0.1);
-  --yellow: #ffcc4d;
-  --yellow-bg: rgba(255, 204, 77, 0.1);
-  --red: #ff6b8a;
-  --red-bg: rgba(255, 107, 138, 0.1);
+  /* --accent 保持为主强调(青),让现有 var(--accent) 级联 */
+  --accent: #2ea7ff;
+  --accent-light: rgba(46, 167, 255, 0.12);
+  --accent-hover: #57bcff;
 
-  --radius: 10px;
-  --radius-sm: 6px;
+  --green: #13ddc4;
+  --green-bg: rgba(19, 221, 196, 0.1);
+  --yellow: #ffb454;
+  --yellow-bg: rgba(255, 180, 84, 0.1);
+  --red: #ff4d6d;
+  --red-bg: rgba(255, 77, 109, 0.1);
+
+  --radius: 12px;
+  --radius-sm: 8px;
   --radius-xs: 4px;
   --radius-full: 9999px;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.25);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow: 0 2px 10px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.55);
 
-  /* HUD 发光 */
-  --glow: 0 0 8px rgba(34, 211, 238, 0.5), 0 0 18px rgba(34, 211, 238, 0.18);
-  --glow-strong: 0 0 12px rgba(34, 211, 238, 0.72), 0 0 28px rgba(34, 211, 238, 0.32);
-  --glow-text: 0 0 10px rgba(34, 211, 238, 0.5);
+  /* Aurora 发光(紫青混合) */
+  --glow: 0 0 10px rgba(147, 129, 255, 0.4), 0 0 22px rgba(46, 167, 255, 0.22);
+  --glow-strong: 0 0 16px rgba(147, 129, 255, 0.6), 0 0 34px rgba(46, 167, 255, 0.34);
+  --glow-text: 0 0 12px rgba(46, 167, 255, 0.5);
 
   --font: "Inter", -apple-system, "SF Pro Text", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
-  --font-display: "Inter", -apple-system, system-ui, sans-serif;
+  --font-display: "Inter Tight", "Inter", -apple-system, system-ui, sans-serif;
   --font-mono: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
 
-  --glass: rgba(10, 21, 32, 0.82);
-  --glass-border: rgba(56, 189, 248, 0.16);
+  /* 玻璃卡:近乎透明的白,靠 backdrop-filter 起雾 */
+  --glass: rgba(255, 255, 255, 0.02);
+  --glass-border: rgba(255, 255, 255, 0.1);
 }
 
 /* ─── Light ─── */
@@ -106,22 +114,23 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* HUD 全局背景:细网格 + 径向光晕(仅深色主题) */
+/* Aurora 全局背景:极细网格(极弱)+ 双色极光光晕 */
 body::before {
   content: '';
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background-image:
-    linear-gradient(rgba(56, 189, 248, 0.028) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(56, 189, 248, 0.028) 1px, transparent 1px);
-  background-size: 40px 40px;
+    linear-gradient(rgba(147, 129, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(147, 129, 255, 0.015) 1px, transparent 1px);
+  background-size: 48px 48px;
 }
 body::after {
   content: '';
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background: radial-gradient(ellipse 70% 55% at 42% 42%, rgba(8, 145, 178, 0.09), transparent 72%);
+  background:
+    radial-gradient(ellipse 60% 50% at 25% 15%, rgba(147, 129, 255, 0.13), transparent 70%),
+    radial-gradient(ellipse 55% 50% at 80% 30%, rgba(46, 167, 255, 0.1), transparent 72%),
+    radial-gradient(ellipse 70% 45% at 55% 100%, rgba(19, 221, 196, 0.06), transparent 75%);
 }
-[data-theme="light"] body::before,
-[data-theme="light"] body::after { display: none; }
 #root { position: relative; z-index: 1; }
 
 .text-display { font-family: var(--font-display); font-weight: 400; letter-spacing: -0.01em; }
@@ -143,9 +152,9 @@ body::after {
   border: none; text-decoration: none;
 }
 .j-btn-primary {
-  background: var(--accent); color: var(--text-on-accent); box-shadow: var(--glow);
+  background: var(--gradient-aurora); color: var(--text-on-accent); box-shadow: var(--glow);
 }
-.j-btn-primary:hover { background: var(--accent-hover); box-shadow: var(--glow-strong); }
+.j-btn-primary:hover { filter: brightness(1.08); box-shadow: var(--glow-strong); }
 .j-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .j-btn-ghost {
   background: transparent; color: var(--text-secondary); border: 1px solid var(--border);
@@ -236,7 +245,7 @@ body::after {
 /* ═══ HUD 输入框:聚焦发光 + 四角角标 ═══ */
 .chat-composer { position: relative; transition: box-shadow 0.2s; }
 .chat-composer:focus-within {
-  box-shadow: inset 0 0 20px rgba(34, 211, 238, 0.06), var(--glow) !important;
+  box-shadow: inset 0 0 20px rgba(147, 129, 255, 0.07), var(--glow) !important;
 }
 .chat-composer::before {
   content: ''; position: absolute; top: -1px; left: -1px; width: 11px; height: 11px;

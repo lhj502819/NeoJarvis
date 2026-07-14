@@ -50,9 +50,9 @@
 [data-state="done"] .mon-dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
 [data-state="failed"] .mon-dot { background: var(--red); box-shadow: 0 0 8px var(--red); }
 @keyframes mon-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(34,211,238,0.5); }
-  70% { box-shadow: 0 0 0 5px rgba(34,211,238,0); }
-  100% { box-shadow: 0 0 0 0 rgba(34,211,238,0); }
+  0% { box-shadow: 0 0 0 0 rgba(147,129,255,0.5); }
+  70% { box-shadow: 0 0 0 5px rgba(147,129,255,0); }
+  100% { box-shadow: 0 0 0 0 rgba(147,129,255,0); }
 }
 .mon-name { font-size: 13px; font-weight: 600; }
 .mon-type-badge {
