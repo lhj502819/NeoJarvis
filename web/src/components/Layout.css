@@ -11,7 +11,9 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, rgba(10, 21, 32, 0.9), rgba(6, 13, 22, 0.92));
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-right: 1px solid var(--border);
   position: relative;
   transition: width 0.2s ease;
@@ -139,7 +141,7 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent-hover), var(--accent));
+  background: var(--gradient-aurora);
   color: var(--text-on-accent);
   display: flex;
   align-items: center;
