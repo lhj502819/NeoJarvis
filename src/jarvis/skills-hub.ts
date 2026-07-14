@@ -55,9 +55,40 @@ export function syncSkillsHub(): string[] {
   return linked.sort()
 }
 
-export interface HubSkill { name: string; description: string }
+export interface HubSkill {
+  name: string
+  description: string
+  category?: string
+  icon?: string
+  source: 'builtin' | 'personal'
+}
 
-// 读 hub 里每个 skill 的 name/description(供注入 Jarvis prompt)
+// 解析 SKILL.md frontmatter:标准 description + 我们的自定义扩展字段 category/icon
+function parseFrontmatter(text: string): { description: string; category?: string; icon?: string } {
+  const fm = text.match(/^---\n([\s\S]*?)\n---/)
+  if (!fm) return { description: '' }
+  const block = fm[1]
+  const pick = (key: string) => {
+    const m = block.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))
+    return m ? m[1].trim().replace(/^["']|["']$/g, '') : undefined
+  }
+  return {
+    description: pick('description') || '',
+    category: pick('category'),
+    icon: pick('icon'),
+  }
+}
+
+// 一个 hub 条目是软链(个人)还是真实目录(内置)
+function skillSource(name: string): 'builtin' | 'personal' {
+  try {
+    return lstatSync(join(HUB_SKILLS, name)).isSymbolicLink() ? 'personal' : 'builtin'
+  } catch {
+    return 'personal'
+  }
+}
+
+// 读 hub 里每个 skill 的 name/description/category/icon/source
 export function listHubSkills(): HubSkill[] {
   if (!existsSync(HUB_SKILLS)) return []
   const skills: HubSkill[] = []
@@ -65,14 +96,8 @@ export function listHubSkills(): HubSkill[] {
     const md = join(HUB_SKILLS, name, 'SKILL.md')
     if (!existsSync(md)) continue
     try {
-      const text = readFileSync(md, 'utf-8')
-      const fm = text.match(/^---\n([\s\S]*?)\n---/)
-      let desc = ''
-      if (fm) {
-        const d = fm[1].match(/^description:\s*(.+)$/m)
-        if (d) desc = d[1].trim()
-      }
-      skills.push({ name, description: desc })
+      const meta = parseFrontmatter(readFileSync(md, 'utf-8'))
+      skills.push({ name, description: meta.description, category: meta.category, icon: meta.icon, source: skillSource(name) })
     } catch { /* ignore */ }
   }
   return skills.sort((a, b) => a.name.localeCompare(b.name))
