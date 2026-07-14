@@ -14,12 +14,13 @@ export function SkillsPage() {
     const data = await fetchJSON<SkillItem[]>('/api/skills')
     setItems(data)
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load().catch(console.error) }, [])
 
   const toggle = async (name: string, next: boolean) => {
     setItems(prev => prev.map(s => s.name === name ? { ...s, enabled: next } : s))  // 乐观更新
     try {
-      await postJSON(`/api/skills/${encodeURIComponent(name)}/toggle`, { enabled: next })
+      const r = await postJSON<{ ok?: boolean; error?: string }>(`/api/skills/${encodeURIComponent(name)}/toggle`, { enabled: next })
+      if (!r.ok) throw new Error(r.error ?? 'toggle failed')
     } catch {
       setItems(prev => prev.map(s => s.name === name ? { ...s, enabled: !next } : s))  // 回滚
     }
