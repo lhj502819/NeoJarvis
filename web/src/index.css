@@ -1,8 +1,7 @@
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════
-   Jarvis Design Tokens — 双主题（深色默认 / 浅色可选）
-   切换方式：document.documentElement.setAttribute('data-theme', 'light')
+   Jarvis Design Tokens — Glass Vision OS Aurora（仅深色）
    ═══════════════════════════════════════════════════════════════ */
 
 /* ─── Glass Vision OS Aurora · Purple-Cyan ─── */
@@ -61,42 +60,6 @@
   /* 玻璃卡:近乎透明的白,靠 backdrop-filter 起雾 */
   --glass: rgba(255, 255, 255, 0.02);
   --glass-border: rgba(255, 255, 255, 0.1);
-}
-
-/* ─── Light ─── */
-[data-theme="light"] {
-  --bg: #faf8f5;
-  --bg-elevated: #ffffff;
-  --bg-subtle: #f3f0eb;
-  --bg-hover: #ede9e3;
-  --bg-active: #e8e3dc;
-
-  --text: #2c2a27;
-  --text-secondary: #6b6560;
-  --text-muted: #9e9790;
-  --text-on-accent: #ffffff;
-
-  --border: #e8e3dc;
-  --border-light: #f0ece6;
-  --border-focus: #b8a48a;
-
-  --accent: #8b6b3d;
-  --accent-light: #f5ede2;
-  --accent-hover: #7a5d34;
-
-  --green: #3d8b5a;
-  --green-bg: #edf7f1;
-  --yellow: #8b7a3d;
-  --yellow-bg: #f7f4ed;
-  --red: #8b3d3d;
-  --red-bg: #f7eded;
-
-  --shadow-sm: 0 1px 2px rgba(44, 42, 39, 0.04);
-  --shadow: 0 2px 8px rgba(44, 42, 39, 0.06), 0 1px 3px rgba(44, 42, 39, 0.04);
-  --shadow-lg: 0 8px 32px rgba(44, 42, 39, 0.1), 0 2px 8px rgba(44, 42, 39, 0.05);
-
-  --glass: rgba(250, 248, 245, 0.8);
-  --glass-border: rgba(0, 0, 0, 0.06);
 }
 
 /* ═══════════════════════════════════════════════════════════════

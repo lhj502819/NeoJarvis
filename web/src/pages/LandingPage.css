@@ -514,35 +514,3 @@
   .landing-arch-flow { flex-direction: column; }
   .landing-arch-connector { width: auto; height: 32px; transform: rotate(90deg); }
 }
-
-/* ═══ Light theme override ═══ */
-[data-theme="light"] .landing-root {
-  --landing-bg: #faf8f5;
-  --landing-card: #ffffff;
-  --landing-elevated: #f5f2ee;
-  --landing-text: #1a1a1f;
-  --landing-text-dim: rgba(26,26,31,0.6);
-  --landing-text-muted: rgba(26,26,31,0.35);
-  --landing-accent: #6b5ce7;
-  --landing-accent-glow: rgba(107,92,231,0.2);
-  --landing-accent2: #0099cc;
-  --landing-accent2-glow: rgba(0,153,204,0.15);
-  --landing-border: rgba(0,0,0,0.06);
-  --landing-border-glow: rgba(107,92,231,0.2);
-  background: var(--landing-bg);
-  color: var(--landing-text);
-}
-
-[data-theme="light"] .landing-nav {
-  background: rgba(250,248,245,0.8);
-}
-
-[data-theme="light"] .landing-terminal {
-  background: #1e1e28;
-}
-
-[data-theme="light"] .landing-hero h1 {
-  background: linear-gradient(135deg, #1a1a1f 0%, var(--landing-accent) 50%, var(--landing-accent2) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-}
