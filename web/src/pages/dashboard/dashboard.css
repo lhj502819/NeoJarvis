@@ -1025,3 +1025,198 @@
   font-size: 32px;
   opacity: 0.5;
 }
+
+/* ═══ T8 SkillsPage 新增样式 ═══ */
+
+/* 卡片 v2:flex-column 支持底部状态栏 */
+.skill-card-v2 {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+}
+
+.skill-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 10px;
+}
+
+.skill-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 16px 10px;
+}
+
+/* 卡片底部小状态标签 */
+.skill-status-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.skill-status-label.skill-status-on {
+  color: var(--accent-teal, #06d6a0);
+}
+
+/* 卡片名字下方类型徽章 */
+.skill-type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(147, 129, 255, 0.15);
+  color: var(--accent-purple, #9381ff);
+  margin: 2px 0 4px;
+  letter-spacing: 0.02em;
+}
+
+/* ─── Detail Panel ─── */
+
+.skill-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Hero row */
+.skill-detail-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.skill-detail-icon-wrap {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.skill-detail-icon-wrap .skill-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.skill-detail-hero-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.skill-detail-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.skill-detail-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.skill-detail-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+.skill-detail-status-badge.on {
+  background: rgba(6, 214, 160, 0.12);
+  color: var(--accent-teal, #06d6a0);
+}
+
+/* Section heading */
+.skill-detail-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  margin-top: 4px;
+}
+
+/* Description */
+.skill-detail-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin: 0 0 20px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Capabilities block */
+.skill-detail-capabilities {
+  margin-bottom: 24px;
+}
+
+.skill-detail-cap-hint {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+/* Action button */
+.skill-detail-actions {
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.skill-detail-btn {
+  width: 100%;
+  padding: 11px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.15s, background 0.15s;
+  font-family: var(--font);
+}
+
+.skill-detail-btn-disable {
+  background: var(--red-bg, rgba(255, 71, 87, 0.12));
+  color: var(--red, #ff4757);
+  border: 1px solid rgba(255, 71, 87, 0.3);
+}
+
+.skill-detail-btn-disable:hover {
+  background: rgba(255, 71, 87, 0.2);
+}
+
+.skill-detail-btn-enable {
+  background: rgba(6, 214, 160, 0.12);
+  color: var(--accent-teal, #06d6a0);
+  border: 1px solid rgba(6, 214, 160, 0.3);
+}
+
+.skill-detail-btn-enable:hover {
+  background: rgba(6, 214, 160, 0.2);
+}
