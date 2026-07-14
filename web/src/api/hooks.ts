@@ -239,7 +239,15 @@ export function useChat() {
     setIsLoading(false)
   }, [])
 
-  return { messages, isLoading, send, addSystemMessage, pushJarvisMessage, applyLiveEvent }
+  const clear = useCallback(() => {
+    // 中断进行中的流式,清空 UI 侧消息。注意:后端持久化不受影响(历史仍在库里)。
+    abortRef.current?.abort()
+    setMessages([])
+    setIsLoading(false)
+    recentResponses.current = []
+  }, [])
+
+  return { messages, isLoading, send, addSystemMessage, pushJarvisMessage, applyLiveEvent, clear }
 }
 
 export function usePolling<T>(path: string, interval: number) {

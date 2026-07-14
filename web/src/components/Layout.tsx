@@ -82,7 +82,7 @@ export default function Layout() {
 }
 
 function MainArea({ view, user }: { view: View; user: AuthUser }) {
-  const { messages, isLoading, send, applyLiveEvent } = useChat()
+  const { messages, isLoading, send, applyLiveEvent, clear } = useChat()
   const { connected, events } = useSSE('/events')
   const lastSeqRef = useRef(0)
   const [modal, setModal] = useState<{ taskId: string; subtaskId: string } | null>(null)
@@ -122,6 +122,7 @@ function MainArea({ view, user }: { view: View; user: AuthUser }) {
             messages={messages}
             isLoading={isLoading}
             onSend={send}
+            onClear={clear}
             pinnedArtifact={pinnedArtifact}
             onUnpin={() => setPinnedArtifact(null)}
           />

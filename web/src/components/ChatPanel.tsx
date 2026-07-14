@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { MessageBubble } from './MessageBubble'
-import { JarvisOrb, type OrbMood } from './JarvisOrb'
 import { ArtifactPanel, type Artifact } from './ArtifactPanel'
 export type { Artifact }
 import { fetchArtifact, type ChatImagePayload } from '../api/client'
+import { usePolling } from '../api/hooks'
 import type { Message, MessageArtifact } from '../api/hooks'
 
 function ResizeHandle({ baseWidth, onResize, onDragStart, onDragEnd }: { baseWidth: number; onResize: (newWidth: number) => void; onDragStart: () => void; onDragEnd: () => void }) {
@@ -36,6 +36,7 @@ interface Props {
   messages: Message[]
   isLoading: boolean
   onSend: (text: string, images?: ChatImagePayload[]) => void
+  onClear?: () => void
   pinnedArtifact?: Artifact | null
   onUnpin?: () => void
 }
@@ -57,7 +58,58 @@ function fileToPayload(file: File): Promise<ChatImagePayload | null> {
   })
 }
 
-export function ChatPanel({ messages, onSend, pinnedArtifact, onUnpin }: Props) {
+/** Aurora 头部状态条:Jarvis · 在线 · N 个 Agent 待命 + 清除按钮 */
+function ChatHeader({ mood, onClear, hasMessages }: { mood: 'thinking' | 'happy' | 'idle'; onClear?: () => void; hasMessages: boolean }) {
+  const running = usePolling<Array<{ subtaskId: string }>>('/api/agents', 5000)
+  const count = running?.length ?? 0
+  const statusText = mood === 'thinking' ? '思考中' : `在线 · ${count} 个 Agent ${count > 0 ? '在跑' : '待命'}`
+  const dotColor = mood === 'thinking' ? 'var(--accent-purple)' : 'var(--green)'
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '14px 24px', borderBottom: '1px solid var(--border-light)',
+      background: 'rgba(255,255,255,0.015)', backdropFilter: 'blur(12px)',
+      flexShrink: 0,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{
+          width: 34, height: 34, borderRadius: '50%',
+          background: 'var(--gradient-aurora)', boxShadow: 'var(--glow)',
+          flexShrink: 0,
+        }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--font-display)', letterSpacing: '-0.01em' }}>Jarvis</span>
+          <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: dotColor, boxShadow: `0 0 6px ${dotColor}`,
+              display: 'inline-block',
+              animation: mood === 'thinking' ? 'msg-fade-in 0.6s ease-in-out infinite alternate' : undefined,
+            }} />
+            {statusText}
+          </span>
+        </div>
+      </div>
+      {hasMessages && onClear && (
+        <button
+          onClick={onClear}
+          type="button"
+          style={{
+            background: 'transparent', border: '1px solid var(--border)',
+            color: 'var(--text-secondary)', fontSize: 12,
+            padding: '6px 14px', borderRadius: 'var(--radius-full)',
+            cursor: 'pointer', fontFamily: 'inherit',
+            transition: 'color 0.15s, background 0.15s, border-color 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--text)'; e.currentTarget.style.borderColor = 'var(--border-focus)' }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border)' }}
+        >清除</button>
+      )}
+    </div>
+  )
+}
+
+export function ChatPanel({ messages, onSend, onClear, pinnedArtifact, onUnpin }: Props) {
   const [input, setInput] = useState('')
   const [pending, setPending] = useState<ChatImagePayload[]>([])
   const [activeArtifact, setActiveArtifact] = useState<Artifact | null>(null)
@@ -120,7 +172,7 @@ export function ChatPanel({ messages, onSend, pinnedArtifact, onUnpin }: Props) 
     return () => { if (timer) clearTimeout(timer) }
   }, [rawThinking, showThinking])
 
-  const mood: OrbMood = showThinking ? 'thinking' : hasMessages ? 'happy' : 'idle'
+  const mood: 'thinking' | 'happy' | 'idle' = showThinking ? 'thinking' : hasMessages ? 'happy' : 'idle'
 
   const handleArtifactClick = useCallback(async (artifact: MessageArtifact) => {
     if (artifact.content) {
@@ -133,13 +185,20 @@ export function ChatPanel({ messages, onSend, pinnedArtifact, onUnpin }: Props) 
     }
   }, [])
 
+  const handleClear = useCallback(() => {
+    if (!onClear) return
+    onClear()
+    setActiveArtifact(null)
+    setArtifactFullscreen(false)
+  }, [onClear])
+
   return (
     <div style={{ display: 'flex', height: '100%' }}>
       {/* Chat main */}
       {!artifactFullscreen && (
       <div style={{ flex: '1', display: 'flex', flexDirection: 'column', minWidth: 200, borderRight: activeArtifact ? '1px solid var(--border)' : 'none' }}>
-        {/* Orb */}
-        <JarvisOrb mood={mood} />
+        {/* Header 状态条 */}
+        <ChatHeader mood={mood} onClear={handleClear} hasMessages={hasMessages} />
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto" style={{ padding: '0 20px 12px' }}>
@@ -210,7 +269,7 @@ export function ChatPanel({ messages, onSend, pinnedArtifact, onUnpin }: Props) 
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onPaste={handlePaste}
-                placeholder="对 Jarvis 说点什么..."
+                placeholder="输入 / 唤起技能"
                 style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 14, outline: 'none', color: 'var(--text)', fontFamily: 'var(--font)' }}
               />
               <button
