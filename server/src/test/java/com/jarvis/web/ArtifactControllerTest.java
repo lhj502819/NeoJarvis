@@ -1,8 +1,11 @@
 package com.jarvis.web;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -17,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 @AutoConfigureMockMvc(addFilters = false)
@@ -71,5 +75,24 @@ class ArtifactControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(404))
                 .andExpect(jsonPath("$.message").value("制品不存在"));
+    }
+
+    @Test
+    void createReturnsGeneratedId() throws Exception {
+        when(artifactService.saveArtifact(eq("local"), any())).thenReturn("art-new-1");
+
+        mockMvc.perform(post("/api/artifacts").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"type\":\"code\",\"title\":\"T\",\"content\":\"body\",\"language\":\"ts\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("art-new-1"));
+
+        verify(artifactService).saveArtifact(eq("local"), any());
+    }
+
+    @Test
+    void createRejectsBlankRequiredFields() throws Exception {
+        mockMvc.perform(post("/api/artifacts").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"type\":\"\",\"title\":\"T\",\"content\":\"body\"}"))
+                .andExpect(status().isBadRequest());
     }
 }

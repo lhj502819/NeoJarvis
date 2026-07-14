@@ -45,6 +45,31 @@ class ConversationMapperTest {
     }
 
     @Test
+    void insertSessionMakesItDiscoverableAsLatest() {
+        mapper.insertSession("sess-fresh", "newuser",
+                "2026-07-15T00:00:00Z", "2026-07-15T00:00:00Z");
+        assertThat(mapper.findLatestSessionId("newuser")).contains("sess-fresh");
+    }
+
+    @Test
+    void touchSessionBumpsUpdatedAtSoItBecomesLatest() {
+        // sess-old (2026-07-10) trails sess-new (2026-07-14); bump it past sess-new
+        mapper.touchSession("sess-old", "2026-07-20T00:00:00Z");
+        assertThat(mapper.findLatestSessionId("u1")).contains("sess-old");
+    }
+
+    @Test
+    void insertMessageStoresEpochMillisTimestampAndImageIds() {
+        mapper.insertMessage("sess-new", "u1", "user", "hello", 1736900000000L, null, "[\"i1\"]");
+        var rows = mapper.listMessages("sess-new");
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).content()).isEqualTo("hello");
+        assertThat(rows.get(0).timestamp()).isEqualTo(1736900000000L);
+        assertThat(rows.get(0).imageIds()).isEqualTo("[\"i1\"]");
+        assertThat(rows.get(0).artifactId()).isNull();
+    }
+
+    @Test
     void listMessagesOrdersAscendingAndJoinsArtifactAndImageIds() {
         // insert out of order; expect ascending by timestamp
         message("sess-new", "u1", "jarvis", "second", 2000L, "art-1", null);

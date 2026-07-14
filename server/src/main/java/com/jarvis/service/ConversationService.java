@@ -4,11 +4,15 @@ import com.jarvis.domain.ArtifactRef;
 import com.jarvis.domain.ChatImage;
 import com.jarvis.domain.ConversationMessage;
 import com.jarvis.domain.ConversationRow;
+import com.jarvis.domain.SaveChatImagesRequest;
 import com.jarvis.mapper.ChatImageMapper;
 import com.jarvis.mapper.ConversationMapper;
 import com.jarvis.util.Json;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -44,6 +48,68 @@ public class ConversationService {
     @Transactional(readOnly = true)
     public Optional<ChatImage> getChatImage(String userId, String id) {
         return chatImageMapper.findByIdAndUser(id, userId);
+    }
+
+    // ─── writes (port src/jarvis/conversation.ts) ───
+
+    /**
+     * Append one message to the user's latest session (ports TS addToBuffer). Reuses the
+     * newest session or creates one, stores the message with a BIGINT epoch-millis
+     * {@code timestamp}, then bumps the session's ISO-8601 updated_at. An absent/empty
+     * {@code imageIds} stores NULL (mirrors TS {@code imageIds && length ? stringify : null}).
+     */
+    @Transactional
+    public void addToBuffer(String userId, String role, String content,
+            String artifactId, List<String> imageIds) {
+        String sessionId = getOrCreateSession(userId);
+        String imageIdsJson = (imageIds != null && !imageIds.isEmpty()) ? Json.stringify(imageIds) : null;
+        conversationMapper.insertMessage(sessionId, userId, role, content,
+                System.currentTimeMillis(), artifactId, imageIdsJson);
+        conversationMapper.touchSession(sessionId, Instant.now().toString());
+        log.debug("add_to_buffer userId={} role={} sessionId={}", userId, role, sessionId);
+    }
+
+    /**
+     * Persist a user↔Jarvis exchange as an ordered pair of messages (user then jarvis).
+     *
+     * <p><b>Deviation from TS:</b> the TS {@code saveConversation} did NOT write to the DB —
+     * it only pushed the pair to EverOS long-term memory; the DB persistence actually
+     * happened via two separate {@code addToBuffer} calls (user in orchestrator.ts, jarvis
+     * in brain.ts). This server has no EverOS, so the endpoint reproduces the DB pair via
+     * two {@code addToBuffer} writes, which is the durable behaviour the task specifies.
+     */
+    @Transactional
+    public void saveConversation(String userId, String userMessage, String jarvisResponse) {
+        addToBuffer(userId, "user", userMessage, null, null);
+        addToBuffer(userId, "jarvis", jarvisResponse, null, null);
+        log.debug("save_conversation userId={}", userId);
+    }
+
+    /**
+     * Store inbound chat images (ports TS saveChatImages): each gets a random UUID id and a
+     * BIGINT epoch-millis created_at; returns the ids in input order to attach to a message.
+     */
+    @Transactional
+    public List<String> saveChatImages(String userId, List<SaveChatImagesRequest.Image> images) {
+        List<String> ids = new ArrayList<>(images.size());
+        long now = System.currentTimeMillis();
+        for (SaveChatImagesRequest.Image img : images) {
+            String id = UUID.randomUUID().toString();
+            chatImageMapper.insert(id, userId, img.mediaType(), img.data(), now);
+            ids.add(id);
+        }
+        log.debug("save_chat_images userId={} count={}", userId, ids.size());
+        return ids;
+    }
+
+    /** Reuse the newest session or create one (ports TS getOrCreateSession, ISO-8601 timestamps). */
+    private String getOrCreateSession(String userId) {
+        return conversationMapper.findLatestSessionId(userId).orElseGet(() -> {
+            String id = UUID.randomUUID().toString();
+            String now = Instant.now().toString();
+            conversationMapper.insertSession(id, userId, now, now);
+            return id;
+        });
     }
 
     private static ConversationMessage toMessage(ConversationRow r) {

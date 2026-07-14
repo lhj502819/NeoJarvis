@@ -4,6 +4,7 @@ import com.jarvis.domain.ArtifactDetail;
 import com.jarvis.domain.ArtifactSummary;
 import java.util.List;
 import java.util.Optional;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -61,4 +62,18 @@ public interface ArtifactMapper {
             + "WHERE id = #{id} AND user_id = #{userId}")
     Optional<ArtifactDetail> findDetailByIdAndUser(@Param("id") String id,
             @Param("userId") String userId);
+
+    /**
+     * Store a new artifact (ports the internal TS saveArtifact). {@code createdAt} is BIGINT
+     * epoch-millis; {@code version} is left to the DB default (1) — the TS INSERT never set
+     * it. {@code language}/{@code taskId} are nullable.
+     */
+    @Insert("INSERT INTO jarvis_artifacts "
+            + "(id, user_id, type, title, content, language, created_at, task_id) "
+            + "VALUES (#{id}, #{userId}, #{type}, #{title}, #{content}, #{language}, "
+            + "#{createdAt}, #{taskId})")
+    void insert(@Param("id") String id, @Param("userId") String userId,
+            @Param("type") String type, @Param("title") String title,
+            @Param("content") String content, @Param("language") String language,
+            @Param("createdAt") long createdAt, @Param("taskId") String taskId);
 }

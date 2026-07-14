@@ -85,6 +85,26 @@ class ArtifactMapperTest {
         assertThat(mapper.findDetailByIdAndUser("a3", "u1")).isEmpty();
     }
 
+    @Test
+    void insertStoresArtifactWithDefaultVersionAndEpochCreatedAt() {
+        mapper.insert("new-1", "u1", "code", "Fresh helper", "the body", "ts", 1736900000000L, "task-9");
+
+        var detail = mapper.findDetailByIdAndUser("new-1", "u1");
+        assertThat(detail).isPresent();
+        assertThat(detail.get().content()).isEqualTo("the body");
+        // version defaults to 1 (not set on insert); created_at is the BIGINT epoch-millis
+        var items = mapper.list("u1", null, "Fresh helper", 50, 0);
+        assertThat(items).extracting(ArtifactSummary::id).containsExactly("new-1");
+        assertThat(items.get(0).version()).isEqualTo(1);
+        assertThat(items.get(0).createdAt()).isEqualTo(1736900000000L);
+    }
+
+    @Test
+    void insertAcceptsNullLanguageAndTaskId() {
+        mapper.insert("new-2", "u1", "doc", "NoLang", "x", null, 1736900000001L, null);
+        assertThat(mapper.findDetailByIdAndUser("new-2", "u1")).isPresent();
+    }
+
     private void insert(String id, String userId, String type, String title, String content,
             Long createdAt, Long updatedAt) {
         jdbc.update("""

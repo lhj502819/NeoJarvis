@@ -1,7 +1,11 @@
 package com.jarvis.web;
 
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -17,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 @AutoConfigureMockMvc(addFilters = false)
@@ -61,5 +66,58 @@ class ConversationControllerTest {
         mockMvc.perform(get("/api/chat-image/gone"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error").value("not found"));
+    }
+
+    @Test
+    void addMessagePersistsAndReturnsOk() throws Exception {
+        mockMvc.perform(post("/api/conversation/messages").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"user\",\"content\":\"hi\",\"imageIds\":[\"i1\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ok").value(true));
+
+        verify(conversationService).addToBuffer("local", "user", "hi", null, List.of("i1"));
+    }
+
+    @Test
+    void addMessageRejectsUnknownRole() throws Exception {
+        mockMvc.perform(post("/api/conversation/messages").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"bot\",\"content\":\"hi\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void addMessageRejectsMissingContent() throws Exception {
+        mockMvc.perform(post("/api/conversation/messages").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"user\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void saveConversationPersistsPairAndReturnsOk() throws Exception {
+        mockMvc.perform(post("/api/conversation").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userMessage\":\"q\",\"jarvisResponse\":\"a\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ok").value(true));
+
+        verify(conversationService).saveConversation("local", "q", "a");
+    }
+
+    @Test
+    void saveChatImagesReturnsGeneratedIds() throws Exception {
+        when(conversationService.saveChatImages(eq("local"), anyList()))
+                .thenReturn(List.of("id-1", "id-2"));
+
+        mockMvc.perform(post("/api/chat-images").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"images\":[{\"mediaType\":\"image/png\",\"data\":\"AAA=\"}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ids[0]").value("id-1"))
+                .andExpect(jsonPath("$.ids[1]").value("id-2"));
+    }
+
+    @Test
+    void saveChatImagesRejectsEmptyList() throws Exception {
+        mockMvc.perform(post("/api/chat-images").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"images\":[]}"))
+                .andExpect(status().isBadRequest());
     }
 }

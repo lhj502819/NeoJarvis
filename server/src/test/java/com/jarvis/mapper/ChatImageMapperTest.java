@@ -45,4 +45,13 @@ class ChatImageMapperTest {
         assertThat(mapper.findByIdAndUser("img-1", "u2")).isEmpty();
         assertThat(mapper.findByIdAndUser("nope", "u1")).isEmpty();
     }
+
+    @Test
+    void insertStoresImageRetrievableByIdAndUser() {
+        mapper.insert("img-2", "u9", "image/jpeg", "Zm9v", 1736900000000L);
+        var img = mapper.findByIdAndUser("img-2", "u9");
+        assertThat(img).isPresent();
+        assertThat(img.get().mediaType()).isEqualTo("image/jpeg");
+        assertThat(img.get().data()).isEqualTo("Zm9v");
+    }
 }
