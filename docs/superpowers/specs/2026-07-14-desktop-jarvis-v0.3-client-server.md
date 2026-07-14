@@ -18,31 +18,49 @@ Jarvis 桌面 = **Electron 客户端(执行智能 + 承接 OS 权限)** + **Clou
 沿用 Jarvis 内核+多 view 哲学(见 positioning 记忆),但**分层重画**:
 
 ```
+                    ┌──────────────────────────────────────┐
+                    │        遥控端(轻,不跑 agent)         │
+                    │  · 手机 App(iOS/Android,可选)      │
+                    │  · 网页浏览器(web/ 静态部署)         │
+                    │  · iPad(未来)                       │
+                    │    ↕ REST + SSE                       │
+                    │    只看进度 + 派活选目标机             │
+                    └──────────────────┬───────────────────┘
+                                       │
+                                       ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ Electron 客户端(用户 Mac)                                   │
-│                                                             │
-│  渲染进程 (web/ React,复用 v0.2 Aurora UI)                 │
-│    ↕ IPC                                                    │
-│  主进程 (Node,原 src/ 的智能层)                            │
-│    · Jarvis brain(think / 派单 / 决策)                     │
-│    · Agent SDK query()  —— 跑在本机,碰本机文件             │
-│    · orchestrator / action-dispatcher / SSE bridge          │
-│    · BYOK from keychain(用户自付 API 费)                   │
-│    · 内存缓存 recipes/tasks(重启失效,不落地)               │
-└────────────────────────┬────────────────────────────────────┘
-                         │ REST + SSE (HTTPS)
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│ CloudBase 云托管服务器                                       │
+│         CloudBase 云托管服务器(路由 + 数据 + 账号)          │
 │                                                             │
 │  · 认证:CloudBase Auth(微信 / 邮箱 / OAuth)               │
 │  · CRUD API:tasks / subtasks / recipes / messages /        │
 │                artifacts / turns                            │
-│  · SSE /events:跨设备同步 + push notification              │
+│  · SSE /events:事件总线 + 遥控端指令下发                    │
+│  · GET /api/devices/online:列出该用户在线的执行端            │
 │  · MySQL(体验版,后续可升 Postgres)                        │
 │  · 对象存储(可选,大 artifact)                             │
+└──────────────────┬──────────────────────────────────────────┘
+                   │ REST + SSE (HTTPS)
+                   ▼
+┌─────────────────────────────────────────────────────────────┐
+│         执行端 Electron 客户端(必须至少一台在线)             │
+│                                                             │
+│  渲染进程 (web/ React,Aurora UI)                            │
+│    ↕ IPC (同机零延迟)                                        │
+│  主进程 (Node,原 src/ 智能层)                              │
+│    · Jarvis brain(think / 派单 / 决策)                     │
+│    · Agent SDK query()  —— 跑本机,碰本机文件               │
+│    · orchestrator / action-dispatcher                       │
+│    · BYOK from keychain                                     │
+│    · 上报服务端 + 订阅 SSE(接收遥控端指令 + 其他执行端事件)│
+│                                                             │
+│  用户可能有多台执行端(家/公司),各自跑各自的任务             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+**遥控端的产品体感**:
+- 通勤路上手机上想到啥,打开 Jarvis App,选目标机("发到 🖥️ Mac 家中")→ 服务端 SSE push 到家里 Mac → agent 在家里 Mac 上执行 → 手机实时看进度
+- 到家电脑上打开,已经跑完的任务和 artifacts 都在,历史连贯
+- **前提**:必须有桌面在线;无桌面在线时遥控端派活会被拒("请打开你的桌面 Jarvis")
 
 **核心分层原则:**
 
@@ -69,6 +87,7 @@ Jarvis 桌面 = **Electron 客户端(执行智能 + 承接 OS 权限)** + **Clou
 | D9 | 实例策略 | **最小实例=1(常驻)** | 无冷启动,SSE 长连接稳定 |
 | D10 | 多用户 | **完整多用户** | 保留 CloudBase Auth 用户体系,面向公众发布时不重写 |
 | D11 | 认证机制 | **CloudBase Auth(微信 / 邮箱)** | 免自建 JWT,享现成 OAuth |
+| D12 | **多端矩阵** | **执行端(桌面) + 遥控端(手机/网页/iPad)** | 桌面跑 agent,是"执行端";手机/网页/iPad 只看进度和派活,是"遥控端"。遥控端派活要求至少一台桌面在线,多台桌面则手动选目标机 |
 
 ---
 
@@ -101,11 +120,30 @@ Jarvis 桌面 = **Electron 客户端(执行智能 + 承接 OS 权限)** + **Clou
 | `src/jarvis/plugins/skills-hub/` | src/jarvis/plugins | 本机聚合 Claude/Codex skills |
 
 **关键调用流程**:
-1. 用户在渲染进程发消息 → IPC → 主进程 orchestrator
-2. Brain 调本地 SDK think 出 action → 通过 HTTP POST **上报**到服务端 API(`POST /api/tasks`, `POST /api/subtasks`)
-3. 主进程 fork 小弟 agent 进程,SDK query() 跑本地任务
-4. 小弟每 turn 完成 → 上报 `POST /api/subtasks/:id/turns` → 服务端存 → SSE 广播给所有该用户在线的客户端
-5. 客户端渲染进程订阅 `/events`,收到 SSE 事件更新 UI
+
+**通道 1 · 执行端派活(A 桌面自己派)**:
+1. 用户在 A 渲染进程发消息 → IPC → A 主进程 orchestrator
+2. Brain 调本地 SDK think 出 action → A 主进程内存更新,IPC 即刻推 A 的 UI(零延迟)
+3. A 主进程 fork 小弟 agent,SDK query() 跑本地任务
+4. 小弟每 turn 完成 → A 主进程 IPC 推 A 的 UI + POST 上报服务端 `POST /api/subtasks/:id/turns`
+5. 服务端 MySQL 存 + SSE fanout 广播给同用户其他在线端(B 桌面 / 手机 / 网页)
+6. A 主进程订阅 SSE 时用 `sourceDeviceId` 过滤自己发出的事件(避免重复更新)
+
+**通道 2 · 遥控端派活(手机/网页发,桌面执行)**:
+1. 遥控端拉 `GET /api/devices/online` 拿在线执行端列表(空 → 提示"打开你的桌面 Jarvis",拒绝派活)
+2. 用户在遥控端选目标 → `POST /api/messages { targetDeviceId, content }` → 服务端存消息
+3. 服务端通过 SSE **push 到目标桌面**(通道回向:服务端 → 客户端 orchestrator)
+4. 目标桌面 orchestrator 收到 → 走通道 1 的 step 2 起 —— agent 在目标桌面本地跑
+5. 每 turn 事件 SSE fanout 回所有在线端 → 遥控端实时看进度
+
+**通道 3 · 执行端断网/掉线**:
+- A 桌面上报失败 → A 主进程本地队列缓冲,agent 继续跑不中断
+- 恢复网络 → 补传队列
+- 遥控端在 A 断网期间看到的进度会有断层(SSE 断了),UI 显示"设备离线,重连中..."
+
+**回避重复**:
+- 同设备:IPC 已推过 → 主进程 SSE 收到自己发的事件按 `sourceDeviceId` 忽略
+- 跨设备:SSE 事件带 `eventId`,渲染进程本地去重
 
 ### 4.3 渲染进程(`packages/desktop/renderer`,复用 web/)
 
@@ -182,6 +220,7 @@ class MysqlDriver implements Db {
 | Method | Path | 说明 |
 |--------|------|------|
 | POST | `/api/auth/callback` | CloudBase 登录回调,换后端 session |
+| GET | `/api/devices/online` | 列该用户在线执行端(桌面),遥控端派活前必查 |
 | GET | `/api/tasks?since=` | 拉任务列表(增量) |
 | POST | `/api/tasks` | 客户端创建任务(brain 派单后调用) |
 | PATCH | `/api/tasks/:id` | 改状态 |
@@ -189,20 +228,27 @@ class MysqlDriver implements Db {
 | GET | `/api/recipes` | 系统 recipe + 用户 recipe |
 | POST | `/api/recipes` | 用户晋升 adhoc → 常驻 |
 | GET/POST | `/api/artifacts` | 制品 CRUD;大内容 body 直接 upload |
-| GET/POST | `/api/messages` | 用户↔Jarvis 对话记录 |
+| GET | `/api/messages` | 用户↔Jarvis 对话记录 |
+| POST | `/api/messages` | 发消息;body 带 `targetDeviceId`(遥控端派活时必传) |
 | GET/POST | `/api/skills/prefs` | 技能启禁黑名单 |
 | GET/PATCH | `/api/state` | Jarvis 人格状态 |
 
 ### 6.2 SSE `/events`
 
-事件类型(保留现有 `broadcast(type, content)` 语义):
-- `chat.stream` —— Jarvis 流式 token(**同设备**回显,跨设备只推终版)
+服务端事件总线,同用户所有在线端订阅(执行端和遥控端都订)。事件类型:
+- `chat.stream` —— Jarvis 流式 token(同设备走 IPC,跨设备只推最终版)
 - `subtask.updated` —— subtask 状态变化
 - `subtask.turn` —— 新一 turn 完成
 - `artifact.created` —— 新制品
 - `task.completed` —— 任务终结
+- **`command.dispatch`** —— 遥控端派的活,服务端 push 到目标执行端(带 `targetDeviceId` 过滤,只有目标 orchestrator 处理)
+- **`device.online` / `device.offline`** —— 执行端上下线,遥控端刷新目标机列表
 
-**注意**:agent 跑在客户端,turn 事件从客户端上传 → 服务端广播 → **所有同用户在线设备**接收。同一台机器上,主进程可以走 IPC 直推渲染,不必绕服务端一圈(优化项)。
+**事件字段**:`{ eventId, type, sourceDeviceId, targetDeviceId?, payload, timestamp }`
+
+**去重**:同设备主进程用 `sourceDeviceId === myDeviceId` 忽略自己发的;渲染进程用 `eventId` LRU 去重。
+
+**注意**:agent 跑执行端,turn 事件从执行端上传 → 服务端 fanout → **所有同用户在线设备**接收。同一台机器上,主进程可以走 IPC 直推渲染,不必绕服务端一圈(优化项)。
 
 ---
 
@@ -303,24 +349,44 @@ Electron main 进程 `require('./main/index.js')` 直接 spawn Jarvis brain,不�
 
 ---
 
-## 11. 明确不做
+## 11. 明确不做(v0.3 范围)
 
-- iOS / Android 客户端
-- Web 端(v0.2 web/ 只作为 Electron 渲染层复用,不再对外提供纯网页版)
-- 服务端跑 agent(agent 必须在客户端 = 用户 OS 权限所在处)
+- **手机 App(iOS/Android)** —— API 契约预留,实际实现 v0.4+
+- **纯 Web 遥控端(浏览器)** —— API 契约预留,实际实现 v0.4+
+- **多桌面同用户协同**(A 桌面派活 B 桌面看) —— 架构支持但 v0.3 不做端上 UI/路由
+- 服务端跑 agent(agent 必须在执行端 = 用户 OS 权限所在处;这条永远不做,除非 v0.5 商业化重构)
 - 本地 SQLite 离线模式(选 D1 服务端唯一真相就放弃了)
 - 多客户端主动同步冲突解决(唯一真相下不存在冲突)
+- 无桌面在线时的消息队列(选 D12:直接拒绝)
+- 多桌面自动路由(选 D12:让用户手动选目标机)
+- 云端 agent 沙盒(v0.5 商业化再考虑)
+
+### 11.1 v0.3 实际交付:一台桌面
+
+- **1 台 Electron 桌面客户端**,复用 v0.2 Aurora UI
+- **1 个 CloudBase 服务端**,提供 REST + SSE + MySQL + Auth
+- 用户体感:装 app、登 CloudBase 账号、填 API key、开始用
+
+多端能力(手机/网页/多桌面)在架构上已预留:
+- SSE 事件带 `sourceDeviceId` / `targetDeviceId` 字段
+- 服务端 `/api/devices/online` API 保留(暂时只返回当前设备)
+- 消息表 schema 预留 `target_device_id`
+
+**这样将来加手机/网页只是"多写一个前端",服务端零改动。**
 
 ---
 
 ## 12. 未来路径
 
-**近期**(v0.3 后):
-- iOS/Android 客户端(纯 UI,复用同一套 REST/SSE)—— agent 在云端由用户其他设备代跑,或降级为"只看/只派"
+**v0.4** —— **多端接入**(基于 v0.3 预留的 SSE + `targetDeviceId` API):
+- **纯 Web 遥控端**:`web/` 静态部署到 CloudBase Hosting;登录 = CloudBase Auth Web SDK。**只需选目标桌面 UI + 客户端接线**,几乎零后端工作。
+- **手机 App**:iOS/Android(RN 或 Flutter);同一套 REST+SSE
+- **多桌面协同**:同用户多台执行端场景的路由与 UI("选目标机"下拉)
 
-**远期**(变现):
+**v0.5** —— **变现路径**(重构商业模式):
 - 转"服务端跑 agent"模式(付费池)—— 客户端退化成瘦壳,你代收 LLM 费用加价
 - 现在的架构 base URL 可配置,客户端不重写即可切远端
+- BYOK 模式与云端代付并行(用户可选)
 
 ---
 
