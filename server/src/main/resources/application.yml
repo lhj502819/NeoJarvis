@@ -22,6 +22,16 @@ mybatis:
     # extra columns like user_id in SELECT * are ignored instead of mis-bound.
     arg-name-based-constructor-auto-mapping: true
 
+jarvis:
+  auth:
+    # Dev bypass ON: local runs need no login (JwtAuthFilter injects the "local" user when
+    # no valid token is present). Turn OFF in prod so protected /api/** returns 401.
+    dev-bypass: ${JARVIS_AUTH_DEV_BYPASS:true}
+    # JWT signing secret — MUST be overridden in prod (env JWT_SECRET). Blank -> dev default.
+    jwt-secret: ${JWT_SECRET:}
+    # Registration invite code — blank means open registration (env INVITE_CODE).
+    invite-code: ${INVITE_CODE:}
+
 logging:
   level:
     com.jarvis: DEBUG

@@ -20,6 +20,21 @@ class GlobalExceptionHandler {
         return ResponseEntity.status(404).body(new ApiError(ex.getMessage()));
     }
 
+    @ExceptionHandler(UnauthorizedException.class)
+    ResponseEntity<ApiError> unauthorized(UnauthorizedException ex) {
+        return ResponseEntity.status(401).body(new ApiError(ex.getMessage()));
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    ResponseEntity<ApiError> forbidden(ForbiddenException ex) {
+        return ResponseEntity.status(403).body(new ApiError(ex.getMessage()));
+    }
+
+    @ExceptionHandler(BadRequestException.class)
+    ResponseEntity<ApiError> badRequest(BadRequestException ex) {
+        return ResponseEntity.badRequest().body(new ApiError(ex.getMessage()));
+    }
+
     /** Bean Validation failures -> 400 {@code { error: "field: msg, ..." }} (mirrors TS 400s). */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ApiError> validation(MethodArgumentNotValidException ex) {
