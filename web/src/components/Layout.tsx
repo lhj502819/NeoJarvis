@@ -8,16 +8,18 @@ import { LoginPage } from './LoginPage'
 import { TasksPage } from '../pages/dashboard/TasksPage'
 import { TeamPage } from '../pages/dashboard/TeamPage'
 import { ArtifactsPage } from '../pages/dashboard/ArtifactsPage'
+import { SkillsPage } from '../pages/dashboard/SkillsPage'
 import '../pages/dashboard/dashboard.css'
 import './Layout.css'
 
-type View = 'chat' | 'tasks' | 'team' | 'artifacts'
+type View = 'chat' | 'tasks' | 'team' | 'artifacts' | 'skills'
 
 const NAV_ITEMS: Array<{ id: View; icon: string; label: string }> = [
   { id: 'chat', icon: '💬', label: '对话' },
   { id: 'tasks', icon: '📋', label: '任务' },
   { id: 'team', icon: '👥', label: '团队' },
   { id: 'artifacts', icon: '📦', label: '制品库' },
+  { id: 'skills', icon: '✦', label: '技能' },
 ]
 
 export default function Layout() {
@@ -127,6 +129,7 @@ function MainArea({ view, user }: { view: View; user: AuthUser }) {
         {view === 'tasks' && <div className="main-page-wrap"><TasksPage /></div>}
         {view === 'team' && <div className="main-page-wrap"><TeamPage /></div>}
         {view === 'artifacts' && <div className="main-page-wrap"><ArtifactsPage /></div>}
+        {view === 'skills' && <div className="main-page-wrap"><SkillsPage /></div>}
       </div>
       <MonitorPanel onOpen={(taskId, subtaskId) => setModal({ taskId, subtaskId })} />
       {modal && <ExecutionModal taskId={modal.taskId} subtaskId={modal.subtaskId} onClose={() => setModal(null)} />}
