@@ -52,34 +52,29 @@ export const MessageBubble = memo(function MessageBubble({ message, onArtifactCl
   }
 
   return (
-    <div style={{ marginBottom: 16, animation: 'msg-fade-in 0.3s ease-out' }}>
+    <div style={{
+      marginBottom: 16,
+      animation: 'msg-fade-in 0.3s ease-out',
+      display: 'flex',
+      justifyContent: isUser ? 'flex-end' : 'flex-start',
+    }}>
       <div
         style={{
-          maxWidth: '100%',
+          maxWidth: '86%',
           padding: '14px 18px',
-          borderRadius: 12,
-          background: isUser ? 'linear-gradient(135deg, rgba(147,129,255,0.18), rgba(46,167,255,0.08))' : 'var(--glass)',
+          borderRadius: 14,
+          background: isUser
+            ? 'linear-gradient(135deg, rgba(147,129,255,0.18), rgba(46,167,255,0.08))'
+            : 'rgba(255,255,255,0.03)',
           color: 'var(--text)',
-          border: isUser ? '1px solid var(--border-focus)' : '1px solid var(--border)',
-          borderLeft: isUser ? '1px solid var(--border-focus)' : '2px solid var(--accent)',
-          backdropFilter: 'blur(4px)',
+          border: `1px solid ${isUser ? 'var(--border-focus)' : 'var(--border)'}`,
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
           boxShadow: isUser ? 'inset 0 0 16px rgba(147,129,255,0.08)' : 'none',
           fontSize: 14,
           lineHeight: 1.7,
         }}
       >
-        <div style={{
-          fontSize: 10,
-          fontFamily: 'var(--font-mono)',
-          fontWeight: 500,
-          marginBottom: 6,
-          color: isUser ? 'var(--accent-hover)' : 'var(--accent)',
-          letterSpacing: '0.14em',
-          textShadow: 'var(--glow-text)',
-        }}>
-          {isUser ? 'SIR' : 'JARVIS'}
-        </div>
-
         {message.imageUrls && message.imageUrls.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: message.content ? 8 : 0 }}>
             {message.imageUrls.map((url, i) => (
@@ -110,24 +105,29 @@ export const MessageBubble = memo(function MessageBubble({ message, onArtifactCl
               marginTop: 10,
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
-              padding: '6px 10px',
-              background: 'var(--bg-subtle)',
-              border: '1px solid var(--border-focus)',
-              borderRadius: 8,
+              gap: 8,
+              padding: '10px 14px',
+              width: '100%',
+              background: 'rgba(147,129,255,0.06)',
+              border: '1px solid rgba(147,129,255,0.22)',
+              borderRadius: 10,
               cursor: 'pointer',
-              fontSize: 11,
-              color: 'var(--accent)',
-              fontFamily: 'var(--font-mono)',
-              transition: 'box-shadow 0.15s',
+              fontSize: 13,
+              color: 'var(--accent-purple)',
+              fontFamily: 'inherit',
+              textAlign: 'left',
+              transition: 'background 0.15s, border-color 0.15s',
             }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(147,129,255,0.1)'; e.currentTarget.style.borderColor = 'rgba(147,129,255,0.4)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(147,129,255,0.06)'; e.currentTarget.style.borderColor = 'rgba(147,129,255,0.22)' }}
           >
-            {message.artifact.type === 'html' && '🌐'}
-            {message.artifact.type === 'markdown' && '📄'}
-            {message.artifact.type === 'code' && '💻'}
-            {message.artifact.type === 'mermaid' && '📊'}
-            {message.artifact.title}
-            <span style={{ opacity: 0.6 }}>→</span>
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: 'var(--accent-purple)', boxShadow: '0 0 6px var(--accent-purple)',
+              flexShrink: 0,
+            }} />
+            <span style={{ fontWeight: 600, flex: 1 }}>{message.artifact.title}</span>
+            <span style={{ opacity: 0.6, fontSize: 12 }}>→</span>
           </button>
         )}
       </div>
