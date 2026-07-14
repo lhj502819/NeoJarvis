@@ -251,6 +251,13 @@ ALTER TABLE user_jarvis_messages ADD COLUMN IF NOT EXISTS image_ids TEXT;
 ALTER TABLE jarvis_artifacts ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE jarvis_artifacts ADD COLUMN IF NOT EXISTS updated_at BIGINT;
 ALTER TABLE jarvis_artifacts ADD COLUMN IF NOT EXISTS task_id TEXT;
+
+-- ═══ 技能启禁偏好(黑名单:有行=该用户禁用了此 skill) ═══
+CREATE TABLE IF NOT EXISTS jarvis_skill_prefs (
+  user_id TEXT NOT NULL,
+  skill_name TEXT NOT NULL,
+  PRIMARY KEY (user_id, skill_name)
+);
   `)
   } finally {
     await client.query('SELECT pg_advisory_unlock($1)', [918273]).catch(() => {})
