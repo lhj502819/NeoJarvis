@@ -4,6 +4,20 @@ server:
 spring:
   application:
     name: jarvis-server
+  datasource:
+    url: ${DATABASE_URL:jdbc:mysql://localhost:3306/jarvis?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${DATABASE_USER:root}
+    password: ${DATABASE_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+      continue-on-error: false
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
 
 logging:
   level:
