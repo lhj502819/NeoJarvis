@@ -15,7 +15,7 @@ import { buildUserEnv } from '../shared/user-env.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
 import { buildUserMcpServers } from '../shared/user-mcp.js'
 import { createAgentCommsMcp } from './agent-comms.js'
-import { getDisabledSkills } from '../jarvis/skill-prefs.js'
+import { getDisabledSkills, getEnabledHubSkills } from '../jarvis/skill-prefs.js'
 
 const DEBUG = process.env.JARVIS_DEBUG === '1' || process.argv.includes('--debug')
 function debug(...args: any[]) {
@@ -156,8 +156,12 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
   const allowedTools = [...tools, ...mcpToolNames, 'mcp__agent-comms__*']
 
   const disabledSkills = await getDisabledSkills(userId)
-  const mergedSkills = [...new Set([...(recipe?.skills || []), ...(context?.skills || [])])]
+  const explicit = [...new Set([...(recipe?.skills || []), ...(context?.skills || [])])]
     .filter(name => !disabledSkills.has(name))
+  // Jarvis 显式挂了 skill 就用它(已过滤禁用);没挂则退回"全部启用的 hub skill"——
+  // 与 SDK 省略时的默认(全部)语义一致,但去掉了用户禁用的。恒传显式数组,
+  // 因为 SDK 里 skills 省略 ≠ 关闭(sdk.d.ts:1841)。
+  const agentSkills = explicit.length ? explicit : await getEnabledHubSkills(userId)
 
   const queryOptions: Record<string, any> = {
     systemPrompt,
@@ -168,7 +172,7 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
     allowDangerouslySkipPermissions: true,
     settingSources: [],
     plugins: [{ type: 'local', path: JARVIS_PLUGIN_DIR }, { type: 'local', path: SKILLS_HUB_DIR }],
-    ...(mergedSkills.length ? { skills: mergedSkills } : {}),
+    skills: agentSkills,
     env: await buildUserEnv(userId),
     maxTurns: 99999,
     mcpServers: { ...userMcpServers, 'agent-comms': agentCommsMcp },

@@ -68,12 +68,39 @@ function parseFrontmatter(text: string): { description: string; category?: strin
   const fm = text.match(/^---\n([\s\S]*?)\n---/)
   if (!fm) return { description: '' }
   const block = fm[1]
+  const lines = block.split('\n')
+
+  // 解析 description,支持内联值和 YAML 块标量(>、>-、|、|-、>+、|+)
+  function parseDescription(): string {
+    const idx = lines.findIndex(l => /^description:\s*/.test(l))
+    if (idx === -1) return ''
+    const val = lines[idx].replace(/^description:\s*/, '').trim()
+    // 若是块标量指示符,收集后续缩进行
+    if (/^[>|][+-]?$/.test(val)) {
+      const collected: string[] = []
+      for (let i = idx + 1; i < lines.length; i++) {
+        // 块标量内容行以空格/tab 开头,或为空行(继续块)
+        if (/^[ \t]/.test(lines[i])) {
+          collected.push(lines[i].trim())
+        } else if (lines[i] === '') {
+          // 空行继续块
+          collected.push('')
+        } else {
+          break
+        }
+      }
+      return collected.filter(l => l !== '').join(' ').trim()
+    }
+    return val.replace(/^["']|["']$/g, '')
+  }
+
   const pick = (key: string) => {
     const m = block.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))
     return m ? m[1].trim().replace(/^["']|["']$/g, '') : undefined
   }
+
   return {
-    description: pick('description') || '',
+    description: parseDescription(),
     category: pick('category'),
     icon: pick('icon'),
   }
