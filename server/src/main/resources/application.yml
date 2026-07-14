@@ -18,6 +18,9 @@ spring:
 mybatis:
   configuration:
     map-underscore-to-camel-case: true
+    # Match record/constructor parameters to columns by name (not position), so that
+    # extra columns like user_id in SELECT * are ignored instead of mis-bound.
+    arg-name-based-constructor-auto-mapping: true
 
 logging:
   level:
