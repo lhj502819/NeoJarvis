@@ -58,6 +58,22 @@ public final class Json {
         }
     }
 
+    /**
+     * Serialise a JSON object to TEXT for storage, returning {@code null} when the map is
+     * null. An empty map serialises to {@code "{}"} (matches TS {@code JSON.stringify({})}),
+     * which is what a recipe's default {@code context} is stored as.
+     */
+    public static String stringify(Map<String, Object> map) {
+        if (map == null) {
+            return null;
+        }
+        try {
+            return MAPPER.writeValueAsString(map);
+        } catch (Exception e) {
+            throw new IllegalStateException("failed to serialise JSON object", e);
+        }
+    }
+
     /** Parse a JSON object, returning an empty map when the column is null/blank. */
     public static Map<String, Object> map(String raw) {
         if (raw == null || raw.isBlank()) {
