@@ -12,6 +12,7 @@ import { getUserWorkspace } from '../shared/user-workspace.js'
 import { getPinnedArtifactId } from './orchestrator.js'
 import pool from '../shared/db.js'
 import type { ChatImage } from '../shared/types.js'
+import { listSkillsForUser } from './skill-prefs.js'
 
 export { parseAction } from './action-dispatcher.js'
 export { addToBuffer } from './conversation.js'
@@ -52,6 +53,12 @@ export async function think(userId: string, userMessage: string, onProgress?: (t
 
   const recipes = await listRecipes(userId)
   const teamInfo = recipes.map(r => `- ${r.name} (id: ${r.id}): ${r.description}`).join('\n')
+
+  const availableSkills = await listSkillsForUser(userId)
+  const enabledSkillLines = availableSkills
+    .filter(s => s.enabled)
+    .map(s => `- ${s.name}: ${s.description}`)
+    .join('\n')
 
   debug('searching memory...')
   onProgress?.('正在回忆相关信息...')
@@ -99,6 +106,9 @@ ${taskContext}
 
 ## 可用团队成员
 ${teamInfo || '暂无团队成员'}
+
+## 可用技能(派任务时可挂给小弟)
+${enabledSkillLines || '(暂无已启用技能)'}
 
 ${memories ? `## 关于 Sir 的记忆\n${memories}\n` : ''}
 ## 本次会话对话记录

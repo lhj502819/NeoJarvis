@@ -12,6 +12,7 @@ import { broadcast } from './sse.js'
 import { buildUserEnv } from '../shared/user-env.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
 import { buildUserMcpServers } from '../shared/user-mcp.js'
+import { getEnabledHubSkills, PIPELINE_SKILLS } from './skill-prefs.js'
 
 const CLAUDE_PATH = execSync('which claude', { encoding: 'utf-8' }).trim()
 
@@ -66,6 +67,7 @@ export async function rawLlmCall(userId: string, systemPrompt: string, prompt: s
   debug('rawLlmCall start, prompt length:', prompt.length, images?.length ? `+${images.length} images` : '')
   console.log(`[perf] rawLlmCall start, system prompt: ${systemPrompt.length} chars, user prompt: ${prompt.length} chars`)
   const promptInput = images && images.length > 0 ? buildImagePrompt(prompt, images) : prompt
+  const enabledSkills = [...PIPELINE_SKILLS, ...(await getEnabledHubSkills(userId))]
   let finalResult = ''
   let firstTokenTime = 0
   for await (const message of query({
@@ -78,7 +80,7 @@ export async function rawLlmCall(userId: string, systemPrompt: string, prompt: s
       allowDangerouslySkipPermissions: true,
       settingSources: [],
       plugins: [{ type: 'local', path: JARVIS_PLUGIN_DIR }, { type: 'local', path: SKILLS_HUB_DIR }],
-      skills: 'all',
+      skills: enabledSkills,
       env: await buildUserEnv(userId),
       maxTurns: 99999,
       includePartialMessages: true,

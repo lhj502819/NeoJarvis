@@ -15,6 +15,7 @@ import { buildUserEnv } from '../shared/user-env.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
 import { buildUserMcpServers } from '../shared/user-mcp.js'
 import { createAgentCommsMcp } from './agent-comms.js'
+import { getDisabledSkills } from '../jarvis/skill-prefs.js'
 
 const DEBUG = process.env.JARVIS_DEBUG === '1' || process.argv.includes('--debug')
 function debug(...args: any[]) {
@@ -154,6 +155,10 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
   const mcpToolNames = Object.keys(userMcpServers).map(name => `mcp__${name}__*`)
   const allowedTools = [...tools, ...mcpToolNames, 'mcp__agent-comms__*']
 
+  const disabledSkills = await getDisabledSkills(userId)
+  const mergedSkills = [...new Set([...(recipe?.skills || []), ...(context?.skills || [])])]
+    .filter(name => !disabledSkills.has(name))
+
   const queryOptions: Record<string, any> = {
     systemPrompt,
     pathToClaudeCodeExecutable: CLAUDE_PATH,
@@ -163,10 +168,7 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
     allowDangerouslySkipPermissions: true,
     settingSources: [],
     plugins: [{ type: 'local', path: JARVIS_PLUGIN_DIR }, { type: 'local', path: SKILLS_HUB_DIR }],
-    ...(() => {
-      const merged = [...new Set([...(recipe?.skills || []), ...(context?.skills || [])])]
-      return merged.length ? { skills: merged } : {}
-    })(),
+    ...(mergedSkills.length ? { skills: mergedSkills } : {}),
     env: await buildUserEnv(userId),
     maxTurns: 99999,
     mcpServers: { ...userMcpServers, 'agent-comms': agentCommsMcp },
