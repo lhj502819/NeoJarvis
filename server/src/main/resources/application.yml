@@ -1,0 +1,10 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: jarvis-server
+
+logging:
+  level:
+    com.jarvis: DEBUG
