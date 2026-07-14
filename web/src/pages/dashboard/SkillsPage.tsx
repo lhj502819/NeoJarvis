@@ -4,7 +4,7 @@ import type { SkillItem } from './types'
 import { SkillIcon } from './components/SkillIcon'
 import { DetailDrawer } from '../../components/DetailDrawer'
 
-type FilterMode = 'all' | 'enabled' | 'disabled'
+type FilterMode = 'all' | 'personal' | 'builtin'
 
 // ─── Detail Panel ──────────────────────────────────────────────────────────
 
@@ -106,8 +106,8 @@ export function SkillsPage() {
   }
 
   const visible = items.filter(s => {
-    if (filter === 'enabled' && !s.enabled) return false
-    if (filter === 'disabled' && s.enabled) return false
+    if (filter === 'personal' && s.source !== 'personal') return false
+    if (filter === 'builtin' && s.source !== 'builtin') return false
     if (query) {
       const q = query.toLowerCase()
       if (!s.name.toLowerCase().includes(q) && !s.description.toLowerCase().includes(q)) return false
@@ -142,7 +142,7 @@ export function SkillsPage() {
         {/* Header */}
         <div className="tasks-page-header">
           <h1 className="tasks-page-title">技能</h1>
-          <p className="tasks-page-subtitle">管理 Jarvis 可以调用的工具与技能</p>
+          <p className="tasks-page-subtitle">管理 Jarvis 可以调用的工具与技能 · 已启用 {enabledCount}/{items.length}</p>
         </div>
 
         {/* Toolbar */}
@@ -155,8 +155,8 @@ export function SkillsPage() {
           />
           <select className="skill-filter" value={filter} onChange={e => setFilter(e.target.value as FilterMode)}>
             <option value="all">全部 ({items.length})</option>
-            <option value="enabled">已启用 ({enabledCount})</option>
-            <option value="disabled">已禁用 ({items.length - enabledCount})</option>
+            <option value="personal">个人 ({items.filter(s => s.source === 'personal').length})</option>
+            <option value="builtin">内置 ({items.filter(s => s.source === 'builtin').length})</option>
           </select>
         </div>
 

@@ -244,6 +244,9 @@ export function ChatPanel({ messages, onSend, onClear, pinnedArtifact, onUnpin }
                 ))}
               </div>
             )}
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 8, paddingLeft: 4 }}>
+              支持 Shift + Enter 换行 · 输入 / 唤起技能
+            </div>
             <div className="chat-composer" style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--glass)', border: '1px solid var(--border-focus)', borderRadius: 'var(--radius)', padding: '6px 6px 6px 10px', backdropFilter: 'blur(8px)', boxShadow: 'inset 0 0 20px rgba(147, 129, 255, 0.05)' }}>
               <input
                 ref={fileRef}
@@ -269,7 +272,7 @@ export function ChatPanel({ messages, onSend, onClear, pinnedArtifact, onUnpin }
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onPaste={handlePaste}
-                placeholder="输入 / 唤起技能"
+                placeholder="对 Jarvis 说点什么..."
                 style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 14, outline: 'none', color: 'var(--text)', fontFamily: 'var(--font)' }}
               />
               <button

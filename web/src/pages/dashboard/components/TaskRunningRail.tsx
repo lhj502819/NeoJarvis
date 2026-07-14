@@ -52,6 +52,7 @@ export function TaskRunningRail({ tasks }: { tasks: Task[] }) {
         <div className="task-rail-agent-list">
           {agents.map((agent, idx) => (
             <div key={agent.subtaskId || idx} className="task-rail-agent-item">
+              <div className="task-rail-agent-avatar">{(agent.name || '?')[0].toUpperCase()}</div>
               <div className="task-rail-agent-info">
                 <span className="task-rail-agent-name">{agent.name}</span>
                 <span className="task-rail-agent-desc">{agent.description || statusLabel('running')}</span>

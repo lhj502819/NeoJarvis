@@ -15,10 +15,10 @@ interface ArtifactListItem {
 const TYPE_LABELS: Record<string, string> = { html: '🌐 网页', markdown: '📄 文档', code: '💻 代码', mermaid: '📊 图表' }
 const TYPE_FILTERS: Array<{ value: string; label: string }> = [
   { value: '', label: '全部' },
-  { value: 'markdown', label: '文档' },
-  { value: 'html', label: '网页' },
-  { value: 'code', label: '代码' },
-  { value: 'mermaid', label: '图表' },
+  { value: 'markdown', label: '📄 文档' },
+  { value: 'html', label: '🌐 网页' },
+  { value: 'code', label: '💻 代码' },
+  { value: 'mermaid', label: '📊 图表' },
 ]
 
 export function ArtifactsPage() {

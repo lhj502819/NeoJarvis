@@ -56,8 +56,21 @@ export const MessageBubble = memo(function MessageBubble({ message, onArtifactCl
       marginBottom: 16,
       animation: 'msg-fade-in 0.3s ease-out',
       display: 'flex',
+      alignItems: 'flex-start',
+      gap: 10,
       justifyContent: isUser ? 'flex-end' : 'flex-start',
     }}>
+      {!isUser && (
+        <div style={{
+          width: 32, height: 32, borderRadius: 10,
+          background: 'var(--gradient-aurora)',
+          boxShadow: 'var(--glow)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0, marginTop: 2,
+          color: '#fff', fontSize: 13, fontWeight: 700, letterSpacing: '-0.02em',
+          fontFamily: 'var(--font-display)',
+        }}>J</div>
+      )}
       <div
         style={{
           maxWidth: '86%',
