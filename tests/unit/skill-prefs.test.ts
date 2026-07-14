@@ -38,4 +38,25 @@ describe('skill-prefs 黑名单', () => {
     expect(otherDisabled.has('docx')).toBe(false)
     await pool.query('DELETE FROM jarvis_skill_prefs WHERE user_id=$1', [OTHER])
   })
+
+  it('listSkillsForUser 每项带 enabled,禁用项为 false', async () => {
+    const { listSkillsForUser } = await import('../../src/jarvis/skill-prefs.js')
+    await setSkillEnabled(USER, 'deep-research', false)
+    const list = await listSkillsForUser(USER)
+    const dr = list.find(s => s.name === 'deep-research')
+    // hub 里可能没有 deep-research(取决于本机),有才断言
+    if (dr) expect(dr.enabled).toBe(false)
+    // 不应包含管道 skill
+    expect(list.find(s => s.name === 'promote-agent')).toBeUndefined()
+    await setSkillEnabled(USER, 'deep-research', true)
+  })
+
+  it('getEnabledHubSkills 不含被禁的、也不含管道 skill', async () => {
+    const { getEnabledHubSkills } = await import('../../src/jarvis/skill-prefs.js')
+    await setSkillEnabled(USER, 'deep-research', false)
+    const enabled = await getEnabledHubSkills(USER)
+    expect(enabled).not.toContain('deep-research')
+    expect(enabled).not.toContain('promote-agent')
+    await setSkillEnabled(USER, 'deep-research', true)
+  })
 })
