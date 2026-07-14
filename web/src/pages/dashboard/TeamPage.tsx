@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { usePolling } from '../../api/hooks'
 import { fetchJSON } from '../../api/client'
 import { DetailDrawer } from '../../components/DetailDrawer'
+import { ExecutionModal } from '../../components/ExecutionModal'
 import type { Recipe, AgentSession } from './types'
 
 type FilterTab = 'all' | 'builtin' | 'settled'
@@ -43,6 +44,7 @@ function AgentDetailPanel({
   sessions: AgentSession[]
 }) {
   const [subtasks, setSubtasks] = useState<SubtaskRecord[]>([])
+  const [modal, setModal] = useState<{ taskId: string; subtaskId: string } | null>(null)
 
   useEffect(() => {
     setSubtasks([])
@@ -101,7 +103,12 @@ function AgentDetailPanel({
       {recent.length > 0 ? (
         <div className="dash-agent-timeline">
           {recent.map(st => (
-            <div className="dash-timeline-item" key={st.id}>
+            <div
+              className="dash-timeline-item dash-clickable"
+              key={st.id}
+              onClick={() => setModal({ taskId: st.taskId, subtaskId: st.id })}
+              style={{ cursor: 'pointer' }}
+            >
               <span className={`dash-timeline-dot ${dotClass(st.status)}`} />
               <div className="dash-timeline-content">
                 <div className="dash-timeline-desc">{st.description.slice(0, 80)}</div>
@@ -125,6 +132,8 @@ function AgentDetailPanel({
       ) : (
         <div className="dash-empty-hint">暂无执行记录</div>
       )}
+
+      {modal && <ExecutionModal taskId={modal.taskId} subtaskId={modal.subtaskId} onClose={() => setModal(null)} />}
     </div>
   )
 }
