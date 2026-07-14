@@ -94,4 +94,13 @@ export interface TaskDetail {
   artifacts?: TaskArtifact[]
 }
 
+export interface SkillItem {
+  name: string
+  description: string
+  category?: string
+  icon?: string
+  source: 'builtin' | 'personal'
+  enabled: boolean
+}
+
 export type DashView = 'overview' | 'tasks' | 'team' | 'artifacts'
