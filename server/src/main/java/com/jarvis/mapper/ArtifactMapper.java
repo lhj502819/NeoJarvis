@@ -1,14 +1,19 @@
 package com.jarvis.mapper;
 
+import com.jarvis.domain.ArtifactDetail;
 import com.jarvis.domain.ArtifactSummary;
 import java.util.List;
+import java.util.Optional;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 /**
- * Read-only artifact lookup used to populate {@code TaskDetail.artifacts} (mirrors the
- * inline query in TS getTaskDetail). Artifact CRUD endpoints belong to the A3 batch.
+ * Artifact reads. {@link #listSummaryByTask} (A2) populates {@code TaskDetail.artifacts};
+ * A3 adds the public list ({@code GET /api/artifacts}) and detail ({@code GET
+ * /api/artifact/{id}}) endpoints. Explicit AS aliases so mapping never relies on
+ * SELECT * ordering (CRITICAL-1). MySQL {@code LIKE} is case-insensitive under the
+ * default utf8mb4 collation — the TS {@code ILIKE} maps straight to {@code LIKE}.
  */
 @Mapper
 public interface ArtifactMapper {
@@ -17,5 +22,43 @@ public interface ArtifactMapper {
             + "FROM jarvis_artifacts "
             + "WHERE task_id = #{taskId} AND user_id = #{userId} ORDER BY created_at ASC")
     List<ArtifactSummary> listSummaryByTask(@Param("taskId") String taskId,
+            @Param("userId") String userId);
+
+    /**
+     * Filtered, paged summary list. {@code type}/{@code q} are optional (null skips the
+     * clause). {@code q} matches title or content via a parameterized LIKE (no injection).
+     * Ordered by COALESCE(updated_at, created_at) DESC to match the TS route.
+     */
+    @Select("""
+            <script>
+            SELECT id, type, title, language, version,
+                   created_at AS createdAt, updated_at AS updatedAt
+            FROM jarvis_artifacts
+            WHERE user_id = #{userId}
+            <if test="type != null"> AND type = #{type} </if>
+            <if test="q != null"> AND (title LIKE CONCAT('%', #{q}, '%')
+                                       OR content LIKE CONCAT('%', #{q}, '%')) </if>
+            ORDER BY COALESCE(updated_at, created_at) DESC
+            LIMIT #{limit} OFFSET #{offset}
+            </script>
+            """)
+    List<ArtifactSummary> list(@Param("userId") String userId, @Param("type") String type,
+            @Param("q") String q, @Param("limit") int limit, @Param("offset") int offset);
+
+    /** Total rows matching the same filter (drives the {@code total} field). */
+    @Select("""
+            <script>
+            SELECT COUNT(*) FROM jarvis_artifacts
+            WHERE user_id = #{userId}
+            <if test="type != null"> AND type = #{type} </if>
+            <if test="q != null"> AND (title LIKE CONCAT('%', #{q}, '%')
+                                       OR content LIKE CONCAT('%', #{q}, '%')) </if>
+            </script>
+            """)
+    long count(@Param("userId") String userId, @Param("type") String type, @Param("q") String q);
+
+    @Select("SELECT id, type, title, content, language FROM jarvis_artifacts "
+            + "WHERE id = #{id} AND user_id = #{userId}")
+    Optional<ArtifactDetail> findDetailByIdAndUser(@Param("id") String id,
             @Param("userId") String userId);
 }

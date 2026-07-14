@@ -1,9 +1,11 @@
 package com.jarvis.web;
 
 import com.jarvis.domain.ApiError;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -16,6 +18,15 @@ class GlobalExceptionHandler {
     @ExceptionHandler(NotFoundException.class)
     ResponseEntity<ApiError> notFound(NotFoundException ex) {
         return ResponseEntity.status(404).body(new ApiError(ex.getMessage()));
+    }
+
+    /** Bean Validation failures -> 400 {@code { error: "field: msg, ..." }} (mirrors TS 400s). */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    ResponseEntity<ApiError> validation(MethodArgumentNotValidException ex) {
+        String msg = ex.getBindingResult().getFieldErrors().stream()
+                .map(e -> e.getField() + ": " + e.getDefaultMessage())
+                .collect(Collectors.joining(", "));
+        return ResponseEntity.badRequest().body(new ApiError(msg));
     }
 
     @ExceptionHandler(Exception.class)
