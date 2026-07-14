@@ -5,6 +5,7 @@ import { listAllRunningTasks } from '../../a2a/registry.js'
 import { listAgentSessions } from '../../a2a/history.js'
 import { listRecipes } from '../../team/registry.js'
 import { listCredentials, addCredential, updateCredential, deleteCredential } from '../../auth/credentials.js'
+import { listSkillsForUser, setSkillEnabled } from '../skill-prefs.js'
 import pool from '../../shared/db.js'
 
 export function dashboardRoutes(): Router {
@@ -84,6 +85,20 @@ export function dashboardRoutes(): Router {
   router.delete('/api/credentials/:id', async (req, res) => {
     const ok = await deleteCredential(req.userId!, req.params.id)
     if (!ok) { res.status(404).json({ error: '凭证不存在' }); return }
+    res.json({ ok: true })
+  })
+
+  router.get('/api/skills', async (req, res) => {
+    res.json(await listSkillsForUser(req.userId!))
+  })
+
+  router.post('/api/skills/:name/toggle', async (req, res) => {
+    const { enabled } = req.body as { enabled?: boolean }
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({ error: 'enabled 必须是 boolean' })
+      return
+    }
+    await setSkillEnabled(req.userId!, req.params.name, enabled)
     res.json({ ok: true })
   })
 
