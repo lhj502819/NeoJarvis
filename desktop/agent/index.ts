@@ -1,10 +1,8 @@
-import { initDb } from './shared/db.js'
 import { startJarvisServer } from './jarvis/agent.js'
 import { startCli } from './interface/cli.js'
 import { syncSkillsHub } from './jarvis/skills-hub.js'
 
 async function main() {
-  await initDb()
   const skills = syncSkillsHub()
   console.log(`[skills-hub] 已纳入 ${skills.length} 个 skill`)
   startJarvisServer()

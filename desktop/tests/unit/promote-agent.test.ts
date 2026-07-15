@@ -2,9 +2,8 @@ import { describe, it, expect, beforeAll, vi } from 'vitest'
 import { randomUUID } from 'crypto'
 
 // registry.ts (createRecipe/listRecipes) and adhoc.ts (upsertAdhocAgent/getAdhocAgent/
-// markAdhocPromoted) both call the Java server via shared/server-client now, so this test
-// fakes both layers in one server-client mock. (getSessionsByDomain still reads PG directly
-// via history.ts — out of C-9 scope — hence initDb below.)
+// markAdhocPromoted) both call the Java server via shared/server-client, so this test
+// fakes both layers in one server-client mock.
 const store = vi.hoisted(() => ({ recipes: [] as any[], adhoc: [] as any[] }))
 
 function realSessionId(sid?: string): string | undefined {
@@ -92,7 +91,6 @@ vi.mock('../../agent/shared/server-client.js', () => ({
   serverPatch: async () => ({ ok: true }),
 }))
 
-const { initDb } = await import('../../agent/shared/db.js')
 const { upsertAdhocAgent } = await import('../../agent/a2a/adhoc.js')
 const { promoteAdhocToRecipe } = await import('../../agent/jarvis/tools.js')
 const { listRecipes } = await import('../../agent/team/registry.js')
@@ -101,7 +99,6 @@ const USER = `u-promo-${Date.now()}`
 
 describe('promoteAdhocToRecipe', () => {
   beforeAll(async () => {
-    await initDb()
     await upsertAdhocAgent(USER, { domain: '差旅出行', taskDescription: '订机票', topics: ['机票'] })
     await upsertAdhocAgent(USER, { domain: '差旅出行', taskDescription: '订酒店', topics: ['酒店'] })
   })

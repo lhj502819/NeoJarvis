@@ -6,7 +6,7 @@
 ## 技术栈
 
 TypeScript ESM(`"type": "module"`,import 带 `.js` 后缀)· Node 22 · Claude Agent SDK ·
-A2A(`@a2a-js/sdk`)· Express · PostgreSQL(`pg`)· 前端 Vite + React 18。
+A2A(`@a2a-js/sdk`)· Express · MySQL(通过 Java server 8080 代理,TS 端只走 HTTP)· 前端 Vite + React 18。
 
 ## 命令
 
@@ -37,7 +37,7 @@ A2A(`@a2a-js/sdk`)· Express · PostgreSQL(`pg`)· 前端 Vite + React 18。
 - `task/manager.ts` · `task/scheduler.ts` — 任务/子任务 CRUD + 依赖编排
 - `team/registry.ts` · `team/factory.ts` · `team/promoter.ts` — Agent Recipe 库、实例化、晋升
 - `memory/everos.ts` — 长记忆(外部 EverOS API)
-- `shared/db.ts` — PostgreSQL 连接 + 建表
+- `shared/server-client.ts` — 数据层 HTTP 代理:所有读写走 Java `http://localhost:8080`
 - `shared/redact.ts` — 敏感 token 清洗
 
 前端 `web/src/`:
@@ -48,10 +48,9 @@ A2A(`@a2a-js/sdk`)· Express · PostgreSQL(`pg`)· 前端 Vite + React 18。
 
 ## 数据库
 
-- 连接 `DATABASE_URL` 或默认 `postgresql://localhost:5432/jarvis`,表名前缀 `jarvis_*`
-- **schema 演进用 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`**,不写迁移脚本
-- `initDb()` 用 advisory lock 序列化 DDL,避免并发启动死锁
-- 直接用 `psql jarvis -tAc "..."` 查数据调试
+- 落库全在 **Java server 8080** 端,MySQL(`server/target/classes/application.yml`,默认 `jdbc:mysql://localhost:3306/jarvis`);TS 侧不直连数据库,只通过 `shared/server-client.ts` 走 HTTP
+- 建表由 Java 负责(Spring Boot 启动时),TS 端没有 `initDb`/DDL
+- 表名前缀 `jarvis_*`;调试直接 `mysql -uroot jarvis -e "..."`
 
 ## 关键约定
 
