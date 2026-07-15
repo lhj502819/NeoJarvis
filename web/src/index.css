@@ -77,6 +77,26 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Electron 桌面端标题栏拖拽区 —— 让 macOS 识别顶部为标题栏,双击触发系统 zoom(最大化/还原);
+   浏览器忽略 -webkit-app-region 属性,不影响 web 端。
+   z-index: 100 高于内容;pointer-events: none 让底下按钮仍可点,但拖拽/双击手势由 Chromium 特殊处理仍生效 */
+.electron-titlebar-drag {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  z-index: 100;
+  -webkit-app-region: drag;
+  pointer-events: none;
+}
+/* 侧栏 logo 收起按钮等交互元素的顶部可能落在拖拽区,给内部具体按钮 no-drag 让它们优先 */
+.sidebar-collapse-btn,
+.sidebar-nav-item,
+button {
+  -webkit-app-region: no-drag;
+}
+
 /* Aurora 全局背景:极细网格(极弱)+ 双色极光光晕 */
 body::before {
   content: '';

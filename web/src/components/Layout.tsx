@@ -40,6 +40,9 @@ export default function Layout() {
 
   return (
     <div className="layout">
+      {/* Electron 桌面拖拽区:让 macOS 识别顶部为标题栏,双击触发系统 zoom(最大化/还原)。
+          浏览器忽略 -webkit-app-region 属性,不影响 web 端。 */}
+      <div className="electron-titlebar-drag" />
       <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
         <div className="sidebar-logo">
           <img src="/jarvis-logo.png" alt="Jarvis" className="sidebar-logo-img" />
