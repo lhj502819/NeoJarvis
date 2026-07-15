@@ -151,9 +151,11 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
 
   const userMcpServers = await buildUserMcpServers(userId)
   const agentCommsMcp = createAgentCommsMcp(subtaskId, taskId, userId, agentName)
-  // 把 MCP servers 的工具通配符加进 allowedTools（bypassPermissions 模式下这是白名单）
+  // 把 MCP servers 的工具通配符加进 allowedTools（bypassPermissions 模式下这是白名单）。
+  // 除了显式枚举每个 MCP,还统一追加 'mcp__*' 通配 —— 兼容内置 recipe / adhoc / 晋升 recipe 的 tools
+  // 白名单里没写 mcp__* 的情况(方案 1:改调用处,不迁移 DB 数据)。
   const mcpToolNames = Object.keys(userMcpServers).map(name => `mcp__${name}__*`)
-  const allowedTools = [...tools, ...mcpToolNames, 'mcp__agent-comms__*']
+  const allowedTools = [...tools, ...mcpToolNames, 'mcp__agent-comms__*', 'mcp__*']
 
   const disabledSkills = await getDisabledSkills(userId)
   const explicit = [...new Set([...(recipe?.skills || []), ...(context?.skills || [])])]

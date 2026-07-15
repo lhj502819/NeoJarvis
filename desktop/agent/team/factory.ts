@@ -13,6 +13,7 @@ import {
 import { agentCardHandler, jsonRpcHandler, restHandler, UserBuilder } from '@a2a-js/sdk/server/express'
 import type { AgentRecipe } from '../shared/types.js'
 import { config } from '../shared/config.js'
+import { buildUserMcpServers } from '../shared/user-mcp.js'
 
 import { homedir } from 'os'
 
@@ -29,7 +30,9 @@ const CLAUDE_PATH = findClaudePath()
 const HOME_DIR = homedir()
 
 class RecipeExecutor implements AgentExecutor {
-  constructor(private recipe: AgentRecipe) {}
+  // userId 由 startAgentServer 注入(默认 'system');A2A executor 内没有请求上下文携带用户,
+  // 用来给 buildUserMcpServers 拿本机 hub + DB user + 黑名单合并出的 MCP 池。
+  constructor(private recipe: AgentRecipe, private userId: string) {}
 
   async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
     const userMessage = requestContext.userMessage
@@ -50,16 +53,25 @@ class RecipeExecutor implements AgentExecutor {
     try {
       const workDir = (this.recipe.context.cwd as string) || HOME_DIR
 
+      // 与 client.ts 主路径对齐:MCP 通过 buildUserMcpServers 拿(hub + DB user + 黑名单)。
+      // A2A executor 里 userId 由 startAgentServer 注入;失败则降级为空对象(不阻塞派单)。
+      const mcpServers = await buildUserMcpServers(this.userId).catch(() => ({}))
+
+      // 允许 recipe.tools 之外调用任意 MCP 工具(方案 1:在调 SDK 处统一追加 'mcp__*' 通配)。
+      // 如果 recipe 里的 tools 白名单没写 mcp__*,SDK 在 bypassPermissions 模式下也会拒调 —— 补一条。
+      const allowedTools = [...this.recipe.tools, 'mcp__*']
+
       for await (const message of query({
         prompt: taskDescription,
         options: {
           systemPrompt: this.recipe.systemPrompt,
           pathToClaudeCodeExecutable: CLAUDE_PATH,
-          allowedTools: this.recipe.tools,
+          allowedTools,
           cwd: workDir,
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
           maxTurns: 20,
+          mcpServers,
         },
       })) {
         if (message.type === 'assistant' && message.message?.content) {
@@ -120,7 +132,7 @@ interface AgentInstance {
 const activeInstances: Map<string, AgentInstance> = new Map()
 let nextPort = config.agentBasePort
 
-export function startAgentServer(recipe: AgentRecipe): AgentInstance {
+export function startAgentServer(recipe: AgentRecipe, userId: string = 'system'): AgentInstance {
   const existing = activeInstances.get(recipe.id)
   if (existing) return existing
 
@@ -139,7 +151,7 @@ export function startAgentServer(recipe: AgentRecipe): AgentInstance {
     defaultOutputModes: ['text'],
   }
 
-  const executor = new RecipeExecutor(recipe)
+  const executor = new RecipeExecutor(recipe, userId)
   const requestHandler = new DefaultRequestHandler(agentCard, new InMemoryTaskStore(), executor)
 
   app.use('/.well-known/agent-card.json', agentCardHandler({ agentCardProvider: requestHandler }))
