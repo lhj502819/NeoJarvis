@@ -1,12 +1,36 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import pool, { initDb } from '../../src/shared/db.js'
-import { listSkillsForUser, setSkillEnabled } from '../../src/jarvis/skill-prefs.js'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+// skills 数据契约:黑名单数据层走 Java server,内存 fake 模拟启/禁;listHubSkills 扫本机保持真实。
+const store = vi.hoisted(() => ({ disabled: new Map<string, Set<string>>() }))
+
+vi.mock('../../src/shared/server-client.js', () => ({
+  serverGet: async (userId: string, path: string) => {
+    if (path === '/api/skills/prefs') {
+      return { disabled: [...(store.disabled.get(userId) ?? [])] }
+    }
+    return {}
+  },
+  serverPost: async (userId: string, path: string, body?: any) => {
+    const m = path.match(/^\/api\/skills\/(.+)\/toggle$/)
+    if (m) {
+      const name = m[1]
+      const set = store.disabled.get(userId) ?? new Set<string>()
+      if (body?.enabled) set.delete(name)
+      else set.add(name)
+      store.disabled.set(userId, set)
+    }
+    return { ok: true }
+  },
+  serverPatch: async () => ({ ok: true }),
+  serverDelete: async () => ({ ok: true }),
+}))
+
+const { listSkillsForUser, setSkillEnabled } = await import('../../src/jarvis/skill-prefs.js')
 
 const USER = `u-skillapi-${Date.now()}`
 
 describe('skills API 数据契约', () => {
-  beforeAll(async () => { await initDb() })
-  afterAll(async () => { await pool.query('DELETE FROM jarvis_skill_prefs WHERE user_id=$1', [USER]) })
+  beforeEach(() => { store.disabled.clear() })
 
   it('listSkillsForUser 返回数组,项形状正确', async () => {
     const list = await listSkillsForUser(USER)

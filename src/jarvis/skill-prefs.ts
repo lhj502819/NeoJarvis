@@ -1,24 +1,16 @@
-import pool from '../shared/db.js'
+import { serverGet, serverPost } from '../shared/server-client.js'
 import { listHubSkills } from './skills-hub.js'
 
 // 黑名单模型:表里有行 = 该用户禁用了这个 skill。空 = 全部启用。
+// 数据层走 Java server(GET /api/skills/prefs 返回 {disabled:[]}),扫本机 skill 仍留本地。
 export async function getDisabledSkills(userId: string): Promise<Set<string>> {
-  const { rows } = await pool.query(
-    'SELECT skill_name FROM jarvis_skill_prefs WHERE user_id = $1',
-    [userId]
-  )
-  return new Set(rows.map((r: any) => r.skill_name))
+  const { disabled } = await serverGet<{ disabled: string[] }>(userId, '/api/skills/prefs')
+  return new Set(disabled)
 }
 
 export async function setSkillEnabled(userId: string, name: string, enabled: boolean): Promise<void> {
-  if (enabled) {
-    await pool.query('DELETE FROM jarvis_skill_prefs WHERE user_id = $1 AND skill_name = $2', [userId, name])
-  } else {
-    await pool.query(
-      'INSERT INTO jarvis_skill_prefs (user_id, skill_name) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-      [userId, name]
-    )
-  }
+  // Java 端 toggle 幂等处理启/禁(黑名单 upsert / delete),返回 {ok:true}。
+  await serverPost(userId, `/api/skills/${name}/toggle`, { enabled })
 }
 
 // 管道类 skill:Jarvis 内部机制(晋升等),恒加载、不进管理页、不受启禁影响
