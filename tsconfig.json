@@ -7,9 +7,9 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": "desktop/agent",
     "resolveJsonModule": true
   },
-  "include": ["src"],
-  "exclude": ["src/jarvis/plugins/*/skills"]
+  "include": ["desktop/agent"],
+  "exclude": ["desktop/agent/jarvis/plugins/*/skills"]
 }

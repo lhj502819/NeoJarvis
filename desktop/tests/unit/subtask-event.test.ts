@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSubtaskEvent } from '../../src/jarvis/subtask-event.js'
+import { buildSubtaskEvent } from '../../agent/jarvis/subtask-event.js'
 
 describe('buildSubtaskEvent', () => {
   it('running 事件带 turnCount 与 currentTool', () => {

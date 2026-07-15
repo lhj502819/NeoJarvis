@@ -7,7 +7,7 @@ import { randomUUID } from 'crypto'
 // so this stays a pure unit test of the TS layer (createRecipe forwarding + getRecipe filter).
 const store = vi.hoisted(() => ({ recipes: [] as any[] }))
 
-vi.mock('../../src/shared/server-client.js', () => ({
+vi.mock('../../agent/shared/server-client.js', () => ({
   serverGet: async (_userId: string, path: string) => {
     if (path === '/api/recipes') return store.recipes.filter(r => r._userId === _userId)
     if (path.startsWith('/api/recipes/by-ids')) {
@@ -42,7 +42,7 @@ vi.mock('../../src/shared/server-client.js', () => ({
   serverPatch: async () => ({ ok: true }),
 }))
 
-const { createRecipe, getRecipe } = await import('../../src/team/registry.js')
+const { createRecipe, getRecipe } = await import('../../agent/team/registry.js')
 
 const USER = `u-rs-${Date.now()}`
 

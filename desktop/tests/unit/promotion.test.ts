@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { clusterByDomain, dominantCwd, type DomainCluster } from '../../src/team/promoter.js'
-import type { AgentSession } from '../../src/a2a/history.js'
+import { clusterByDomain, dominantCwd, type DomainCluster } from '../../agent/team/promoter.js'
+import type { AgentSession } from '../../agent/a2a/history.js'
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {

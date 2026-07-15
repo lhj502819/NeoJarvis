@@ -25,7 +25,7 @@ A2A(`@a2a-js/sdk`)· Express · PostgreSQL(`pg`)· 前端 Vite + React 18。
 
 ## 架构指针(改代码先看这里)
 
-后端 `src/`:
+后端 `desktop/agent/`:
 - `index.ts` — 入口:initDb → 启动 A2A server → CLI
 - `jarvis/brain.ts` — Jarvis 大脑:`think()` 组装 system prompt + 上下文,调 LLM,解析 action
 - `jarvis/prompt.ts` — 静态 system prompt(人设、决策规则、action 协议)

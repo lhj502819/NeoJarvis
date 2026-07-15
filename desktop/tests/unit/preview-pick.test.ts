@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { buildPreviewFromFiles } from '../../src/jarvis/action-dispatcher.js'
+import { buildPreviewFromFiles } from '../../agent/jarvis/action-dispatcher.js'
 import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'

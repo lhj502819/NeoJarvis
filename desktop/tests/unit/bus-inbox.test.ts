@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 // bus 依赖 Java server-client(recordMessage → POST /api/agent-messages)。mock 掉 server-client,
 // 用一个内存 fake 记录 POST 过的消息,让我们能纯内存验证 inbox/drain 语义,不起真实 HTTP。
 const posted: Array<{ path: string; body: unknown }> = []
-vi.mock('../../src/shared/server-client.js', () => ({
+vi.mock('../../agent/shared/server-client.js', () => ({
   serverPost: vi.fn(async (_userId: string, path: string, body?: unknown) => {
     posted.push({ path, body })
     return undefined
@@ -11,7 +11,7 @@ vi.mock('../../src/shared/server-client.js', () => ({
   serverGet: vi.fn(async () => undefined),
 }))
 
-import { bus, type A2AMessage } from '../../src/a2a/bus.js'
+import { bus, type A2AMessage } from '../../agent/a2a/bus.js'
 
 function lastText(msgs: A2AMessage[]): string {
   const m = msgs[msgs.length - 1]

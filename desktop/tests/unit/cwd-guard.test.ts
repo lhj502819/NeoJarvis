@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sanitizeCwd } from '../../src/jarvis/cwd-guard.js'
+import { sanitizeCwd } from '../../agent/jarvis/cwd-guard.js'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'

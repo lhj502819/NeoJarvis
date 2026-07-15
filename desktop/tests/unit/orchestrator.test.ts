@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('../../src/jarvis/brain.js', () => ({
+vi.mock('../../agent/jarvis/brain.js', () => ({
   think: vi.fn(async () => ({ response: 'mock response' })),
   addToBuffer: vi.fn(async () => {}),
 }))
 
-import { enqueueMessage, handleDisconnect, getStatus, type SSEWriter } from '../../src/jarvis/orchestrator.js'
+import { enqueueMessage, handleDisconnect, getStatus, type SSEWriter } from '../../agent/jarvis/orchestrator.js'
 
 function createMockWriter(id?: string): SSEWriter {
   return {
@@ -52,7 +52,7 @@ describe('orchestrator state machine', () => {
     // Wait for buffer window (1500ms) + think
     await wait(2000)
 
-    const { think } = await import('../../src/jarvis/brain.js')
+    const { think } = await import('../../agent/jarvis/brain.js')
     const calls = (think as any).mock.calls
     expect(calls.length).toBe(1)
     expect(calls[0][1]).toContain('帮我查天气')

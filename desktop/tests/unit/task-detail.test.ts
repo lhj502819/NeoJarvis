@@ -10,7 +10,7 @@ const { TASK, SUB, USER } = vi.hoisted(() => ({
   USER: 'test-user',
 }))
 
-vi.mock('../../src/shared/server-client.js', () => ({
+vi.mock('../../agent/shared/server-client.js', () => ({
   serverGet: async (_userId: string, path: string) => {
     if (path === `/api/task/${TASK}`) {
       return {
@@ -32,7 +32,7 @@ vi.mock('../../src/shared/server-client.js', () => ({
   serverDelete: vi.fn(),
 }))
 
-const { getTaskDetail } = await import('../../src/task/manager.js')
+const { getTaskDetail } = await import('../../agent/task/manager.js')
 
 describe('getTaskDetail', () => {
   it('返回任务 + 子任务轨迹', async () => {

@@ -1,13 +1,13 @@
 /*
  * Jarvis 桌面主进程(CommonJS)。
  *
- * 为什么 CJS?—— 智能层(src/)是 ESM + TS,在**独立 tsx 子进程**里跑;
+ * 为什么 CJS?—— 智能层(desktop/agent/)是 ESM + TS,在**独立 tsx 子进程**里跑;
  * Electron 主进程本身走最稳的 CJS 默认形态(desktop/package.json 无 "type" 字段)。
  * 两者进程隔离:主进程不 import 任何 TS 智能层代码,只负责拉起子进程 + 开窗口。
  *
  * 职责:
  *   1. 注入 env(JARVIS_SERVER_URL 指向 Java 8080、JARVIS_LOCAL_MODE、透传 ANTHROPIC key)
- *   2. spawn `tsx src/server-entry.ts` 起 PG-free 智能层 server(端口 3000,跳过 initDb)
+ *   2. spawn `tsx desktop/agent/server-entry.ts` 起 PG-free 智能层 server(端口 3000,跳过 initDb)
  *   3. 等 3000 就绪 → 开 BrowserWindow(dev 加载 vite 5180,prod 加载 3000 自服务的 web/dist)
  *   4. macOS 窗口惯例;退出时清理子进程
  */
@@ -65,10 +65,10 @@ ipcMain.handle('artifact:read', async (_event, uri) => {
   return await fs.readFile(resolved, 'utf-8')
 })
 
-/** spawn tsx 跑 src/server-entry.ts —— 用 Electron 自带 node 执行 tsx CLI,不依赖系统 PATH */
+/** spawn tsx 跑 desktop/agent/server-entry.ts —— 用 Electron 自带 node 执行 tsx CLI,不依赖系统 PATH */
 function startTsServer() {
   const tsxCli = path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs')
-  const entry = path.join(REPO_ROOT, 'src', 'server-entry.ts')
+  const entry = path.join(REPO_ROOT, 'desktop', 'agent', 'server-entry.ts')
 
   serverProc = spawn(process.execPath, [tsxCli, entry], {
     cwd: REPO_ROOT,

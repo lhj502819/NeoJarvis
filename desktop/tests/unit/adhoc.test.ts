@@ -16,7 +16,7 @@ function strip(a: any) {
   return { ...rest }
 }
 
-vi.mock('../../src/shared/server-client.js', () => ({
+vi.mock('../../agent/shared/server-client.js', () => ({
   serverGet: async (userId: string, path: string) => {
     if (path === '/api/adhoc') {
       return store.agents
@@ -76,7 +76,7 @@ vi.mock('../../src/shared/server-client.js', () => ({
   },
 }))
 
-const { upsertAdhocAgent, getAdhocAgent, listAdhocAgents, markAdhocPromoted } = await import('../../src/a2a/adhoc.js')
+const { upsertAdhocAgent, getAdhocAgent, listAdhocAgents, markAdhocPromoted } = await import('../../agent/a2a/adhoc.js')
 
 const USER = `u-adhoc-${Date.now()}`
 

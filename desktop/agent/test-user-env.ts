@@ -1,7 +1,7 @@
 /**
  * 防回归测试：buildUserEnv 核心不变式
  *
- * 运行方式：npx tsx src/test-user-env.ts
+ * 运行方式：npx tsx desktop/agent/test-user-env.ts
  *
  * 覆盖：
  *   1. 全局 agentEnv 不被污染（核心安全不变式）

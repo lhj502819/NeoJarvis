@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseAction } from '../../src/jarvis/brain.js'
+import { parseAction } from '../../agent/jarvis/brain.js'
 
 describe('parseAction', () => {
   it('parses fenced json code block', () => {

@@ -15,4 +15,4 @@ config/mcporter.json
 designs/
 .tmp-*
 desktop/.build/
-src/jarvis/plugins/skills-hub/skills/
+desktop/agent/jarvis/plugins/skills-hub/skills/

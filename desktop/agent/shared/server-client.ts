@@ -2,7 +2,7 @@
  * HTTP client for the v0.3 Java data server (port 8080).
  *
  * The old TS data layer talked to PostgreSQL directly via `pool.query`. In v0.3 the
- * intelligence layer (this `src/` tree) no longer owns the DB — it calls the Java
+ * intelligence layer (this `desktop/agent/` tree) no longer owns the DB — it calls the Java
  * server's REST API, which persists to MySQL.
  *
  * Every TS data-layer function receives a `userId`. There is no cookie/JWT on these

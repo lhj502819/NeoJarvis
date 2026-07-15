@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import pool, { initDb } from '../../src/shared/db.js'
+import pool, { initDb } from '../../agent/shared/db.js'
 
 describe('adhoc 数据层 schema', () => {
   beforeAll(async () => { await initDb() })

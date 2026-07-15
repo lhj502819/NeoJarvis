@@ -16,7 +16,7 @@ function stripAdhoc(a: any) {
   return { ...rest }
 }
 
-vi.mock('../../src/shared/server-client.js', () => ({
+vi.mock('../../agent/shared/server-client.js', () => ({
   serverGet: async (userId: string, path: string) => {
     if (path === '/api/recipes') return store.recipes.filter(r => r._userId === userId)
     if (path.startsWith('/api/recipes/by-ids')) {
@@ -92,10 +92,10 @@ vi.mock('../../src/shared/server-client.js', () => ({
   serverPatch: async () => ({ ok: true }),
 }))
 
-const { initDb } = await import('../../src/shared/db.js')
-const { upsertAdhocAgent } = await import('../../src/a2a/adhoc.js')
-const { promoteAdhocToRecipe } = await import('../../src/jarvis/tools.js')
-const { listRecipes } = await import('../../src/team/registry.js')
+const { initDb } = await import('../../agent/shared/db.js')
+const { upsertAdhocAgent } = await import('../../agent/a2a/adhoc.js')
+const { promoteAdhocToRecipe } = await import('../../agent/jarvis/tools.js')
+const { listRecipes } = await import('../../agent/team/registry.js')
 
 const USER = `u-promo-${Date.now()}`
 

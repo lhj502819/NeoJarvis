@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { listHubSkills } from '../../src/jarvis/skills-hub.js'
+import { listHubSkills } from '../../agent/jarvis/skills-hub.js'
 
 describe('skills-hub 元数据解析', () => {
   it('listHubSkills 每项带 source 字段', () => {

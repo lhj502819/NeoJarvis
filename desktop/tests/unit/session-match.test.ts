@@ -4,7 +4,7 @@ const NOW = new Date().toISOString()
 
 // findMatchingSessionByDomain now pulls domain sessions from Java (GET /api/sessions/by-domain)
 // and keeps the auto-% filter + keyword scoring local, so we mock the server-client layer.
-vi.mock('../../src/shared/server-client.js', () => ({
+vi.mock('../../agent/shared/server-client.js', () => ({
   serverGet: async (_userId: string, path: string) => {
     const domain = new URLSearchParams(path.split('?')[1] || '').get('domain')
     if (domain === '技术调研') {
@@ -18,7 +18,7 @@ vi.mock('../../src/shared/server-client.js', () => ({
   serverPost: async () => undefined,
 }))
 
-const { findMatchingSessionByDomain } = await import('../../src/a2a/history.js')
+const { findMatchingSessionByDomain } = await import('../../agent/a2a/history.js')
 
 const USER = `u-sm-${Date.now()}`
 

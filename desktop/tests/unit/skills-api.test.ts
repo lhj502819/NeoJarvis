@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // skills 数据契约:黑名单数据层走 Java server,内存 fake 模拟启/禁;listHubSkills 扫本机保持真实。
 const store = vi.hoisted(() => ({ disabled: new Map<string, Set<string>>() }))
 
-vi.mock('../../src/shared/server-client.js', () => ({
+vi.mock('../../agent/shared/server-client.js', () => ({
   serverGet: async (userId: string, path: string) => {
     if (path === '/api/skills/prefs') {
       return { disabled: [...(store.disabled.get(userId) ?? [])] }
@@ -25,7 +25,7 @@ vi.mock('../../src/shared/server-client.js', () => ({
   serverDelete: async () => ({ ok: true }),
 }))
 
-const { listSkillsForUser, setSkillEnabled } = await import('../../src/jarvis/skill-prefs.js')
+const { listSkillsForUser, setSkillEnabled } = await import('../../agent/jarvis/skill-prefs.js')
 
 const USER = `u-skillapi-${Date.now()}`
 

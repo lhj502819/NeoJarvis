@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // listHubSkills() 扫本机 ~/.claude/skills 仍是真实调用,保持不变。
 const store = vi.hoisted(() => ({ disabled: new Map<string, Set<string>>() }))
 
-vi.mock('../../src/shared/server-client.js', () => ({
+vi.mock('../../agent/shared/server-client.js', () => ({
   serverGet: async (userId: string, path: string) => {
     if (path === '/api/skills/prefs') {
       return { disabled: [...(store.disabled.get(userId) ?? [])] }
@@ -27,7 +27,7 @@ vi.mock('../../src/shared/server-client.js', () => ({
   serverDelete: async () => ({ ok: true }),
 }))
 
-const { getDisabledSkills, setSkillEnabled } = await import('../../src/jarvis/skill-prefs.js')
+const { getDisabledSkills, setSkillEnabled } = await import('../../agent/jarvis/skill-prefs.js')
 
 const USER = `u-skillpref-${Date.now()}`
 
@@ -67,7 +67,7 @@ describe('skill-prefs 黑名单', () => {
   })
 
   it('listSkillsForUser 每项带 enabled,禁用项为 false', async () => {
-    const { listSkillsForUser } = await import('../../src/jarvis/skill-prefs.js')
+    const { listSkillsForUser } = await import('../../agent/jarvis/skill-prefs.js')
     await setSkillEnabled(USER, 'deep-research', false)
     const list = await listSkillsForUser(USER)
     const dr = list.find(s => s.name === 'deep-research')
@@ -78,7 +78,7 @@ describe('skill-prefs 黑名单', () => {
   })
 
   it('getEnabledHubSkills 不含被禁的、也不含管道 skill', async () => {
-    const { getEnabledHubSkills } = await import('../../src/jarvis/skill-prefs.js')
+    const { getEnabledHubSkills } = await import('../../agent/jarvis/skill-prefs.js')
     await setSkillEnabled(USER, 'deep-research', false)
     const enabled = await getEnabledHubSkills(USER)
     expect(enabled).not.toContain('deep-research')

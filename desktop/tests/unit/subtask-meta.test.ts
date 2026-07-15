@@ -8,14 +8,14 @@ const { serverGet, serverPost, serverPatch } = vi.hoisted(() => ({
   serverPost: vi.fn(),
   serverPatch: vi.fn(),
 }))
-vi.mock('../../src/shared/server-client.js', () => ({
+vi.mock('../../agent/shared/server-client.js', () => ({
   serverGet,
   serverPost,
   serverPatch,
   serverDelete: vi.fn(),
 }))
 
-const { setSubtaskStarted, recordTurn, finalizeSubtaskMeta, getSubtaskTurns } = await import('../../src/task/manager.js')
+const { setSubtaskStarted, recordTurn, finalizeSubtaskMeta, getSubtaskTurns } = await import('../../agent/task/manager.js')
 
 const SUB = 's-meta-1'
 
