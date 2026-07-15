@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;background:transparent">
+<canvas id="c" width="1024" height="1024"></canvas>
+<script>
+async function build() {
+  const size = 1024
+  const canvas = document.getElementById('c')
+  const ctx = canvas.getContext('2d')
+
+  // macOS icon squircle 精确路径(近似):使用椭圆圆角(cornerSmoothing)
+  // 标准 macOS icon:内容占 82%,squircle 圆角半径约 22.4%(226/1024)
+  const inset = size * 0.09                    // 9% 外边距
+  const rectSize = size - inset * 2            // 内容框
+  const radius = rectSize * 0.2237             // squircle 圆角半径
+
+  // 深色背景 + 微微渐变(比纯白好看,与 Aurora 主题呼应)
+  const gradient = ctx.createLinearGradient(inset, inset, inset + rectSize, inset + rectSize)
+  gradient.addColorStop(0, '#f5f2eb')          // 浅米(素描背景色)
+  gradient.addColorStop(1, '#e8e3d5')          // 稍暖白
+
+  // 画圆角矩形(macOS squircle 近似 —— 用 quadratic 圆角)
+  function squirclePath(x, y, w, h, r) {
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.lineTo(x + w - r, y)
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r)
+    ctx.lineTo(x + w, y + h - r)
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h)
+    ctx.lineTo(x + r, y + h)
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r)
+    ctx.lineTo(x, y + r)
+    ctx.quadraticCurveTo(x, y, x + r, y)
+    ctx.closePath()
+  }
+
+  // 底(带阴影感的边)
+  ctx.save()
+  ctx.shadowColor = 'rgba(0,0,0,0.15)'
+  ctx.shadowBlur = 16
+  ctx.shadowOffsetY = 8
+  squirclePath(inset, inset, rectSize, rectSize, radius)
+  ctx.fillStyle = gradient
+  ctx.fill()
+  ctx.restore()
+
+  // 加载素描并 clip 到 squircle 里
+  const img = new Image()
+  img.src = 'file://__REPO__/logo/jarvis-butler/jarvis-butler-sketch.png'
+  await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject })
+
+  ctx.save()
+  squirclePath(inset, inset, rectSize, rectSize, radius)
+  ctx.clip()
+  // 素描肖像,微微放大让下巴/领结更靠边缘,视觉更饱满
+  // 素描原图人物集中在中下部,我们裁下半为主
+  const drawScale = 1.05
+  const drawSize = rectSize * drawScale
+  const drawX = inset + (rectSize - drawSize) / 2
+  const drawY = inset + (rectSize - drawSize) / 2 + rectSize * 0.03  // 略下移让脸居中
+  ctx.drawImage(img, drawX, drawY, drawSize, drawSize)
+  ctx.restore()
+
+  // 微微内边描线(macOS icon 惯例:1px inner stroke 提升辨识度)
+  ctx.save()
+  squirclePath(inset + 1, inset + 1, rectSize - 2, rectSize - 2, radius - 1)
+  ctx.lineWidth = 2
+  ctx.strokeStyle = 'rgba(0,0,0,0.08)'
+  ctx.stroke()
+  ctx.restore()
+
+  // 输出到 window
+  const dataUrl = canvas.toDataURL('image/png')
+  window._iconDataUrl = dataUrl
+  document.title = 'READY'
+}
+build()
+</script>
+</body>
+</html>

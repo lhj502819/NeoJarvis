@@ -11,7 +11,7 @@
  *   3. 等 3000 就绪 → 开 BrowserWindow(dev 加载 vite 5180,prod 加载 3000 自服务的 web/dist)
  *   4. macOS 窗口惯例;退出时清理子进程
  */
-const { app, BrowserWindow, shell, ipcMain } = require('electron')
+const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron')
 const path = require('path')
 const os = require('node:os')
 const fs = require('node:fs/promises')
@@ -20,6 +20,10 @@ const { spawn } = require('child_process')
 
 // dev = 未打包(electron . )或显式 NODE_ENV=development
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development'
+
+// 统一应用名,让 macOS 菜单栏/About/dock 提示都显示 J.A.R.V.I.S
+// (dev 时 electron-builder 的 productName 不生效,必须代码里 setName)
+app.setName('J.A.R.V.I.S')
 
 // 仓库根:dev 时是 desktop 的上级;打包后 extraResources 落在 resources/app
 const REPO_ROOT = app.isPackaged
@@ -107,12 +111,22 @@ function waitForServer(port, timeoutMs = 30000) {
 }
 
 function createWindow() {
+  // 应用图标(dev + prod 都有效):使用 build/icon.png(BrowserWindow.icon 只吃 PNG/ICO);
+  // 打包后 macOS dock 由 electron-builder 用 build/icon.icns 处理。
+  const iconPath = path.join(__dirname, '..', 'build', 'icon.png')
+
+  // macOS dock 图标(dev 模式下也生效)
+  if (process.platform === 'darwin' && app.dock && require('fs').existsSync(iconPath)) {
+    try { app.dock.setIcon(iconPath) } catch { /* ignore */ }
+  }
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 840,
     minWidth: 960,
     minHeight: 600,
-    title: 'Jarvis',
+    title: 'J.A.R.V.I.S',
+    icon: iconPath,
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#0a0e1a',
     webPreferences: {
@@ -140,6 +154,31 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  // macOS 菜单栏第一项(App Menu)—— dev 下 .app bundle 叫 Electron,
+  // 必须显式构造 Menu 把 label 写死为 J.A.R.V.I.S。打包后 productName 已经生效,这里保持一致。
+  if (process.platform === 'darwin') {
+    const APP_NAME = 'J.A.R.V.I.S'
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      {
+        label: APP_NAME,
+        submenu: [
+          { role: 'about', label: '关于 ' + APP_NAME },
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide', label: '隐藏 ' + APP_NAME },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit', label: '退出 ' + APP_NAME },
+        ]
+      },
+      { role: 'editMenu' },
+      { role: 'viewMenu' },
+      { role: 'windowMenu' },
+    ]))
+  }
+
   startTsServer()
   try {
     await waitForServer(TS_SERVER_PORT)

@@ -15,4 +15,6 @@ config/mcporter.json
 designs/
 .tmp-*
 desktop/.build/
+desktop/release/
+desktop/build/icon.iconset/
 desktop/agent/jarvis/plugins/skills-hub/skills/

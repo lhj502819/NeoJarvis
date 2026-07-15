@@ -8,7 +8,8 @@
     "dev": "NODE_ENV=development electron .",
     "start": "electron .",
     "build": "electron-builder --mac dmg",
-    "pack": "electron-builder --dir"
+    "pack": "electron-builder --dir",
+    "postinstall": "bash build/scripts/patch-electron-name.sh || true"
   },
   "devDependencies": {
     "electron": "^33.2.1",
@@ -16,19 +17,20 @@
   },
   "build": {
     "appId": "com.jarvis.desktop",
-    "productName": "Jarvis",
+    "productName": "J.A.R.V.I.S",
     "directories": {
       "output": "release",
       "buildResources": "build"
     },
     "files": [
       "main/**/*",
-      "preload/**/*"
+      "preload/**/*",
+      "build/icon.png"
     ],
     "extraResources": [
       {
-        "from": "../src",
-        "to": "app/src",
+        "from": "./agent",
+        "to": "app/desktop/agent",
         "filter": ["**/*", "!**/*.test.ts"]
       },
       {
@@ -50,6 +52,7 @@
     ],
     "mac": {
       "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
       "target": [
         { "target": "dmg", "arch": ["arm64", "x64"] }
       ],
@@ -57,7 +60,7 @@
       "gatekeeperAssess": false
     },
     "dmg": {
-      "title": "Jarvis ${version}"
+      "title": "J.A.R.V.I.S ${version}"
     }
   }
 }
