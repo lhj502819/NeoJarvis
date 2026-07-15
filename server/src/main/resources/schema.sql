@@ -249,3 +249,12 @@ CREATE TABLE IF NOT EXISTS jarvis_skill_prefs (
   skill_name VARCHAR(191) NOT NULL,
   PRIMARY KEY (user_id, skill_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ═══ MCP 启禁偏好(黑名单:有行=该用户禁用了此 MCP) ═══
+-- 完全对称 jarvis_skill_prefs;name 可为 hub 里读到的本机 MCP,或 jarvis_user_mcp_servers 里"自加"的。
+-- 只做启/禁,不存 hub MCP 的凭证(hub 的 env 仅在 TS 智能层内存中流转)。
+CREATE TABLE IF NOT EXISTS jarvis_mcp_prefs (
+  user_id VARCHAR(191) NOT NULL,
+  mcp_name VARCHAR(191) NOT NULL,
+  PRIMARY KEY (user_id, mcp_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
