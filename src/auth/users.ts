@@ -1,5 +1,29 @@
-import { randomUUID, scryptSync, randomBytes } from 'crypto'
-import pool from '../shared/db.js'
+import { pbkdf2Sync } from 'crypto'
+import { serverGet, serverPost, serverDelete } from '../shared/server-client.js'
+
+/**
+ * v0.3: the user data layer no longer touches PostgreSQL — it calls the Java server's
+ * internal user endpoints (InternalUserController, /api/internal/users). Java owns id
+ * generation, the "first user is admin" rule, duplicate-username rejection and the actual
+ * password hashing (see UserService / PasswordHasher). Signatures and return types are
+ * unchanged from the old pool-based version so auth.ts keeps compiling untouched.
+ *
+ * These functions have no userId in their signature (they are the auth layer, which runs
+ * before a user is resolved), so they forward a 'local' placeholder as X-Internal-User —
+ * the dev-bypass filter accepts any value. The internal endpoints deliberately have no
+ * invite-code / admin gating; that policy stays in auth.ts, exactly where it was.
+ *
+ * validatePassword must stay a *synchronous* boolean check (auth.ts calls it inline), so it
+ * cannot round-trip to Java. Instead findUser* return the full row (incl. passwordHash +
+ * salt) and we re-derive the hash locally. Java hashes with PBKDF2-HMAC-SHA256, 210k
+ * iterations, 64-byte key, salt fed as its UTF-8 bytes (PasswordHasher.java) — replicated
+ * byte-for-byte below (both sides UTF-8-encode the password, so ASCII + Unicode match).
+ */
+
+const INTERNAL_USER = 'local'
+const PBKDF2_ITERATIONS = 210_000
+const PBKDF2_KEYLEN = 64
+const PBKDF2_DIGEST = 'sha256'
 
 export interface User {
   id: string
@@ -11,57 +35,40 @@ export interface User {
   createdAt: string
 }
 
+/** Java UserRow serializes camelCase, field-for-field identical to User — deserializes directly. */
 function hashPassword(password: string, salt: string): string {
-  return scryptSync(password, salt, 64).toString('hex')
+  return pbkdf2Sync(password, Buffer.from(salt, 'utf8'), PBKDF2_ITERATIONS, PBKDF2_KEYLEN, PBKDF2_DIGEST).toString('hex')
 }
 
-function rowToUser(row: any): User {
-  return {
-    id: row.id,
-    username: row.username,
-    displayName: row.display_name,
-    passwordHash: row.password_hash,
-    salt: row.salt,
-    role: row.role,
-    createdAt: row.created_at,
-  }
+/** Java 404 (NotFoundException) — server-client throws with the status in the message. */
+function isNotFound(err: unknown): boolean {
+  return err instanceof Error && / -> 404\b/.test(err.message)
 }
 
 export async function createUser(username: string, displayName: string, password: string): Promise<User> {
-  const { rows: existing } = await pool.query('SELECT id FROM jarvis_users WHERE username = $1', [username])
-  if (existing.length > 0) throw new Error('用户名已存在')
-
-  const { rows: countRows } = await pool.query('SELECT COUNT(*) as cnt FROM jarvis_users')
-  const count = parseInt(countRows[0].cnt, 10)
-  const salt = randomBytes(16).toString('hex')
-  const role = count === 0 ? 'admin' : 'user'
-  const user: User = {
-    id: randomUUID(),
-    username,
-    displayName,
-    passwordHash: hashPassword(password, salt),
-    salt,
-    role,
-    createdAt: new Date().toISOString(),
-  }
-
-  await pool.query(
-    `INSERT INTO jarvis_users (id, username, display_name, password_hash, salt, role, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [user.id, user.username, user.displayName, user.passwordHash, user.salt, user.role, user.createdAt]
-  )
-
-  return user
+  // Mirror the old two-step behaviour: reject duplicates with a clean message before creating.
+  // (Java also guards this, but the pre-check keeps the exact "用户名已存在" error auth.ts expects.)
+  const existing = await findUserByUsername(username)
+  if (existing) throw new Error('用户名已存在')
+  return serverPost<User>(INTERNAL_USER, '/api/internal/users', { username, displayName, password })
 }
 
 export async function findUserByUsername(username: string): Promise<User | undefined> {
-  const { rows } = await pool.query('SELECT * FROM jarvis_users WHERE username = $1', [username])
-  return rows[0] ? rowToUser(rows[0]) : undefined
+  try {
+    return await serverGet<User>(INTERNAL_USER, `/api/internal/users/by-username?username=${encodeURIComponent(username)}`)
+  } catch (err) {
+    if (isNotFound(err)) return undefined
+    throw err
+  }
 }
 
 export async function findUserById(userId: string): Promise<User | undefined> {
-  const { rows } = await pool.query('SELECT * FROM jarvis_users WHERE id = $1', [userId])
-  return rows[0] ? rowToUser(rows[0]) : undefined
+  try {
+    return await serverGet<User>(INTERNAL_USER, `/api/internal/users/${encodeURIComponent(userId)}`)
+  } catch (err) {
+    if (isNotFound(err)) return undefined
+    throw err
+  }
 }
 
 export function validatePassword(user: User, password: string): boolean {
@@ -69,25 +76,21 @@ export function validatePassword(user: User, password: string): boolean {
 }
 
 export async function listUsers(): Promise<Omit<User, 'passwordHash' | 'salt'>[]> {
-  const { rows } = await pool.query('SELECT id, username, display_name, role, created_at FROM jarvis_users')
-  return rows.map(row => ({
-    id: row.id,
-    username: row.username,
-    displayName: row.display_name,
-    role: row.role,
-    createdAt: row.created_at,
-  }))
+  // Java returns the redacted User view {id, username, displayName, role, createdAt}.
+  return serverGet<Omit<User, 'passwordHash' | 'salt'>[]>(INTERNAL_USER, '/api/internal/users')
 }
 
 export async function deleteUser(userId: string): Promise<boolean> {
-  const { rows } = await pool.query('SELECT role FROM jarvis_users WHERE id = $1', [userId])
-  if (rows.length === 0) return false
-  if (rows[0].role === 'admin') throw new Error('不能删除管理员')
-  await pool.query('DELETE FROM jarvis_users WHERE id = $1', [userId])
+  // Mirror the old logic: missing -> false, admin -> throw '不能删除管理员'. Checking the role
+  // here (rather than parsing Java's error body) preserves the exact clean message auth.ts uses.
+  const user = await findUserById(userId)
+  if (!user) return false
+  if (user.role === 'admin') throw new Error('不能删除管理员')
+  await serverDelete(INTERNAL_USER, `/api/internal/users/${encodeURIComponent(userId)}`)
   return true
 }
 
 export async function isAdmin(userId: string): Promise<boolean> {
-  const { rows } = await pool.query('SELECT role FROM jarvis_users WHERE id = $1', [userId])
-  return rows[0]?.role === 'admin'
+  const user = await findUserById(userId)
+  return user?.role === 'admin'
 }
