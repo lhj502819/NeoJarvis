@@ -3,6 +3,7 @@ package com.jarvis.service;
 import com.jarvis.domain.CreateCredentialRequest;
 import com.jarvis.domain.Credential;
 import com.jarvis.domain.CredentialRow;
+import com.jarvis.domain.ResolvedCredential;
 import com.jarvis.domain.UpdateCredentialRequest;
 import com.jarvis.mapper.CredentialMapper;
 import com.jarvis.util.CryptoUtil;
@@ -37,6 +38,41 @@ public class CredentialService {
     public List<Credential> list(String userId) {
         log.debug("list_credentials userId={}", userId);
         return credentialMapper.listSafeByUser(userId);
+    }
+
+    /**
+     * Resolve the credential to run an agent with, returning the DECRYPTED key. Ports
+     * src/auth/credentials.ts#resolveCredential: when a tier is given, that tier's default
+     * wins (else any of that tier); with no tier or no tier match, fall back to the user's
+     * default credential. Decryption failure is a graceful degrade — log a warning (never
+     * the plaintext) and return empty, so the caller falls back to the platform default key.
+     *
+     * <p>INTERNAL ONLY: returns a plaintext api key and must only be reached via
+     * X-Internal-User / dev-bypass (single-machine mode). It must never be exposed to the
+     * public internet. Under the eventual keychain architecture (Plan B) this resolution
+     * moves to the client and this endpoint goes away.
+     */
+    @Transactional(readOnly = true)
+    public Optional<ResolvedCredential> resolve(String userId, String tier) {
+        Optional<CredentialRow> row = Optional.empty();
+        if (tier != null && !tier.isEmpty()) {
+            row = credentialMapper.findResolvableByTier(userId, tier);
+        }
+        if (row.isEmpty()) {
+            row = credentialMapper.findResolvableDefault(userId);
+        }
+        if (row.isEmpty()) {
+            return Optional.empty();
+        }
+        CredentialRow r = row.get();
+        try {
+            return Optional.of(new ResolvedCredential(CryptoUtil.decrypt(r.apiKeyEnc()),
+                    r.baseUrl(), r.model()));
+        } catch (RuntimeException e) {
+            log.warn("resolve_credential decrypt failed userId={} — credential corrupt or key "
+                    + "rotated, falling back to platform default", userId);
+            return Optional.empty();
+        }
     }
 
     @Transactional

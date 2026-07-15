@@ -56,6 +56,10 @@ export function serverPatch<T>(userId: string, path: string, body?: unknown): Pr
   return request<T>(userId, 'PATCH', path, body)
 }
 
+export function serverPut<T>(userId: string, path: string, body?: unknown): Promise<T> {
+  return request<T>(userId, 'PUT', path, body)
+}
+
 export function serverDelete<T>(userId: string, path: string): Promise<T> {
   return request<T>(userId, 'DELETE', path)
 }

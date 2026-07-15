@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jarvis.domain.CreateCredentialRequest;
 import com.jarvis.domain.Credential;
+import com.jarvis.domain.ResolvedCredential;
 import com.jarvis.domain.UpdateCredentialRequest;
 import com.jarvis.service.CredentialService;
 import java.util.List;
@@ -47,6 +48,27 @@ class CredentialControllerTest {
                 .andExpect(jsonPath("$[0].isDefault").value(true))
                 .andExpect(jsonPath("$[0].apiKey").doesNotExist())
                 .andExpect(jsonPath("$[0].apiKeyEnc").doesNotExist());
+    }
+
+    @Test
+    void resolvedReturnsDecryptedKeyForTier() throws Exception {
+        when(credentialService.resolve("local", "standard"))
+                .thenReturn(Optional.of(new ResolvedCredential("sk-plain", "https://api", "sonnet")));
+
+        mockMvc.perform(get("/api/credentials/resolved").param("tier", "standard"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.apiKey").value("sk-plain"))
+                .andExpect(jsonPath("$.baseUrl").value("https://api"))
+                .andExpect(jsonPath("$.model").value("sonnet"));
+    }
+
+    @Test
+    void resolvedReturns404WhenNothingResolves() throws Exception {
+        when(credentialService.resolve("local", null)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/credentials/resolved"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("无可用凭证"));
     }
 
     @Test

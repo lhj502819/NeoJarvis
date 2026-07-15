@@ -36,6 +36,29 @@ public interface CredentialMapper {
             + "FROM jarvis_user_credentials WHERE id = #{id} AND user_id = #{userId}")
     Optional<CredentialRow> findByIdAndUser(@Param("id") String id, @Param("userId") String userId);
 
+    /**
+     * Full row (incl. encrypted key) for the given tier: that tier's default first,
+     * otherwise any of that tier — internal only, used by resolve.
+     */
+    @Select("SELECT id, user_id AS userId, label, tier, api_key_enc AS apiKeyEnc, "
+            + "base_url AS baseUrl, model, is_default AS isDefault, "
+            + "created_at AS createdAt, updated_at AS updatedAt "
+            + "FROM jarvis_user_credentials WHERE user_id = #{userId} AND tier = #{tier} "
+            + "ORDER BY is_default DESC, created_at ASC LIMIT 1")
+    Optional<CredentialRow> findResolvableByTier(@Param("userId") String userId,
+            @Param("tier") String tier);
+
+    /**
+     * Full row (incl. encrypted key) for the user's default credential (default first,
+     * else earliest created) — internal only, used by resolve when no tier matches.
+     */
+    @Select("SELECT id, user_id AS userId, label, tier, api_key_enc AS apiKeyEnc, "
+            + "base_url AS baseUrl, model, is_default AS isDefault, "
+            + "created_at AS createdAt, updated_at AS updatedAt "
+            + "FROM jarvis_user_credentials WHERE user_id = #{userId} "
+            + "ORDER BY is_default DESC, created_at ASC LIMIT 1")
+    Optional<CredentialRow> findResolvableDefault(@Param("userId") String userId);
+
     @Update("UPDATE jarvis_user_credentials SET is_default = 0 WHERE user_id = #{userId}")
     void clearDefault(@Param("userId") String userId);
 

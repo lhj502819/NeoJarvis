@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.jarvis.domain.CreateCredentialRequest;
 import com.jarvis.domain.Credential;
 import com.jarvis.domain.CredentialRow;
+import com.jarvis.domain.ResolvedCredential;
 import com.jarvis.domain.UpdateCredentialRequest;
 import com.jarvis.mapper.CredentialMapper;
 import com.jarvis.util.CryptoUtil;
@@ -99,5 +100,65 @@ class CredentialServiceTest {
         when(mapper.findByIdAndUser("gone", "local")).thenReturn(Optional.empty());
         assertThat(service.delete("local", "gone")).isFalse();
         verify(mapper, never()).delete(anyString(), anyString());
+    }
+
+    private static CredentialRow rowWithKey(String tier, String plaintextKey) {
+        return new CredentialRow("c1", "local", "L", tier, CryptoUtil.encrypt(plaintextKey),
+                "https://api", "sonnet", true, "2026-07-10T00:00:00Z", "2026-07-10T00:00:00Z");
+    }
+
+    @Test
+    void resolveWithTierReturnsDecryptedKeyAndSkipsDefaultLookup() {
+        when(mapper.findResolvableByTier("local", "standard"))
+                .thenReturn(Optional.of(rowWithKey("standard", "sk-plain")));
+
+        Optional<ResolvedCredential> result = service.resolve("local", "standard");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().apiKey()).isEqualTo("sk-plain");
+        assertThat(result.get().baseUrl()).isEqualTo("https://api");
+        assertThat(result.get().model()).isEqualTo("sonnet");
+        // tier matched -> default fallback never consulted
+        verify(mapper, never()).findResolvableDefault(anyString());
+    }
+
+    @Test
+    void resolveFallsBackToDefaultWhenTierHasNoMatch() {
+        when(mapper.findResolvableByTier("local", "premium")).thenReturn(Optional.empty());
+        when(mapper.findResolvableDefault("local"))
+                .thenReturn(Optional.of(rowWithKey("standard", "sk-default")));
+
+        Optional<ResolvedCredential> result = service.resolve("local", "premium");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().apiKey()).isEqualTo("sk-default");
+    }
+
+    @Test
+    void resolveWithNoTierUsesDefaultAndNeverQueriesByTier() {
+        when(mapper.findResolvableDefault("local"))
+                .thenReturn(Optional.of(rowWithKey("standard", "sk-default")));
+
+        Optional<ResolvedCredential> result = service.resolve("local", null);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().apiKey()).isEqualTo("sk-default");
+        verify(mapper, never()).findResolvableByTier(anyString(), anyString());
+    }
+
+    @Test
+    void resolveReturnsEmptyWhenNoCredential() {
+        when(mapper.findResolvableDefault("local")).thenReturn(Optional.empty());
+        assertThat(service.resolve("local", null)).isEmpty();
+    }
+
+    @Test
+    void resolveDegradesToEmptyOnDecryptFailure() {
+        // Corrupt ciphertext -> decrypt throws -> graceful degrade to empty (no plaintext leaked).
+        var corrupt = new CredentialRow("c1", "local", "L", "standard", "not:valid:cipher",
+                "https://api", "sonnet", true, "2026-07-10T00:00:00Z", "2026-07-10T00:00:00Z");
+        when(mapper.findResolvableDefault("local")).thenReturn(Optional.of(corrupt));
+
+        assertThat(service.resolve("local", null)).isEmpty();
     }
 }
