@@ -12,6 +12,21 @@ interface ArtifactListItem {
   updated_at?: number
 }
 
+/**
+ * v0.3: GET /api/artifact/{id} 现在只返回 content 或 uri 之一。
+ * 我们直接把它作为 Artifact 传给 ArtifactPanel,面板内部的 loadArtifactContent effect
+ * 负责按 uri 走 IPC/fetch,老数据走 content —— 这里不重复做归一。
+ */
+interface ArtifactDetail {
+  id: string
+  type: Artifact['type']
+  title: string
+  language?: string
+  version?: number
+  content?: string
+  uri?: string
+}
+
 const TYPE_LABELS: Record<string, string> = { html: '🌐 网页', markdown: '📄 文档', code: '💻 代码', mermaid: '📊 图表' }
 const TYPE_FILTERS: Array<{ value: string; label: string }> = [
   { value: '', label: '全部' },
@@ -43,8 +58,15 @@ export function ArtifactsPage() {
 
   const openPreview = async (item: ArtifactListItem) => {
     setSelected(item)
-    const data = await fetchJSON<Artifact>(`/api/artifact/${item.id}`)
-    setPreview(data)
+    // 详情是 content XOR uri;直接透传给 ArtifactPanel,面板内部 loadArtifactContent 负责取正文。
+    const detail = await fetchJSON<ArtifactDetail>(`/api/artifact/${item.id}`)
+    setPreview({
+      type: detail.type,
+      title: detail.title,
+      content: detail.content,
+      uri: detail.uri,
+      language: detail.language,
+    })
   }
 
   return (

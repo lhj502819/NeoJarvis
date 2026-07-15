@@ -80,22 +80,25 @@ class ArtifactMapperTest {
     void findDetailByIdAndUserPresentAndScoped() {
         var detail = mapper.findDetailByIdAndUser("a1", "u1");
         assertThat(detail).isPresent();
+        // Legacy-row shape: content populated (seeded above), uri null.
         assertThat(detail.get().content()).isEqualTo("export function login()");
+        assertThat(detail.get().uri()).isNull();
         assertThat(detail.get().version()).isEqualTo(1);
         // wrong user -> absent
         assertThat(mapper.findDetailByIdAndUser("a3", "u1")).isEmpty();
     }
 
     @Test
-    void updateContentBumpsVersionSetsUpdatedAtAndCanKeepTitle() {
-        // When: content-only update (title kept)
-        int rows = mapper.updateContent("a1", "u1", "patched body", null, 9000L);
+    void updateUriBumpsVersionSetsUpdatedAtAndCanKeepTitle() {
+        // When: uri-only update (title kept) — legacy row migrates in place
+        int rows = mapper.updateUri("a1", "u1", "file:///tmp/u1/a1.ts", null, 9000L);
 
-        // Then: one row, version bumped 1 -> 2, title untouched, content replaced
+        // Then: one row, version bumped 1 -> 2, title untouched, uri set, content cleared
         assertThat(rows).isEqualTo(1);
         var detail = mapper.findDetailByIdAndUser("a1", "u1");
         assertThat(detail).isPresent();
-        assertThat(detail.get().content()).isEqualTo("patched body");
+        assertThat(detail.get().uri()).isEqualTo("file:///tmp/u1/a1.ts");
+        assertThat(detail.get().content()).isNull();  // cleared by UPDATE
         assertThat(detail.get().title()).isEqualTo("Login helper");
         assertThat(detail.get().version()).isEqualTo(2);
         assertThat(jdbc.queryForObject(
@@ -104,29 +107,32 @@ class ArtifactMapperTest {
     }
 
     @Test
-    void updateContentAlsoUpdatesTitleWhenProvided() {
-        int rows = mapper.updateContent("a2", "u1", "new plan", "New title", 9500L);
+    void updateUriAlsoUpdatesTitleWhenProvided() {
+        int rows = mapper.updateUri("a2", "u1", "file:///tmp/u1/a2.md", "New title", 9500L);
 
         assertThat(rows).isEqualTo(1);
         var detail = mapper.findDetailByIdAndUser("a2", "u1");
         assertThat(detail.get().title()).isEqualTo("New title");
-        assertThat(detail.get().content()).isEqualTo("new plan");
+        assertThat(detail.get().uri()).isEqualTo("file:///tmp/u1/a2.md");
+        assertThat(detail.get().content()).isNull();
     }
 
     @Test
-    void updateContentScopedToUserReturnsZeroForWrongUserOrMissing() {
-        assertThat(mapper.updateContent("a3", "u1", "x", null, 1L)).isZero(); // a3 belongs to u2
-        assertThat(mapper.updateContent("does-not-exist", "u1", "x", null, 1L)).isZero();
+    void updateUriScopedToUserReturnsZeroForWrongUserOrMissing() {
+        assertThat(mapper.updateUri("a3", "u1", "file://x", null, 1L)).isZero(); // a3 belongs to u2
+        assertThat(mapper.updateUri("does-not-exist", "u1", "file://x", null, 1L)).isZero();
     }
 
     @Test
-    void insertStoresArtifactWithDefaultVersionAndEpochCreatedAt() {
-        mapper.insert("new-1", "u1", "code", "Fresh helper", "the body", "ts", 1736900000000L, "task-9");
+    void insertStoresArtifactWithUriAndDefaultVersion() {
+        // v0.3 shape: content=null, uri=file:// pointer, version defaults to 1
+        mapper.insert("new-1", "u1", "code", "Fresh helper", null,
+                "file:///tmp/u1/new-1.ts", "ts", 1736900000000L, "task-9");
 
         var detail = mapper.findDetailByIdAndUser("new-1", "u1");
         assertThat(detail).isPresent();
-        assertThat(detail.get().content()).isEqualTo("the body");
-        // version defaults to 1 (not set on insert); created_at is the BIGINT epoch-millis
+        assertThat(detail.get().content()).isNull();
+        assertThat(detail.get().uri()).isEqualTo("file:///tmp/u1/new-1.ts");
         var items = mapper.list("u1", null, "Fresh helper", 50, 0);
         assertThat(items).extracting(ArtifactSummary::id).containsExactly("new-1");
         assertThat(items.get(0).version()).isEqualTo(1);
@@ -134,17 +140,36 @@ class ArtifactMapperTest {
     }
 
     @Test
-    void insertAcceptsNullLanguageAndTaskId() {
-        mapper.insert("new-2", "u1", "doc", "NoLang", "x", null, 1736900000001L, null);
+    void insertAcceptsNullLanguageTaskIdAndContent() {
+        mapper.insert("new-2", "u1", "doc", "NoLang", null,
+                "file:///tmp/u1/new-2.txt", null, 1736900000001L, null);
         assertThat(mapper.findDetailByIdAndUser("new-2", "u1")).isPresent();
+    }
+
+    /**
+     * Legacy row backwards-compat: pre-v0.3 rows have content populated and uri=NULL.
+     * The detail read must still return the content so old artifacts stay accessible
+     * (the response layer picks {@code content} when {@code uri} is null).
+     */
+    @Test
+    void insertKeepsLegacyContentWhenUriIsNull() {
+        mapper.insert("legacy-1", "u1", "code", "Old", "the body", null,
+                "ts", 1736900000002L, null);
+
+        var detail = mapper.findDetailByIdAndUser("legacy-1", "u1");
+        assertThat(detail).isPresent();
+        assertThat(detail.get().content()).isEqualTo("the body");
+        assertThat(detail.get().uri()).isNull();
     }
 
     private void insert(String id, String userId, String type, String title, String content,
             Long createdAt, Long updatedAt) {
+        // Seed data uses the legacy shape (content set, uri null) so existing tests that
+        // matched content still work.
         jdbc.update("""
                 INSERT INTO jarvis_artifacts
-                  (id, user_id, type, title, content, language, created_at, version, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'text', ?, 1, ?)
+                  (id, user_id, type, title, content, uri, language, created_at, version, updated_at)
+                VALUES (?, ?, ?, ?, ?, NULL, 'text', ?, 1, ?)
                 """, id, userId, type, title, content, createdAt, updatedAt);
     }
 }

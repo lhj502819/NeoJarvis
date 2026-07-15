@@ -61,7 +61,9 @@ export async function postJSON<T>(path: string, body: Record<string, unknown>): 
   return res.json()
 }
 
-export async function fetchArtifact(id: string): Promise<{ type: string; title: string; content: string; language?: string }> {
+export async function fetchArtifact(id: string): Promise<{ type: string; title: string; content?: string; uri?: string; language?: string; version?: number }> {
+  // v0.3: server returns EITHER content (legacy row) OR uri (new file-store row).
+  // Caller must run loadArtifactContent (api/artifact-content.ts) to get the actual body.
   const res = await fetch(`${BASE}/api/artifact/${id}`, { credentials: 'include' })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const data = await res.json()

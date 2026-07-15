@@ -131,13 +131,16 @@ CREATE TABLE IF NOT EXISTS user_jarvis_messages (
   FOREIGN KEY (session_id) REFERENCES user_jarvis_sessions(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- ═══ Artifact 制品表(含 version/updated_at/task_id 补列) ═══
+-- ═══ Artifact 制品表(含 version/updated_at/task_id/uri 补列) ═══
+-- content 允许 NULL:新数据把制品正文写到本机文件(uri 指向),content 存 NULL;
+-- 旧数据 content 保留(uri 为 NULL),接口层兼容读取。
 CREATE TABLE IF NOT EXISTS jarvis_artifacts (
   id VARCHAR(191) PRIMARY KEY,
   user_id VARCHAR(191) NOT NULL,
   type VARCHAR(191) NOT NULL,
   title TEXT NOT NULL,
-  content TEXT NOT NULL,
+  content TEXT,
+  uri VARCHAR(512),
   language TEXT,
   created_at BIGINT NOT NULL,
   version INT NOT NULL DEFAULT 1,

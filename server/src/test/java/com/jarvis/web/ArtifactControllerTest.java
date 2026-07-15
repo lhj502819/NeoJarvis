@@ -58,15 +58,33 @@ class ArtifactControllerTest {
     }
 
     @Test
-    void detailReturnsCodeZeroWithContentWhenPresent() throws Exception {
+    void detailReturnsUriWithoutContentForNewRows() throws Exception {
+        // v0.3 new-style row: uri is set, content is null in the DB.
         when(artifactService.getDetail("local", "a1"))
-                .thenReturn(Optional.of(new ArtifactDetail("a1", "code", "T", "the body", "ts", 3)));
+                .thenReturn(Optional.of(new ArtifactDetail("a1", "code", "T", null,
+                        "file:///tmp/local/a1.ts", "ts", 3)));
 
         mockMvc.perform(get("/api/artifact/a1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.content").value("the body"))
+                .andExpect(jsonPath("$.uri").value("file:///tmp/local/a1.ts"))
+                .andExpect(jsonPath("$.content").doesNotExist())
                 .andExpect(jsonPath("$.version").value(3));
+    }
+
+    @Test
+    void detailReturnsContentForLegacyRowsWithoutUri() throws Exception {
+        // Legacy row (pre-migration): uri is null; content still readable so the tool/UI
+        // adapter can fall back to it without any DB backfill.
+        when(artifactService.getDetail("local", "legacy"))
+                .thenReturn(Optional.of(new ArtifactDetail("legacy", "markdown", "T",
+                        "the old body", null, null, 1)));
+
+        mockMvc.perform(get("/api/artifact/legacy"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.content").value("the old body"))
+                .andExpect(jsonPath("$.uri").doesNotExist());
     }
 
     @Test
@@ -99,14 +117,17 @@ class ArtifactControllerTest {
     }
 
     @Test
-    void patchReturnsUpdatedArtifactWithBumpedVersion() throws Exception {
+    void patchReturnsUpdatedArtifactWithUriAndBumpedVersion() throws Exception {
+        // PATCH returns ArtifactDetail directly; new row shape carries uri, drops content.
         when(artifactService.updateContent("local", "a1", "new body", "New title"))
-                .thenReturn(Optional.of(new ArtifactDetail("a1", "code", "New title", "new body", "ts", 4)));
+                .thenReturn(Optional.of(new ArtifactDetail("a1", "code", "New title", null,
+                        "file:///tmp/local/a1.ts", "ts", 4)));
 
         mockMvc.perform(patch("/api/artifact/a1").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"new body\",\"title\":\"New title\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content").value("new body"))
+                .andExpect(jsonPath("$.uri").value("file:///tmp/local/a1.ts"))
+                .andExpect(jsonPath("$.content").doesNotExist())
                 .andExpect(jsonPath("$.title").value("New title"))
                 .andExpect(jsonPath("$.version").value(4));
     }
@@ -114,7 +135,8 @@ class ArtifactControllerTest {
     @Test
     void patchKeepsTitleWhenOmitted() throws Exception {
         when(artifactService.updateContent("local", "a1", "just body", null))
-                .thenReturn(Optional.of(new ArtifactDetail("a1", "code", "Kept", "just body", "ts", 2)));
+                .thenReturn(Optional.of(new ArtifactDetail("a1", "code", "Kept", null,
+                        "file:///tmp/local/a1.ts", "ts", 2)));
 
         mockMvc.perform(patch("/api/artifact/a1").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"just body\"}"))

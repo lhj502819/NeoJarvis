@@ -10,7 +10,7 @@ import { addToBuffer, getRecentConversation, saveConversation, saveArtifact } fr
 import { parseAction } from './action-dispatcher.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
 import { getPinnedArtifactId } from './orchestrator.js'
-import { serverGet } from '../shared/server-client.js'
+import { getArtifactContent } from '../shared/artifact-content.js'
 import type { ChatImage } from '../shared/types.js'
 import { listSkillsForUser } from './skill-prefs.js'
 
@@ -75,19 +75,24 @@ export async function think(userId: string, userMessage: string, onProgress?: (t
   let pinnedContext = ''
   const pinnedId = getPinnedArtifactId(userId)
   if (pinnedId) {
-    let a: { id: string; type: string; title: string; content: string; language?: string; version: number } | undefined
+    // v0.3: getArtifactContent handles both storage shapes (legacy content column vs.
+    // new file uri) — the LLM prompt only ever sees the materialised text.
+    let a: { id: string; type: string; title: string; language?: string; version: number } | undefined
+    let content: string | undefined
     try {
-      a = await serverGet(userId, `/api/artifact/${encodeURIComponent(pinnedId)}`)
+      const fetched = await getArtifactContent(userId, pinnedId)
+      a = fetched.record
+      content = fetched.content
     } catch (err) {
       // Missing pinned artifact (deleted since pinning) -> skip; rethrow real server errors.
       if (!(err instanceof Error && / -> 404\b/.test(err.message))) throw err
       a = undefined
     }
-    if (a) {
+    if (a && content !== undefined) {
       const LIMIT = 40000
-      const truncated = a.content.length > LIMIT
-        ? a.content.slice(0, LIMIT) + `\n\n[...内容过长已截断, 完整 ${a.content.length} 字符。若需修改被截断部分,先说明,我会分段处理]`
-        : a.content
+      const truncated = content.length > LIMIT
+        ? content.slice(0, LIMIT) + `\n\n[...内容过长已截断, 完整 ${content.length} 字符。若需修改被截断部分,先说明,我会分段处理]`
+        : content
       pinnedContext = `## 当前钉住的制品(完整内容如下,你能直接看到)\nID: ${a.id} | 标题: ${a.title} | 类型: ${a.type}${a.language ? ` (${a.language})` : ''} | 版本: v${a.version}\n---\n${truncated}\n---\n**这就是完整制品内容,不要再去别处捞。** 用户接下来大概率要改它——直接用 update_artifact 传入修改后的完整内容即可(整篇替换,不是 diff)。\n`
     }
   }

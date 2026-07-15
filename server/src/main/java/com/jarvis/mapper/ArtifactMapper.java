@@ -16,6 +16,11 @@ import org.apache.ibatis.annotations.Update;
  * /api/artifact/{id}}) endpoints. Explicit AS aliases so mapping never relies on
  * SELECT * ordering (CRITICAL-1). MySQL {@code LIKE} is case-insensitive under the
  * default utf8mb4 collation — the TS {@code ILIKE} maps straight to {@code LIKE}.
+ *
+ * <p>v0.3 file-store change: {@code content} is now nullable (files live on disk under
+ * {@code ~/.jarvis/artifacts}) and a new {@code uri} column carries the file URI. Detail
+ * selects both so the service layer can hand out whichever is present (legacy rows keep
+ * content, new rows carry uri). The list summary omits both — clients pull detail on click.
  */
 @Mapper
 public interface ArtifactMapper {
@@ -59,40 +64,50 @@ public interface ArtifactMapper {
             """)
     long count(@Param("userId") String userId, @Param("type") String type, @Param("q") String q);
 
-    @Select("SELECT id, type, title, content, language, version FROM jarvis_artifacts "
+    /**
+     * Detail read used by GET/PATCH endpoints and the intelligence-layer pin/update tools.
+     * Selects both {@code content} (legacy TEXT, nullable now) and {@code uri} (new file
+     * pointer) so the service layer can decide which one to return.
+     */
+    @Select("SELECT id, type, title, content, uri, language, version FROM jarvis_artifacts "
             + "WHERE id = #{id} AND user_id = #{userId}")
     Optional<ArtifactDetail> findDetailByIdAndUser(@Param("id") String id,
             @Param("userId") String userId);
 
     /**
-     * In-place content update, version bumped by 1 and {@code updated_at} set to the given
-     * epoch-millis (ports tools.ts update_artifact). {@code title} is optional — when null the
-     * title clause is skipped so the stored title is preserved (mirrors the TS branch that only
-     * updates title when supplied). Returns affected rows so the caller can detect a missing id.
+     * In-place content update: bumps {@code version}, refreshes {@code updated_at}, and
+     * (v0.3) writes the new file {@code uri} while clearing the legacy {@code content}
+     * column (so a row is never {@code content + uri} simultaneously). {@code title} is
+     * optional — when null the title clause is skipped so the stored title is preserved
+     * (mirrors the TS branch that only updates title when supplied). Returns affected rows
+     * so the caller can detect a missing id.
      */
     @Update("""
             <script>
             UPDATE jarvis_artifacts
-            SET content = #{content}, version = version + 1, updated_at = #{updatedAt}
+            SET uri = #{uri}, content = NULL, version = version + 1, updated_at = #{updatedAt}
             <if test="title != null"> , title = #{title} </if>
             WHERE id = #{id} AND user_id = #{userId}
             </script>
             """)
-    int updateContent(@Param("id") String id, @Param("userId") String userId,
-            @Param("content") String content, @Param("title") String title,
+    int updateUri(@Param("id") String id, @Param("userId") String userId,
+            @Param("uri") String uri, @Param("title") String title,
             @Param("updatedAt") long updatedAt);
 
     /**
      * Store a new artifact (ports the internal TS saveArtifact). {@code createdAt} is BIGINT
      * epoch-millis; {@code version} is left to the DB default (1) — the TS INSERT never set
-     * it. {@code language}/{@code taskId} are nullable.
+     * it. {@code language}/{@code taskId} are nullable. {@code content} is nullable now —
+     * v0.3 always writes the body to disk and stores only the {@code uri}. Legacy rows in
+     * the wild keep content; new inserts pass {@code content=null, uri=file://...}.
      */
     @Insert("INSERT INTO jarvis_artifacts "
-            + "(id, user_id, type, title, content, language, created_at, task_id) "
-            + "VALUES (#{id}, #{userId}, #{type}, #{title}, #{content}, #{language}, "
+            + "(id, user_id, type, title, content, uri, language, created_at, task_id) "
+            + "VALUES (#{id}, #{userId}, #{type}, #{title}, #{content}, #{uri}, #{language}, "
             + "#{createdAt}, #{taskId})")
     void insert(@Param("id") String id, @Param("userId") String userId,
             @Param("type") String type, @Param("title") String title,
-            @Param("content") String content, @Param("language") String language,
+            @Param("content") String content, @Param("uri") String uri,
+            @Param("language") String language,
             @Param("createdAt") long createdAt, @Param("taskId") String taskId);
 }

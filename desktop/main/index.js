@@ -11,8 +11,10 @@
  *   3. 等 3000 就绪 → 开 BrowserWindow(dev 加载 vite 5180,prod 加载 3000 自服务的 web/dist)
  *   4. macOS 窗口惯例;退出时清理子进程
  */
-const { app, BrowserWindow, shell } = require('electron')
+const { app, BrowserWindow, shell, ipcMain } = require('electron')
 const path = require('path')
+const os = require('node:os')
+const fs = require('node:fs/promises')
 const http = require('http')
 const { spawn } = require('child_process')
 
@@ -44,6 +46,24 @@ function buildServerEnv() {
     // TODO(BYOK): 后续从 macOS keychain 读取,不再依赖启动环境。
   }
 }
+
+// ═══ IPC: 制品文件读取(v0.3 file-store) ═══
+// v0.3 后制品正文写到 `~/.jarvis/artifacts/{userId}/{id}.{ext}`,Java 只返回 uri。
+// 渲染进程拿到 uri 后需要读文件正文渲染 —— 由主进程借助 fs 完成,渲染进程无 Node 权限。
+// 白名单:仅允许读 `~/.jarvis/artifacts/` 下的路径,防止路径穿越读到其它文件。
+const ARTIFACT_ROOT = path.join(os.homedir(), '.jarvis', 'artifacts') + path.sep
+ipcMain.handle('artifact:read', async (_event, uri) => {
+  if (typeof uri !== 'string' || uri.length === 0) {
+    throw new Error('artifact:read expects a non-empty uri')
+  }
+  const raw = uri.replace(/^file:\/\//, '')
+  // resolve so `..` / symlinks in the middle can't escape the root
+  const resolved = path.resolve(raw)
+  if (!resolved.startsWith(ARTIFACT_ROOT)) {
+    throw new Error(`artifact uri out of scope: ${uri}`)
+  }
+  return await fs.readFile(resolved, 'utf-8')
+})
 
 /** spawn tsx 跑 src/server-entry.ts —— 用 Electron 自带 node 执行 tsx CLI,不依赖系统 PATH */
 function startTsServer() {

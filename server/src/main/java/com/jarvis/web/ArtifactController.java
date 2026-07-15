@@ -63,16 +63,17 @@ class ArtifactController {
 
     /**
      * PATCH /api/artifact/{id} — in-place content update, version+1, updated_at=now (ports
-     * tools.ts update_artifact). Returns the refreshed artifact ({@code id, type, title,
-     * content, language, version}) on success, or 404 {@code { code: 404, message: "制品不存在" }}
-     * when no row matches the id/user (the pinned artifact was deleted).
+     * tools.ts update_artifact). Returns the refreshed artifact in the same {@code content XOR
+     * uri} shape as GET (via {@link ArtifactDetailResponse#ok}) so both endpoints share one
+     * front-end adapter path. 404 {@code { code: 404, message: "制品不存在" }} when no row
+     * matches the id/user (the pinned artifact was deleted).
      */
     @PatchMapping("/artifact/{id}")
     ResponseEntity<?> update(@PathVariable String id,
             @Valid @RequestBody UpdateArtifactRequest request) {
         return artifactService.updateContent(UserContext.currentUserId(), id, request.content(),
                 request.title())
-                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .<ResponseEntity<?>>map(a -> ResponseEntity.ok(ArtifactDetailResponse.ok(a)))
                 .orElseGet(() -> ResponseEntity.status(404).body(new CodeMessage(404, "制品不存在")));
     }
 }

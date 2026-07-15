@@ -11,16 +11,14 @@ import { buildDomainExpertPrompt, buildExpertDescription, dominantCwd, type Doma
 import { broadcast } from './sse.js'
 import { pinArtifact, getPinnedArtifactId } from './orchestrator.js'
 import { serverGet, serverPatch } from '../shared/server-client.js'
+import { getArtifactContent, type ArtifactRecord } from '../shared/artifact-content.js'
 
-/** Artifact detail as returned by the Java server (GET/PATCH /api/artifact/{id}). */
-interface ArtifactRow {
-  id: string
-  type: string
-  title: string
-  content: string
-  language?: string
-  version: number
-}
+/**
+ * Artifact detail as returned by the Java server (GET/PATCH /api/artifact/{id}).
+ * v0.3: the server now sends EITHER `content` (legacy row) OR `uri` (new row);
+ * `getArtifactContent` / `materialise` normalise that into a plain string for tool code.
+ */
+type ArtifactRow = ArtifactRecord
 
 /** Java 404 (server-client throws with the status baked into the message). */
 function isNotFound(err: unknown): boolean {
@@ -312,14 +310,20 @@ export function createJarvisTools(userId: string) {
             return { content: [{ type: 'text' as const, text: '已取消钉住。' }] }
           }
           let a: ArtifactRow
+          let content: string
           try {
-            a = await serverGet<ArtifactRow>(userId, `/api/artifact/${encodeURIComponent(args.artifactId)}`)
+            // v0.3: content comes from either the row (legacy) or a local file (uri).
+            const fetched = await getArtifactContent(userId, args.artifactId)
+            a = fetched.record
+            content = fetched.content
           } catch (err) {
             if (isNotFound(err)) return { content: [{ type: 'text' as const, text: '制品不存在或无权访问。' }] }
             throw err
           }
           pinArtifact(userId, args.artifactId)
-          broadcast('artifact_pinned', JSON.stringify({ pinned: true, id: a.id, type: a.type, title: a.title, content: a.content, language: a.language, version: a.version }), userId)
+          // Broadcast keeps the same shape the front-end already renders — always send
+          // the materialised content string so ArtifactPanel doesn't need to re-fetch.
+          broadcast('artifact_pinned', JSON.stringify({ pinned: true, id: a.id, type: a.type, title: a.title, content, language: a.language, version: a.version }), userId)
           return { content: [{ type: 'text' as const, text: `已钉住「${a.title}」(v${a.version})，我能看到完整内容了。` }] }
         }
       ),
@@ -342,7 +346,11 @@ export function createJarvisTools(userId: string) {
             if (!isNotFound(err)) throw err
           }
           if (updated) {
-            broadcast('artifact_updated', JSON.stringify({ id: updated.id, type: updated.type, title: updated.title, content: updated.content, language: updated.language, version: updated.version }), userId)
+            // v0.3: PATCH echoes the refreshed row (now content=null + uri=file://). We
+            // just wrote the new body (`args.content`) so no need to re-read from disk;
+            // prefer that over an extra fs call for the SSE payload.
+            const echoContent = args.content
+            broadcast('artifact_updated', JSON.stringify({ id: updated.id, type: updated.type, title: updated.title, content: echoContent, language: updated.language, version: updated.version }), userId)
           }
           return { content: [{ type: 'text' as const, text: `已更新「${updated?.title || ''}」→ v${updated?.version}，Sir 面板已刷新。` }] }
         }

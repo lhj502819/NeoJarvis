@@ -94,8 +94,15 @@ export function TaskDetail({ taskId, onBack }: { taskId: string; onBack: () => v
 
   const openArtifact = async (id: string) => {
     try {
-      const full = await fetchJSON<Artifact>(`/api/artifact/${id}`)
-      setPreview(full)
+      // v0.3: Java 返回 content|uri 之一, ArtifactPanel 的 effect 会解析后再渲染。
+      const full = await fetchJSON<{ type: string; title: string; content?: string; uri?: string; language?: string }>(`/api/artifact/${id}`)
+      setPreview({
+        type: full.type as Artifact['type'],
+        title: full.title,
+        content: full.content,
+        uri: full.uri,
+        language: full.language,
+      })
     } catch { /* ignore */ }
   }
   const totalTurns = task.subtasks.reduce((s, st) => s + (st.turnCount ?? 0), 0)

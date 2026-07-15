@@ -5,14 +5,17 @@
  * 暴露一个最小、只读的 window.jarvis 桥,供 UI 做环境判断。
  *
  * 现阶段 UI 仍通过 HTTP(/api、/events)与智能层 server 通信,不需要 IPC 通道,
- * 所以只暴露元信息。将来若把聊天改成 IPC(spec §8.4),在此追加 invoke/on 桥。
+ * 所以只暴露元信息;例外:v0.3 制品正文改成本机文件,渲染进程需要通过 IPC
+ * 从主进程读文件(白名单在主进程 ipcMain.handle('artifact:read') 里)。
  */
-const { contextBridge } = require('electron')
+const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('jarvis', {
   isDesktop: true,
   platform: process.platform,
-  // TODO(IPC): 需要主进程↔渲染桥时在此扩展,例如:
-  //   send: (channel, payload) => ipcRenderer.invoke(channel, payload),
-  //   on:   (channel, cb) => ipcRenderer.on(channel, (_e, data) => cb(data)),
+  /**
+   * 读一个制品文件的正文。传入 Java 返回的 uri(格式 `file:///.../.jarvis/artifacts/{userId}/{id}.{ext}`),
+   * 主进程校验后从磁盘读回 UTF-8 字符串。前端 loadArtifactContent 会在 file:// 时优先调它。
+   */
+  readArtifact: (uri) => ipcRenderer.invoke('artifact:read', uri),
 })

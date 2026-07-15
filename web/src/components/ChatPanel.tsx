@@ -180,8 +180,17 @@ export function ChatPanel({ messages, onSend, onClear, pinnedArtifact, onUnpin }
       return
     }
     if (artifact.id) {
+      // v0.3: fetchArtifact returns `content XOR uri`. ArtifactPanel's own effect resolves
+      // the body via loadArtifactContent (fetch / Electron IPC) — we just pass the shape
+      // through so both storage paths (legacy TEXT / new file-store) render identically.
       const full = await fetchArtifact(artifact.id)
-      setActiveArtifact(full as Artifact)
+      setActiveArtifact({
+        type: full.type as Artifact['type'],
+        title: full.title,
+        content: full.content,
+        uri: full.uri,
+        language: full.language,
+      })
     }
   }, [])
 
