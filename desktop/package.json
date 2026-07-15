@@ -1,0 +1,63 @@
+{
+  "name": "jarvis-desktop",
+  "version": "0.1.0",
+  "description": "Jarvis 桌面壳 —— Electron 主进程内嵌老 TS 智能层 server(PG-free,数据代理到 Java),窗口加载 web/ React UI",
+  "private": true,
+  "main": "main/index.js",
+  "scripts": {
+    "dev": "NODE_ENV=development electron .",
+    "start": "electron .",
+    "build": "electron-builder --mac dmg",
+    "pack": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.jarvis.desktop",
+    "productName": "Jarvis",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main/**/*",
+      "preload/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../src",
+        "to": "app/src",
+        "filter": ["**/*", "!**/*.test.ts"]
+      },
+      {
+        "from": "../web/dist",
+        "to": "app/web/dist"
+      },
+      {
+        "from": "../node_modules",
+        "to": "app/node_modules"
+      },
+      {
+        "from": "../package.json",
+        "to": "app/package.json"
+      },
+      {
+        "from": "../tsconfig.json",
+        "to": "app/tsconfig.json"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] }
+      ],
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "Jarvis ${version}"
+    }
+  }
+}
