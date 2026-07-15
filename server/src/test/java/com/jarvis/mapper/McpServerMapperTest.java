@@ -53,6 +53,15 @@ class McpServerMapperTest {
     }
 
     @Test
+    void listEnabledByUserFiltersDisabledAndScopesByUser() {
+        // u1 has fs(enabled) + web(disabled); only fs comes back, carrying env_enc
+        var rows = mapper.listEnabledByUser("u1");
+        assertThat(rows).extracting(McpServerRow::name).containsExactly("fs");
+        assertThat(rows.get(0).envEnc()).isEqualTo("enc-1");
+        assertThat(mapper.listEnabledByUser("nobody")).isEmpty();
+    }
+
+    @Test
     void insertUpdateDelete() {
         mapper.insert("m4", "u1", "db", "sse", null, null, "https://db", "enc-4", "database",
                 "2026-07-13T00:00:00Z", "2026-07-13T00:00:00Z");

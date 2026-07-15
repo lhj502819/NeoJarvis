@@ -1,6 +1,4 @@
-import { randomUUID } from 'crypto'
-import pool from '../shared/db.js'
-import { encrypt, decrypt } from '../shared/crypto.js'
+import { serverGet, serverPost, serverPut, serverDelete } from '../shared/server-client.js'
 
 export type Transport = 'stdio' | 'sse' | 'http'
 
@@ -29,70 +27,21 @@ export interface ResolvedMcpServer {
   description?: string
 }
 
-function rowToServer(row: any): McpServer {
-  let envKeys: string[] = []
-  if (row.env_enc) {
-    try {
-      const decrypted = decrypt(row.env_enc)
-      const parsed = JSON.parse(decrypted) as Record<string, string>
-      envKeys = Object.keys(parsed)
-    } catch {
-      envKeys = []
-    }
-  }
-  return {
-    id: row.id,
-    userId: row.user_id,
-    name: row.name,
-    transport: row.transport,
-    command: row.command || undefined,
-    args: row.args_json ? JSON.parse(row.args_json) : undefined,
-    url: row.url || undefined,
-    envKeys,
-    description: row.description || undefined,
-    enabled: row.enabled === 1,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }
+/** Java 404 (NotFoundException) — server-client throws with the status in the message. */
+function isNotFound(err: unknown): boolean {
+  return err instanceof Error && / -> 404\b/.test(err.message)
 }
 
-// 脱敏列表（env 只回 key 名，不回值）
+// 脱敏列表（env 只回 key 名,不回值)—— Java list 已裁掉 env 明文,只回 envKeys
 export async function listMcpServers(userId: string): Promise<McpServer[]> {
-  const { rows } = await pool.query(
-    'SELECT * FROM jarvis_user_mcp_servers WHERE user_id = $1 ORDER BY created_at ASC',
-    [userId]
-  )
-  return rows.map(rowToServer)
+  return serverGet<McpServer[]>(userId, '/api/mcp-servers')
 }
 
-// 解密解析全部 enabled server，用于组装 SDK mcpServers 字典（仅后端）
+// 解密解析全部 enabled server，用于组装 SDK mcpServers 字典（仅后端）。
+// 命中 Java 内部 resolve 端点（返回解密后的完整 env）；无 enabled server 时返回 []。
+// 解密失败的 server 已在 Java 侧告警并跳过（不打印明文 env），与老 TS 的 warn + continue 语义一致。
 export async function resolveMcpServers(userId: string): Promise<ResolvedMcpServer[]> {
-  const { rows } = await pool.query(
-    'SELECT * FROM jarvis_user_mcp_servers WHERE user_id = $1 AND enabled = 1',
-    [userId]
-  )
-  const out: ResolvedMcpServer[] = []
-  for (const row of rows) {
-    let env: Record<string, string> = {}
-    if (row.env_enc) {
-      try {
-        env = JSON.parse(decrypt(row.env_enc)) as Record<string, string>
-      } catch {
-        console.warn(`[mcp-servers] 解密失败 name=${row.name}，跳过`)
-        continue
-      }
-    }
-    out.push({
-      name: row.name,
-      transport: row.transport,
-      command: row.command || undefined,
-      args: row.args_json ? JSON.parse(row.args_json) : undefined,
-      url: row.url || undefined,
-      env,
-      description: row.description || undefined,
-    })
-  }
-  return out
+  return serverGet<ResolvedMcpServer[]>(userId, '/api/mcp-servers/resolved')
 }
 
 export async function addMcpServer(userId: string, p: {
@@ -104,22 +53,8 @@ export async function addMcpServer(userId: string, p: {
   env?: Record<string, string>
   description?: string
 }): Promise<McpServer> {
-  // 校验：stdio 必须有 command；sse/http 必须有 url
-  if (p.transport === 'stdio' && !p.command) throw new Error('stdio 类型必须提供 command')
-  if ((p.transport === 'sse' || p.transport === 'http') && !p.url) throw new Error(`${p.transport} 类型必须提供 url`)
-
-  const now = new Date().toISOString()
-  const id = randomUUID()
-  const envEnc = p.env && Object.keys(p.env).length > 0 ? encrypt(JSON.stringify(p.env)) : null
-  const argsJson = p.args && p.args.length > 0 ? JSON.stringify(p.args) : null
-
-  await pool.query(`
-    INSERT INTO jarvis_user_mcp_servers (id, user_id, name, transport, command, args_json, url, env_enc, description, enabled, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11)
-  `, [id, userId, p.name, p.transport, p.command || null, argsJson, p.url || null, envEnc, p.description || null, now, now])
-
-  const { rows } = await pool.query('SELECT * FROM jarvis_user_mcp_servers WHERE id = $1', [id])
-  return rowToServer(rows[0])
+  // 校验（stdio 需 command;sse/http 需 url)在 Java service 侧执行,失败时抛 400。
+  return serverPost<McpServer>(userId, '/api/mcp-servers', p)
 }
 
 export async function updateMcpServer(userId: string, name: string, p: {
@@ -131,47 +66,22 @@ export async function updateMcpServer(userId: string, name: string, p: {
   description?: string
   enabled?: boolean
 }): Promise<McpServer | null> {
-  const { rows: existing } = await pool.query(
-    'SELECT * FROM jarvis_user_mcp_servers WHERE user_id = $1 AND name = $2',
-    [userId, name]
-  )
-  const row = existing[0]
-  if (!row) return null
-
-  const now = new Date().toISOString()
-  const envEnc = p.env !== undefined
-    ? (Object.keys(p.env).length > 0 ? encrypt(JSON.stringify(p.env)) : null)
-    : row.env_enc
-  const argsJson = p.args !== undefined
-    ? (p.args.length > 0 ? JSON.stringify(p.args) : null)
-    : row.args_json
-
-  await pool.query(`
-    UPDATE jarvis_user_mcp_servers
-    SET transport = $1, command = $2, args_json = $3, url = $4, env_enc = $5, description = $6, enabled = $7, updated_at = $8
-    WHERE user_id = $9 AND name = $10
-  `, [
-    p.transport ?? row.transport,
-    p.command ?? row.command,
-    argsJson,
-    p.url ?? row.url,
-    envEnc,
-    p.description ?? row.description,
-    p.enabled !== undefined ? (p.enabled ? 1 : 0) : row.enabled,
-    now, userId, name
-  ])
-
-  const { rows: updated } = await pool.query(
-    'SELECT * FROM jarvis_user_mcp_servers WHERE user_id = $1 AND name = $2',
-    [userId, name]
-  )
-  return rowToServer(updated[0])
+  // Java 是 PUT /api/mcp-servers/{name};缺失时抛 404 → 映射为 null(老 TS 的 rows[0] ? ... : null)。
+  try {
+    return await serverPut<McpServer>(userId, `/api/mcp-servers/${encodeURIComponent(name)}`, p)
+  } catch (err) {
+    if (isNotFound(err)) return null
+    throw err
+  }
 }
 
 export async function removeMcpServer(userId: string, name: string): Promise<boolean> {
-  const result = await pool.query(
-    'DELETE FROM jarvis_user_mcp_servers WHERE user_id = $1 AND name = $2',
-    [userId, name]
-  )
-  return (result.rowCount ?? 0) > 0
+  // Java DELETE 返回 {ok:true},缺失时抛 404 → 映射为 false(老 TS 的 boolean 语义)。
+  try {
+    const res = await serverDelete<{ ok: boolean }>(userId, `/api/mcp-servers/${encodeURIComponent(name)}`)
+    return res?.ok === true
+  } catch (err) {
+    if (isNotFound(err)) return false
+    throw err
+  }
 }

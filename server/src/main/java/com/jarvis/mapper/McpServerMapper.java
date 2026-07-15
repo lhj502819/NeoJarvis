@@ -32,6 +32,18 @@ public interface McpServerMapper {
     Optional<McpServerRow> findByUserAndName(@Param("userId") String userId,
             @Param("name") String name);
 
+    /**
+     * Enabled rows only, oldest first — carries the encrypted {@code env_enc}. Internal use
+     * by resolve, which decrypts {@code env_enc} to the plaintext env map (mirrors TS
+     * {@code resolveMcpServers}: {@code WHERE user_id = ? AND enabled = 1}).
+     */
+    @Select("SELECT id, user_id AS userId, name, transport, command, args_json AS argsJson, "
+            + "url, env_enc AS envEnc, description, enabled, "
+            + "created_at AS createdAt, updated_at AS updatedAt "
+            + "FROM jarvis_user_mcp_servers WHERE user_id = #{userId} AND enabled = 1 "
+            + "ORDER BY created_at ASC")
+    List<McpServerRow> listEnabledByUser(@Param("userId") String userId);
+
     @Insert("INSERT INTO jarvis_user_mcp_servers "
             + "(id, user_id, name, transport, command, args_json, url, env_enc, description, "
             + "enabled, created_at, updated_at) "

@@ -3,6 +3,7 @@ package com.jarvis.service;
 import com.jarvis.domain.AddMcpServerRequest;
 import com.jarvis.domain.McpServer;
 import com.jarvis.domain.McpServerRow;
+import com.jarvis.domain.ResolvedMcpServer;
 import com.jarvis.domain.UpdateMcpServerRequest;
 import com.jarvis.mapper.McpServerMapper;
 import com.jarvis.util.CryptoUtil;
@@ -22,11 +23,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * User MCP server management. Ports src/auth/mcp-servers.ts. The stored {@code env} map is
- * AES-GCM encrypted via {@link CryptoUtil} and NEVER returned in full — every method hands
- * back the redacted {@link McpServer} view carrying only {@code envKeys}. The resolved
- * (decrypted) view {@code resolveMcpServers} stays backend-only in the TS service and is
- * deliberately NOT exposed as an endpoint here (it would leak plaintext secrets over HTTP,
- * against the project's redaction red line); the web UI only needs the redacted list.
+ * AES-GCM encrypted via {@link CryptoUtil} and NEVER returned in full by the redacted views —
+ * {@link #list}/{@link #add}/{@link #update} hand back the {@link McpServer} view carrying
+ * only {@code envKeys}. The resolved (decrypted) view {@link #resolve} returns the plaintext
+ * env map for the intelligence layer to assemble the SDK {@code mcpServers} dict; it is
+ * exposed only via the internal resolve endpoint (never the public list), mirroring the C-6
+ * credential resolve split.
  */
 @Service
 public class McpServerService {
@@ -43,6 +45,40 @@ public class McpServerService {
     public List<McpServer> list(String userId) {
         log.debug("list_mcp_servers userId={}", userId);
         return mcpServerMapper.listByUser(userId).stream().map(McpServerService::toServer).toList();
+    }
+
+    /**
+     * Resolve all enabled MCP servers with their DECRYPTED env, for the intelligence layer to
+     * assemble the SDK {@code mcpServers} dict. Ports src/auth/mcp-servers.ts#resolveMcpServers:
+     * only {@code enabled} servers, {@code env_enc} decrypted to the plaintext map (empty map
+     * when there is no env). A server whose env fails to decrypt is skipped with a warning
+     * (never the plaintext), matching the TS {@code continue}.
+     *
+     * <p>SECURITY — INTERNAL ONLY: returns PLAINTEXT env secrets and must only be reached via
+     * X-Internal-User / dev-bypass (single-machine mode). It must never be exposed to the
+     * public internet. Under the eventual keychain architecture (Plan B) this resolution moves
+     * to the client and the endpoint goes away.
+     */
+    @Transactional(readOnly = true)
+    public List<ResolvedMcpServer> resolve(String userId) {
+        log.debug("resolve_mcp_servers userId={}", userId);
+        List<ResolvedMcpServer> out = new ArrayList<>();
+        for (McpServerRow r : mcpServerMapper.listEnabledByUser(userId)) {
+            Map<String, String> env = new LinkedHashMap<>();
+            if (r.envEnc() != null && !r.envEnc().isEmpty()) {
+                try {
+                    Json.map(CryptoUtil.decrypt(r.envEnc()))
+                            .forEach((k, v) -> env.put(k, String.valueOf(v)));
+                } catch (RuntimeException e) {
+                    log.warn("resolve_mcp_servers decrypt failed name={}, skipping", r.name());
+                    continue;
+                }
+            }
+            out.add(new ResolvedMcpServer(r.name(), r.transport(), emptyToNull(r.command()),
+                    Json.stringListOrNull(r.argsJson()), emptyToNull(r.url()), env,
+                    emptyToNull(r.description())));
+        }
+        return out;
     }
 
     @Transactional

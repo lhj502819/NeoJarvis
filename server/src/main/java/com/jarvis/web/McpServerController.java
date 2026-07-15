@@ -4,6 +4,7 @@ import com.jarvis.auth.UserContext;
 import com.jarvis.domain.AddMcpServerRequest;
 import com.jarvis.domain.McpServer;
 import com.jarvis.domain.OkResponse;
+import com.jarvis.domain.ResolvedMcpServer;
 import com.jarvis.domain.UpdateMcpServerRequest;
 import com.jarvis.service.McpServerService;
 import jakarta.validation.Valid;
@@ -32,6 +33,21 @@ class McpServerController {
     @GetMapping
     List<McpServer> list() {
         return mcpServerService.list(UserContext.currentUserId());
+    }
+
+    /**
+     * GET /api/mcp-servers/resolved — all enabled MCP servers with their DECRYPTED env, for
+     * the intelligence layer to assemble the SDK {@code mcpServers} dict (ports the TS
+     * {@code resolveMcpServers}). Returns an array (empty when the user has no enabled servers).
+     *
+     * <p>SECURITY — INTERNAL ENDPOINT: this returns PLAINTEXT env secrets and is reachable only
+     * via X-Internal-User / dev-bypass (single-machine mode). It MUST NOT be exposed to the
+     * public internet. Under the eventual keychain architecture (Plan B) this resolution moves
+     * to the client and this endpoint is removed.
+     */
+    @GetMapping("/resolved")
+    List<ResolvedMcpServer> resolved() {
+        return mcpServerService.resolve(UserContext.currentUserId());
     }
 
     /** POST /api/mcp-servers — create; env encrypted before storage, returned redacted. */

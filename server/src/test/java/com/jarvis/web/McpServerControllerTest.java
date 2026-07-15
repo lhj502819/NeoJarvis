@@ -12,9 +12,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jarvis.domain.AddMcpServerRequest;
 import com.jarvis.domain.McpServer;
+import com.jarvis.domain.ResolvedMcpServer;
 import com.jarvis.domain.UpdateMcpServerRequest;
 import com.jarvis.service.McpServerService;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +50,29 @@ class McpServerControllerTest {
                 .andExpect(jsonPath("$[0].enabled").value(true))
                 .andExpect(jsonPath("$[0].env").doesNotExist())
                 .andExpect(jsonPath("$[0].envEnc").doesNotExist());
+    }
+
+    @Test
+    void resolvedReturnsDecryptedEnv() throws Exception {
+        when(mcpServerService.resolve("local")).thenReturn(List.of(new ResolvedMcpServer(
+                "fs", "stdio", "npx", List.of("-y", "fs"), null, Map.of("API_KEY", "sk-plain"),
+                "desc")));
+
+        mockMvc.perform(get("/api/mcp-servers/resolved"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("fs"))
+                .andExpect(jsonPath("$[0].env.API_KEY").value("sk-plain"))
+                .andExpect(jsonPath("$[0].envKeys").doesNotExist());
+    }
+
+    @Test
+    void resolvedReturnsEmptyArrayWhenNoneEnabled() throws Exception {
+        when(mcpServerService.resolve("local")).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/mcp-servers/resolved"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$").isEmpty());
     }
 
     @Test

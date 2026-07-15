@@ -123,4 +123,33 @@ class McpServerServiceTest {
         when(mapper.delete("local", "gone")).thenReturn(0);
         assertThat(service.remove("local", "gone")).isFalse();
     }
+
+    @Test
+    void resolveDecryptsEnvAndKeepsEmptyMapWhenNoEnv() {
+        String enc = CryptoUtil.encrypt(Json.stringify(new java.util.LinkedHashMap<String, Object>(
+                Map.of("API_KEY", "sk-secret"))));
+        McpServerRow withEnv = row(enc, "[\"-y\",\"fs\"]", 1);
+        McpServerRow noEnv = new McpServerRow("m2", "local", "web", "http", null, null,
+                "https://x", null, null, 1, "2026-07-11T00:00:00Z", "2026-07-11T00:00:00Z");
+        when(mapper.listEnabledByUser("local")).thenReturn(List.of(withEnv, noEnv));
+
+        var resolved = service.resolve("local");
+
+        assertThat(resolved).hasSize(2);
+        assertThat(resolved.get(0).env()).containsEntry("API_KEY", "sk-secret");
+        assertThat(resolved.get(0).args()).containsExactly("-y", "fs");
+        // no env -> empty map (never null), matching TS Record default
+        assertThat(resolved.get(1).env()).isEmpty();
+        assertThat(resolved.get(1).url()).isEqualTo("https://x");
+        assertThat(resolved.get(1).command()).isNull();
+    }
+
+    @Test
+    void resolveSkipsServerWhoseEnvFailsToDecrypt() {
+        McpServerRow corrupt = row("not-a-valid-ciphertext", null, 1);
+        when(mapper.listEnabledByUser("local")).thenReturn(List.of(corrupt));
+
+        // decrypt failure -> skip that server (TS continue), never throw
+        assertThat(service.resolve("local")).isEmpty();
+    }
 }
