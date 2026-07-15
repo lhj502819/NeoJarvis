@@ -7,6 +7,7 @@ import com.jarvis.domain.ConversationRow;
 import com.jarvis.domain.SaveChatImagesRequest;
 import com.jarvis.mapper.ChatImageMapper;
 import com.jarvis.mapper.ConversationMapper;
+import com.jarvis.util.ChatImageStore;
 import com.jarvis.util.Json;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -86,8 +87,11 @@ public class ConversationService {
     }
 
     /**
-     * Store inbound chat images (ports TS saveChatImages): each gets a random UUID id and a
-     * BIGINT epoch-millis created_at; returns the ids in input order to attach to a message.
+     * Store inbound chat images (ports TS saveChatImages). v0.3 file-store: each image is
+     * written to {@code ~/.jarvis/chat-images/{userId}/{id}.{ext}} via
+     * {@link ChatImageStore}, and the row carries {@code data=NULL, uri=file://...}.
+     * Symmetric to {@code ArtifactService.saveArtifact}. Returns the generated ids in
+     * input order (unchanged signature) to attach to a message.
      */
     @Transactional
     public List<String> saveChatImages(String userId, List<SaveChatImagesRequest.Image> images) {
@@ -95,7 +99,9 @@ public class ConversationService {
         long now = System.currentTimeMillis();
         for (SaveChatImagesRequest.Image img : images) {
             String id = UUID.randomUUID().toString();
-            chatImageMapper.insert(id, userId, img.mediaType(), img.data(), now);
+            // Write bytes to disk first — file:// URI goes to the DB, base64 payload is dropped.
+            String uri = ChatImageStore.write(userId, id, img.mediaType(), img.data());
+            chatImageMapper.insert(id, userId, img.mediaType(), null, uri, now);
             ids.add(id);
         }
         log.debug("save_chat_images userId={} count={}", userId, ids.size());

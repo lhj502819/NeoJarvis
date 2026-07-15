@@ -2,6 +2,7 @@ package com.jarvis.web;
 
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -14,9 +15,11 @@ import com.jarvis.domain.ArtifactRef;
 import com.jarvis.domain.ChatImage;
 import com.jarvis.domain.ConversationMessage;
 import com.jarvis.service.ConversationService;
+import com.jarvis.util.ChatImageStore;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -48,13 +51,39 @@ class ConversationControllerTest {
                 .andExpect(jsonPath("$[1].artifact.id").value("a1"));
     }
 
+    /**
+     * v0.3 new-row path: uri is set → controller reads bytes from disk via
+     * {@link ChatImageStore}. Static read is stubbed so this stays a pure unit test.
+     */
     @Test
-    void chatImageReturnsDecodedBytesWithContentType() throws Exception {
-        // "AAECAw==" decodes to 4 bytes 00 01 02 03
+    void chatImageReadsBytesFromUriWhenPresent() throws Exception {
+        byte[] pngBytes = new byte[]{0x00, 0x01, 0x02, 0x03};
         when(conversationService.getChatImage("local", "img-1"))
-                .thenReturn(Optional.of(new ChatImage("image/png", "AAECAw==")));
+                .thenReturn(Optional.of(new ChatImage("image/png", null,
+                        "file:///tmp/local/img-1.png")));
 
-        mockMvc.perform(get("/api/chat-image/img-1"))
+        try (MockedStatic<ChatImageStore> store = mockStatic(ChatImageStore.class)) {
+            store.when(() -> ChatImageStore.read("file:///tmp/local/img-1.png"))
+                    .thenReturn(pngBytes);
+
+            mockMvc.perform(get("/api/chat-image/img-1"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Content-Type", "image/png"));
+        }
+    }
+
+    /**
+     * v0.3 legacy-row backwards-compat: uri is null but data (base64) is populated. The
+     * controller must base64-decode data and return the bytes — matching the pre-v0.3
+     * behaviour so old images stay accessible.
+     */
+    @Test
+    void chatImageFallsBackToBase64DataWhenUriMissing() throws Exception {
+        // "AAECAw==" decodes to 4 bytes 00 01 02 03
+        when(conversationService.getChatImage("local", "legacy-1"))
+                .thenReturn(Optional.of(new ChatImage("image/png", "AAECAw==", null)));
+
+        mockMvc.perform(get("/api/chat-image/legacy-1"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Type", "image/png"));
     }

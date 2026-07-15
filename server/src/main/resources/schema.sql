@@ -233,12 +233,16 @@ CREATE TABLE IF NOT EXISTS jarvis_adhoc_agents (
   UNIQUE KEY idx_jarvis_adhoc_user_domain (user_id, domain)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- ═══ 对话图片(base64 存库供预览/回看) ═══
+-- ═══ 对话图片(v0.3 迁本机文件存储:uri 指向 ~/.jarvis/chat-images/{userId}/{id}.{ext}) ═══
+-- data 允许 NULL:新数据把图片写到本机文件(uri 指向),data 存 NULL;
+-- 旧数据 data 保留(base64 存库,uri 为 NULL),接口层兼容读取。
+-- 完全对称 jarvis_artifacts 表的迁移策略 —— 避免 base64 图片撑爆 TEXT 64KB。
 CREATE TABLE IF NOT EXISTS jarvis_chat_images (
   id VARCHAR(191) PRIMARY KEY,
   user_id VARCHAR(191) NOT NULL,
   media_type VARCHAR(191) NOT NULL,
-  data TEXT NOT NULL,
+  data TEXT,
+  uri VARCHAR(512),
   created_at BIGINT NOT NULL,
   KEY idx_jarvis_chat_images_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

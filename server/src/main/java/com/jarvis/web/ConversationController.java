@@ -9,6 +9,7 @@ import com.jarvis.domain.SaveChatImagesRequest;
 import com.jarvis.domain.SaveConversationRequest;
 import com.jarvis.domain.SaveMessageRequest;
 import com.jarvis.service.ConversationService;
+import com.jarvis.util.ChatImageStore;
 import jakarta.validation.Valid;
 import java.util.Base64;
 import java.util.List;
@@ -39,14 +40,19 @@ class ConversationController {
     }
 
     /**
-     * GET /api/chat-image/{id} — decoded image bytes with a long immutable cache (mirrors
-     * the TS route). Missing -> 404 {@code {error:"not found"}} via the global handler.
+     * GET /api/chat-image/{id} — image bytes with a long immutable cache (mirrors the TS
+     * route). v0.3 file-store: prefers reading from disk via {@code uri} (new rows), and
+     * falls back to base64-decoding {@code data} for legacy rows written before the
+     * migration. Missing -> 404 {@code {error:"not found"}} via the global handler.
      */
     @GetMapping("/chat-image/{id}")
     ResponseEntity<byte[]> chatImage(@PathVariable String id) {
         ChatImage img = conversationService.getChatImage(UserContext.currentUserId(), id)
                 .orElseThrow(() -> new NotFoundException("not found"));
-        byte[] bytes = Base64.getDecoder().decode(img.data());
+        // Prefer uri (new): read raw bytes from disk. Fall back to legacy data (base64 TEXT).
+        byte[] bytes = img.uri() != null && !img.uri().isBlank()
+                ? ChatImageStore.read(img.uri())
+                : Base64.getDecoder().decode(img.data());
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(img.mediaType()))
                 .cacheControl(CacheControl.maxAge(java.time.Duration.ofSeconds(31536000)).cachePrivate())
