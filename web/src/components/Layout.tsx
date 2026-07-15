@@ -9,10 +9,11 @@ import { TasksPage } from '../pages/dashboard/TasksPage'
 import { TeamPage } from '../pages/dashboard/TeamPage'
 import { ArtifactsPage } from '../pages/dashboard/ArtifactsPage'
 import { SkillsPage } from '../pages/dashboard/SkillsPage'
+import { McpPage } from '../pages/dashboard/McpPage'
 import '../pages/dashboard/dashboard.css'
 import './Layout.css'
 
-type View = 'chat' | 'tasks' | 'team' | 'artifacts' | 'skills'
+type View = 'chat' | 'tasks' | 'team' | 'artifacts' | 'skills' | 'mcp'
 
 const NAV_ITEMS: Array<{ id: View; icon: string; label: string }> = [
   { id: 'chat', icon: '💬', label: '对话' },
@@ -20,6 +21,7 @@ const NAV_ITEMS: Array<{ id: View; icon: string; label: string }> = [
   { id: 'team', icon: '👥', label: '团队' },
   { id: 'artifacts', icon: '📦', label: '制品库' },
   { id: 'skills', icon: '✦', label: '技能' },
+  { id: 'mcp', icon: '🔌', label: 'MCP' },
 ]
 
 export default function Layout() {
@@ -131,6 +133,7 @@ function MainArea({ view, user }: { view: View; user: AuthUser }) {
         {view === 'team' && <div className="main-page-wrap"><TeamPage /></div>}
         {view === 'artifacts' && <div className="main-page-wrap"><ArtifactsPage /></div>}
         {view === 'skills' && <div className="main-page-wrap"><SkillsPage /></div>}
+        {view === 'mcp' && <div className="main-page-wrap"><McpPage /></div>}
       </div>
       {view !== 'tasks' && <MonitorPanel onOpen={(taskId, subtaskId) => setModal({ taskId, subtaskId })} />}
       {modal && <ExecutionModal taskId={modal.taskId} subtaskId={modal.subtaskId} onClose={() => setModal(null)} />}

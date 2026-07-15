@@ -6,6 +6,7 @@ import { listAgentSessions } from '../../a2a/history.js'
 import { listRecipes } from '../../team/registry.js'
 import { listCredentials, addCredential, updateCredential, deleteCredential } from '../../auth/credentials.js'
 import { listSkillsForUser, setSkillEnabled } from '../skill-prefs.js'
+import { listMcpsForUser, setMcpEnabled } from '../mcp-prefs.js'
 import { serverGet } from '../../shared/server-client.js'
 
 export function dashboardRoutes(): Router {
@@ -116,6 +117,27 @@ export function dashboardRoutes(): Router {
     }
     await setSkillEnabled(req.userId!, req.params.name, enabled)
     res.json({ ok: true })
+  })
+
+  // MCP 管理 —— 对称 /api/skills:GET 拿列表(hub + DB 合并 + 启禁),POST 切换启禁。
+  // 注意:这两个路由与 Java 的 /api/mcp/prefs 不冲突 —— 前端只调 TS 智能层,
+  //       Java 的 /api/mcp/prefs 仅供 mcp-prefs.ts 内部合并逻辑使用。
+  router.get('/api/mcp', async (req, res) => {
+    res.json(await listMcpsForUser(req.userId!))
+  })
+
+  router.post('/api/mcp/:name/toggle', async (req, res) => {
+    const { enabled } = req.body as { enabled?: boolean }
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({ error: 'enabled 必须是 boolean' })
+      return
+    }
+    try {
+      await setMcpEnabled(req.userId!, req.params.name, enabled)
+      res.json({ ok: true })
+    } catch (err) {
+      res.status(500).json({ ok: false, error: (err as Error).message })
+    }
   })
 
   return router
