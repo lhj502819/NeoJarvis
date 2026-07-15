@@ -84,7 +84,8 @@ public class SessionService {
 
     /**
      * Port of the TS {@code extractKeywords}: lowercase, replace CN/EN punctuation with spaces,
-     * split on whitespace, drop tokens shorter than 2 chars or in the stop-word set, cap at 10.
+     * split on whitespace, keep ASCII tokens ≥2 chars; also emit CJK bigrams from each token
+     * (中文没空格,靠 bigram 才能命中跨会话匹配)。stop-word set drops noise,cap at 10。
      */
     static List<String> extractKeywords(String text) {
         if (text == null) {
@@ -92,16 +93,58 @@ public class SessionService {
         }
         String cleaned = text.toLowerCase()
                 .replaceAll("[，。！？、；：“”‘’（）\\[\\]{}]", " ");
-        List<String> out = new ArrayList<>();
-        for (String word : cleaned.trim().split("\\s+")) {
-            if (word.length() >= 2 && !STOP_WORDS.contains(word)) {
-                out.add(word);
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        for (String token : cleaned.trim().split("\\s+")) {
+            if (token.isEmpty()) continue;
+            // ASCII token(英文/数字组合)按整体入
+            if (token.length() >= 2 && !STOP_WORDS.contains(token) && isMostlyAscii(token)) {
+                out.add(token);
             }
-            if (out.size() >= 10) {
-                break;
+            // 从 token 里抽 CJK bigram(连续两个中文字符)
+            for (String bigram : cjkBigrams(token)) {
+                if (!STOP_WORDS.contains(bigram)) {
+                    out.add(bigram);
+                }
+                if (out.size() >= 10) break;
+            }
+            if (out.size() >= 10) break;
+        }
+        return new ArrayList<>(out).subList(0, Math.min(out.size(), 10));
+    }
+
+    private static boolean isMostlyAscii(String s) {
+        int ascii = 0;
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) < 0x80) ascii++;
+        }
+        return ascii * 2 >= s.length();  // 半数以上 ASCII 视为英文/数字
+    }
+
+    private static List<String> cjkBigrams(String s) {
+        List<String> out = new ArrayList<>();
+        StringBuilder run = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (isCjk(c)) {
+                run.append(c);
+            } else {
+                emitBigrams(run, out);
+                run.setLength(0);
             }
         }
+        emitBigrams(run, out);
         return out;
+    }
+
+    private static void emitBigrams(StringBuilder run, List<String> out) {
+        for (int j = 0; j + 2 <= run.length(); j++) {
+            out.add(run.substring(j, j + 2));
+        }
+    }
+
+    private static boolean isCjk(char c) {
+        return (c >= 0x4E00 && c <= 0x9FFF)   // CJK Unified Ideographs
+            || (c >= 0x3400 && c <= 0x4DBF);  // Extension A
     }
 
     /** Union preserving order, old entries first (mirrors TS {@code [...new Set([...old, ...new])]}). */

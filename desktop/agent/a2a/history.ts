@@ -53,12 +53,47 @@ export function extractKeywords(text: string): string[] {
     'the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'for', 'is', 'on', 'that', 'this',
     '帮我', '调研', '查', '搜索', '分析', '总结', '对比', '一下', '什么', '哪些', '怎么'])
 
-  return text
-    .toLowerCase()
-    .replace(/[，。！？、；：""''（）\[\]{}]/g, ' ')
-    .split(/\s+/)
-    .filter(w => w.length >= 2 && !stopWords.has(w))
-    .slice(0, 10)
+  const cleaned = text.toLowerCase().replace(/[，。！?、;:""''()\[\]{}]/g, ' ')
+  const out = new Set<string>()
+  for (const token of cleaned.trim().split(/\s+/)) {
+    if (!token) continue
+    // ASCII 长 token(英文/数字)按整体入
+    if (token.length >= 2 && !stopWords.has(token) && isMostlyAscii(token)) {
+      out.add(token)
+    }
+    // 从 token 里抽 CJK bigram(中文没空格,靠 bigram 才能跨会话命中)
+    for (const bigram of cjkBigrams(token)) {
+      if (!stopWords.has(bigram)) out.add(bigram)
+      if (out.size >= 10) break
+    }
+    if (out.size >= 10) break
+  }
+  return [...out].slice(0, 10)
+}
+
+function isMostlyAscii(s: string): boolean {
+  let ascii = 0
+  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) < 0x80) ascii++
+  return ascii * 2 >= s.length
+}
+
+function isCjk(cp: number): boolean {
+  return (cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0x3400 && cp <= 0x4dbf)
+}
+
+function cjkBigrams(s: string): string[] {
+  const out: string[] = []
+  let run = ''
+  for (let i = 0; i < s.length; i++) {
+    if (isCjk(s.charCodeAt(i))) {
+      run += s[i]
+    } else {
+      for (let j = 0; j + 2 <= run.length; j++) out.push(run.slice(j, j + 2))
+      run = ''
+    }
+  }
+  for (let j = 0; j + 2 <= run.length; j++) out.push(run.slice(j, j + 2))
+  return out
 }
 
 /**
