@@ -6,10 +6,12 @@ import com.jarvis.domain.ArtifactDetailResponse;
 import com.jarvis.domain.ArtifactListResponse;
 import com.jarvis.domain.CodeMessage;
 import com.jarvis.domain.SaveArtifactRequest;
+import com.jarvis.domain.UpdateArtifactRequest;
 import com.jarvis.service.ArtifactService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -57,5 +59,20 @@ class ArtifactController {
     ArtifactCreatedResponse create(@Valid @RequestBody SaveArtifactRequest request) {
         String id = artifactService.saveArtifact(UserContext.currentUserId(), request);
         return new ArtifactCreatedResponse(id);
+    }
+
+    /**
+     * PATCH /api/artifact/{id} — in-place content update, version+1, updated_at=now (ports
+     * tools.ts update_artifact). Returns the refreshed artifact ({@code id, type, title,
+     * content, language, version}) on success, or 404 {@code { code: 404, message: "制品不存在" }}
+     * when no row matches the id/user (the pinned artifact was deleted).
+     */
+    @PatchMapping("/artifact/{id}")
+    ResponseEntity<?> update(@PathVariable String id,
+            @Valid @RequestBody UpdateArtifactRequest request) {
+        return artifactService.updateContent(UserContext.currentUserId(), id, request.content(),
+                request.title())
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(404).body(new CodeMessage(404, "制品不存在")));
     }
 }

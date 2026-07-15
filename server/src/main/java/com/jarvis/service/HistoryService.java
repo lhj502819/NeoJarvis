@@ -1,9 +1,7 @@
 package com.jarvis.service;
 
 import com.jarvis.domain.AgentSession;
-import com.jarvis.domain.SessionRow;
 import com.jarvis.mapper.AgentSessionMapper;
-import com.jarvis.util.Json;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,15 +26,6 @@ public class HistoryService {
     @Transactional(readOnly = true)
     public List<AgentSession> listSessions(String userId) {
         log.debug("list_sessions userId={}", userId);
-        return sessionMapper.listByUser(userId).stream().map(HistoryService::toSession).toList();
-    }
-
-    private static AgentSession toSession(SessionRow r) {
-        return new AgentSession(
-                r.sessionId(), r.recipeId(),
-                r.domain() != null ? r.domain() : "",
-                r.cwd() != null ? r.cwd() : "",
-                Json.stringList(r.topics()), r.lastTaskDescription(),
-                r.completedAt(), r.taskCount());
+        return sessionMapper.listByUser(userId).stream().map(AgentSession::from).toList();
     }
 }

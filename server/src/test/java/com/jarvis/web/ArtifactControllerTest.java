@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -59,12 +60,13 @@ class ArtifactControllerTest {
     @Test
     void detailReturnsCodeZeroWithContentWhenPresent() throws Exception {
         when(artifactService.getDetail("local", "a1"))
-                .thenReturn(Optional.of(new ArtifactDetail("a1", "code", "T", "the body", "ts")));
+                .thenReturn(Optional.of(new ArtifactDetail("a1", "code", "T", "the body", "ts", 3)));
 
         mockMvc.perform(get("/api/artifact/a1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.content").value("the body"));
+                .andExpect(jsonPath("$.content").value("the body"))
+                .andExpect(jsonPath("$.version").value(3));
     }
 
     @Test
@@ -94,5 +96,43 @@ class ArtifactControllerTest {
         mockMvc.perform(post("/api/artifacts").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"type\":\"\",\"title\":\"T\",\"content\":\"body\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void patchReturnsUpdatedArtifactWithBumpedVersion() throws Exception {
+        when(artifactService.updateContent("local", "a1", "new body", "New title"))
+                .thenReturn(Optional.of(new ArtifactDetail("a1", "code", "New title", "new body", "ts", 4)));
+
+        mockMvc.perform(patch("/api/artifact/a1").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"new body\",\"title\":\"New title\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").value("new body"))
+                .andExpect(jsonPath("$.title").value("New title"))
+                .andExpect(jsonPath("$.version").value(4));
+    }
+
+    @Test
+    void patchKeepsTitleWhenOmitted() throws Exception {
+        when(artifactService.updateContent("local", "a1", "just body", null))
+                .thenReturn(Optional.of(new ArtifactDetail("a1", "code", "Kept", "just body", "ts", 2)));
+
+        mockMvc.perform(patch("/api/artifact/a1").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"just body\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Kept"))
+                .andExpect(jsonPath("$.version").value(2));
+
+        verify(artifactService).updateContent("local", "a1", "just body", null);
+    }
+
+    @Test
+    void patchReturns404CodeMessageWhenMissing() throws Exception {
+        when(artifactService.updateContent("local", "nope", "x", null)).thenReturn(Optional.empty());
+
+        mockMvc.perform(patch("/api/artifact/nope").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"x\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(404))
+                .andExpect(jsonPath("$.message").value("制品不存在"));
     }
 }

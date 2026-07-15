@@ -10,9 +10,11 @@ public record ArtifactDetailResponse(
         String type,
         String title,
         String content,
-        String language) {
+        String language,
+        int version) {
 
     public static ArtifactDetailResponse ok(ArtifactDetail a) {
-        return new ArtifactDetailResponse(0, a.id(), a.type(), a.title(), a.content(), a.language());
+        return new ArtifactDetailResponse(0, a.id(), a.type(), a.title(), a.content(),
+                a.language(), a.version());
     }
 }

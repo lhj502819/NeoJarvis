@@ -81,8 +81,42 @@ class ArtifactMapperTest {
         var detail = mapper.findDetailByIdAndUser("a1", "u1");
         assertThat(detail).isPresent();
         assertThat(detail.get().content()).isEqualTo("export function login()");
+        assertThat(detail.get().version()).isEqualTo(1);
         // wrong user -> absent
         assertThat(mapper.findDetailByIdAndUser("a3", "u1")).isEmpty();
+    }
+
+    @Test
+    void updateContentBumpsVersionSetsUpdatedAtAndCanKeepTitle() {
+        // When: content-only update (title kept)
+        int rows = mapper.updateContent("a1", "u1", "patched body", null, 9000L);
+
+        // Then: one row, version bumped 1 -> 2, title untouched, content replaced
+        assertThat(rows).isEqualTo(1);
+        var detail = mapper.findDetailByIdAndUser("a1", "u1");
+        assertThat(detail).isPresent();
+        assertThat(detail.get().content()).isEqualTo("patched body");
+        assertThat(detail.get().title()).isEqualTo("Login helper");
+        assertThat(detail.get().version()).isEqualTo(2);
+        assertThat(jdbc.queryForObject(
+                "SELECT updated_at FROM jarvis_artifacts WHERE id = 'a1'", Long.class))
+                .isEqualTo(9000L);
+    }
+
+    @Test
+    void updateContentAlsoUpdatesTitleWhenProvided() {
+        int rows = mapper.updateContent("a2", "u1", "new plan", "New title", 9500L);
+
+        assertThat(rows).isEqualTo(1);
+        var detail = mapper.findDetailByIdAndUser("a2", "u1");
+        assertThat(detail.get().title()).isEqualTo("New title");
+        assertThat(detail.get().content()).isEqualTo("new plan");
+    }
+
+    @Test
+    void updateContentScopedToUserReturnsZeroForWrongUserOrMissing() {
+        assertThat(mapper.updateContent("a3", "u1", "x", null, 1L)).isZero(); // a3 belongs to u2
+        assertThat(mapper.updateContent("does-not-exist", "u1", "x", null, 1L)).isZero();
     }
 
     @Test

@@ -10,7 +10,22 @@ import { getAdhocAgent, markAdhocPromoted, listAdhocAgents } from '../a2a/adhoc.
 import { buildDomainExpertPrompt, buildExpertDescription, dominantCwd, type DomainCluster } from '../team/promoter.js'
 import { broadcast } from './sse.js'
 import { pinArtifact, getPinnedArtifactId } from './orchestrator.js'
-import pool from '../shared/db.js'
+import { serverGet, serverPatch } from '../shared/server-client.js'
+
+/** Artifact detail as returned by the Java server (GET/PATCH /api/artifact/{id}). */
+interface ArtifactRow {
+  id: string
+  type: string
+  title: string
+  content: string
+  language?: string
+  version: number
+}
+
+/** Java 404 (server-client throws with the status baked into the message). */
+function isNotFound(err: unknown): boolean {
+  return err instanceof Error && / -> 404\b/.test(err.message)
+}
 
 export interface PendingArtifact {
   type: 'html' | 'markdown' | 'code' | 'mermaid'
@@ -262,31 +277,24 @@ export function createJarvisTools(userId: string) {
           limit: z.number().optional().describe('返回条数上限,默认 10'),
         },
         async (args) => {
-          const conditions: string[] = ['user_id = $1']
-          const params: unknown[] = [userId]
-          let idx = 2
-          if (args.query) {
-            conditions.push(`(title ILIKE $${idx} OR content ILIKE $${idx})`)
-            params.push(`%${args.query}%`)
-            idx++
-          }
-          if (args.type) {
-            conditions.push(`type = $${idx}`)
-            params.push(args.type)
-            idx++
-          }
-          if (args.days) {
-            conditions.push(`created_at >= $${idx}`)
-            params.push(Date.now() - args.days * 86400000)
-            idx++
-          }
           const limit = Math.min(args.limit || 10, 20)
-          const { rows } = await pool.query(
-            `SELECT id, type, title, language, version, created_at, updated_at FROM jarvis_artifacts WHERE ${conditions.join(' AND ')} ORDER BY COALESCE(updated_at, created_at) DESC LIMIT ${limit}`,
-            params
-          )
+          const params = new URLSearchParams()
+          if (args.query) params.set('q', args.query)
+          if (args.type) params.set('type', args.type)
+          // The Java /api/artifacts list has no "recent N days" filter — over-fetch (up to the
+          // server cap) and apply the days cutoff client-side, preserving the old tool behaviour.
+          params.set('limit', String(args.days ? 100 : limit))
+          const { items } = await serverGet<{
+            total: number
+            items: Array<{ id: string; type: string; title: string; language?: string; version: number; createdAt: number }>
+          }>(userId, `/api/artifacts?${params.toString()}`)
+          let rows = items
+          if (args.days) {
+            const cutoff = Date.now() - args.days * 86400000
+            rows = rows.filter(r => r.createdAt >= cutoff).slice(0, limit)
+          }
           if (rows.length === 0) return { content: [{ type: 'text' as const, text: '未找到匹配的制品。' }] }
-          const summary = rows.map((r: any) => ({ id: r.id, type: r.type, title: r.title, language: r.language, version: r.version, createdAt: r.created_at }))
+          const summary = rows.map(r => ({ id: r.id, type: r.type, title: r.title, language: r.language, version: r.version, createdAt: r.createdAt }))
           return { content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 2) }] }
         }
       ),
@@ -303,13 +311,14 @@ export function createJarvisTools(userId: string) {
             broadcast('artifact_pinned', JSON.stringify({ pinned: false }), userId)
             return { content: [{ type: 'text' as const, text: '已取消钉住。' }] }
           }
-          const { rows } = await pool.query(
-            'SELECT id, type, title, content, language, version FROM jarvis_artifacts WHERE id = $1 AND user_id = $2',
-            [args.artifactId, userId]
-          )
-          if (!rows[0]) return { content: [{ type: 'text' as const, text: '制品不存在或无权访问。' }] }
+          let a: ArtifactRow
+          try {
+            a = await serverGet<ArtifactRow>(userId, `/api/artifact/${encodeURIComponent(args.artifactId)}`)
+          } catch (err) {
+            if (isNotFound(err)) return { content: [{ type: 'text' as const, text: '制品不存在或无权访问。' }] }
+            throw err
+          }
           pinArtifact(userId, args.artifactId)
-          const a = rows[0]
           broadcast('artifact_pinned', JSON.stringify({ pinned: true, id: a.id, type: a.type, title: a.title, content: a.content, language: a.language, version: a.version }), userId)
           return { content: [{ type: 'text' as const, text: `已钉住「${a.title}」(v${a.version})，我能看到完整内容了。` }] }
         }
@@ -325,17 +334,17 @@ export function createJarvisTools(userId: string) {
         async (args) => {
           const pinnedId = getPinnedArtifactId(userId)
           if (!pinnedId) return { content: [{ type: 'text' as const, text: '当前没有钉住的制品,请先 pin_artifact。' }] }
-          const now = Date.now()
-          if (args.title) {
-            await pool.query('UPDATE jarvis_artifacts SET content = $1, title = $2, version = version + 1, updated_at = $3 WHERE id = $4 AND user_id = $5', [args.content, args.title, now, pinnedId, userId])
-          } else {
-            await pool.query('UPDATE jarvis_artifacts SET content = $1, version = version + 1, updated_at = $2 WHERE id = $3 AND user_id = $4', [args.content, now, pinnedId, userId])
+          const body = args.title ? { content: args.content, title: args.title } : { content: args.content }
+          let updated: ArtifactRow | undefined
+          try {
+            updated = await serverPatch<ArtifactRow>(userId, `/api/artifact/${encodeURIComponent(pinnedId)}`, body)
+          } catch (err) {
+            if (!isNotFound(err)) throw err
           }
-          const { rows } = await pool.query('SELECT id, type, title, content, language, version FROM jarvis_artifacts WHERE id = $1', [pinnedId])
-          if (rows[0]) {
-            broadcast('artifact_updated', JSON.stringify({ id: rows[0].id, type: rows[0].type, title: rows[0].title, content: rows[0].content, language: rows[0].language, version: rows[0].version }), userId)
+          if (updated) {
+            broadcast('artifact_updated', JSON.stringify({ id: updated.id, type: updated.type, title: updated.title, content: updated.content, language: updated.language, version: updated.version }), userId)
           }
-          return { content: [{ type: 'text' as const, text: `已更新「${rows[0]?.title || ''}」→ v${rows[0]?.version}，Sir 面板已刷新。` }] }
+          return { content: [{ type: 'text' as const, text: `已更新「${updated?.title || ''}」→ v${updated?.version}，Sir 面板已刷新。` }] }
         }
       ),
 

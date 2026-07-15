@@ -1,4 +1,4 @@
-import pool from '../shared/db.js'
+import { serverGet, serverPost } from '../shared/server-client.js'
 
 export interface AgentSession {
   sessionId: string
@@ -11,53 +11,15 @@ export interface AgentSession {
   taskCount: number
 }
 
-function rowToSession(row: any): AgentSession {
-  return {
-    sessionId: row.session_id,
-    recipeId: row.recipe_id,
-    domain: row.domain || '',
-    cwd: row.cwd || '',
-    topics: JSON.parse(row.topics),
-    lastTaskDescription: row.last_task_description,
-    completedAt: row.completed_at,
-    taskCount: row.task_count,
-  }
-}
-
 export async function recordAgentSession(userId: string, sessionId: string, recipeId: string, description: string, domain?: string, cwd?: string): Promise<void> {
-  const keywords = extractKeywords(description)
-
-  const { rows } = await pool.query('SELECT * FROM jarvis_claude_sessions WHERE user_id = $1 AND session_id = $2', [userId, sessionId])
-  const existing = rows[0]
-  if (existing) {
-    const oldTopics: string[] = JSON.parse(existing.topics)
-    const merged = [...new Set([...oldTopics, ...keywords])]
-    await pool.query(`
-      UPDATE jarvis_claude_sessions SET topics = $1, last_task_description = $2, completed_at = $3, task_count = task_count + 1, domain = COALESCE(NULLIF(domain, ''), $4), cwd = COALESCE(NULLIF(cwd, ''), $5)
-      WHERE user_id = $6 AND session_id = $7
-    `, [JSON.stringify(merged), description, new Date().toISOString(), domain || '', cwd || '', userId, sessionId])
-  } else {
-    await pool.query(`
-      INSERT INTO jarvis_claude_sessions (user_id, session_id, recipe_id, domain, cwd, topics, last_task_description, completed_at, task_count)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1)
-    `, [userId, sessionId, recipeId, domain || '', cwd || '', JSON.stringify(keywords), description, new Date().toISOString()])
-
-    // Keep max 50 sessions per user
-    const { rows: countRows } = await pool.query('SELECT COUNT(*) as cnt FROM jarvis_claude_sessions WHERE user_id = $1', [userId])
-    const count = parseInt(countRows[0].cnt, 10)
-    if (count > 50) {
-      await pool.query(`
-        DELETE FROM jarvis_claude_sessions WHERE id IN (
-          SELECT id FROM jarvis_claude_sessions WHERE user_id = $1 ORDER BY completed_at ASC LIMIT $2
-        )
-      `, [userId, count - 50])
-    }
-  }
+  // Keyword extraction, topic merge, task_count bump and the 50-session cap now live in the
+  // Java POST /api/sessions upsert; we just hand over the raw description + optional domain/cwd.
+  await serverPost(userId, '/api/sessions', { sessionId, recipeId, description, domain, cwd })
 }
 
 export async function findMatchingSession(userId: string, description: string, recipeId: string): Promise<AgentSession | undefined> {
-  const { rows } = await pool.query('SELECT * FROM jarvis_claude_sessions WHERE user_id = $1 AND recipe_id = $2', [userId, recipeId])
-  if (rows.length === 0) return undefined
+  const sessions = await serverGet<AgentSession[]>(userId, `/api/sessions/match?recipeId=${encodeURIComponent(recipeId)}`)
+  if (sessions.length === 0) return undefined
 
   const keywords = extractKeywords(description)
   if (keywords.length === 0) return undefined
@@ -65,8 +27,7 @@ export async function findMatchingSession(userId: string, description: string, r
   let best: AgentSession | undefined
   let bestScore = 0
 
-  for (const row of rows) {
-    const session = rowToSession(row)
+  for (const session of sessions) {
     const overlap = keywords.filter(k => session.topics.some(t => t.includes(k) || k.includes(t)))
     const score = overlap.length / Math.max(keywords.length, 1)
 
@@ -80,13 +41,11 @@ export async function findMatchingSession(userId: string, description: string, r
 }
 
 export async function listAgentSessions(userId: string): Promise<AgentSession[]> {
-  const { rows } = await pool.query('SELECT * FROM jarvis_claude_sessions WHERE user_id = $1 ORDER BY completed_at DESC', [userId])
-  return rows.map(rowToSession)
+  return serverGet<AgentSession[]>(userId, '/api/history')
 }
 
 export async function getSessionsByDomain(userId: string, domain: string): Promise<AgentSession[]> {
-  const { rows } = await pool.query('SELECT * FROM jarvis_claude_sessions WHERE user_id = $1 AND domain = $2', [userId, domain])
-  return rows.map(rowToSession)
+  return serverGet<AgentSession[]>(userId, `/api/sessions/by-domain?domain=${encodeURIComponent(domain)}`)
 }
 
 export function extractKeywords(text: string): string[] {
@@ -106,27 +65,25 @@ export function extractKeywords(text: string): string[] {
  * 按 domain + 关键词重叠为临时工匹配可复用的历史 session。
  * 只返回真实 UUID sessionId(auto- 兜底 ID 无法 resume,排除)。
  * 打分 = 关键词重叠数 / 查询关键词数,≥0.3 命中,取最高分。
+ * 数据由 Java GET /api/sessions/by-domain 提供(按 completed_at DESC),auto- 过滤与打分留本地。
  */
 export async function findMatchingSessionByDomain(userId: string, domain: string, description: string): Promise<string | undefined> {
   if (!domain) return undefined
   const keywords = extractKeywords(description)
   if (keywords.length === 0) return undefined
 
-  const { rows } = await pool.query(
-    `SELECT * FROM jarvis_claude_sessions WHERE user_id = $1 AND domain = $2 AND session_id NOT LIKE 'auto-%' ORDER BY completed_at DESC`,
-    [userId, domain]
-  )
-  if (rows.length === 0) return undefined
+  const sessions = await serverGet<AgentSession[]>(userId, `/api/sessions/by-domain?domain=${encodeURIComponent(domain)}`)
+  const candidates = sessions.filter(s => !s.sessionId.startsWith('auto-'))
+  if (candidates.length === 0) return undefined
 
   let best: string | undefined
   let bestScore = 0
-  for (const row of rows) {
-    const topics: string[] = JSON.parse(row.topics)
-    const overlap = keywords.filter(k => topics.some(t => t.includes(k) || k.includes(t)))
+  for (const session of candidates) {
+    const overlap = keywords.filter(k => session.topics.some(t => t.includes(k) || k.includes(t)))
     const score = overlap.length / keywords.length
     if (score > bestScore && score >= 0.3) {
       bestScore = score
-      best = row.session_id
+      best = session.sessionId
     }
   }
   return best

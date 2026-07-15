@@ -10,7 +10,7 @@ import { addToBuffer, getRecentConversation, saveConversation, saveArtifact } fr
 import { parseAction } from './action-dispatcher.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
 import { getPinnedArtifactId } from './orchestrator.js'
-import pool from '../shared/db.js'
+import { serverGet } from '../shared/server-client.js'
 import type { ChatImage } from '../shared/types.js'
 import { listSkillsForUser } from './skill-prefs.js'
 
@@ -75,12 +75,15 @@ export async function think(userId: string, userMessage: string, onProgress?: (t
   let pinnedContext = ''
   const pinnedId = getPinnedArtifactId(userId)
   if (pinnedId) {
-    const { rows } = await pool.query(
-      'SELECT id, type, title, content, language, version FROM jarvis_artifacts WHERE id = $1 AND user_id = $2',
-      [pinnedId, userId]
-    )
-    if (rows[0]) {
-      const a = rows[0]
+    let a: { id: string; type: string; title: string; content: string; language?: string; version: number } | undefined
+    try {
+      a = await serverGet(userId, `/api/artifact/${encodeURIComponent(pinnedId)}`)
+    } catch (err) {
+      // Missing pinned artifact (deleted since pinning) -> skip; rethrow real server errors.
+      if (!(err instanceof Error && / -> 404\b/.test(err.message))) throw err
+      a = undefined
+    }
+    if (a) {
       const LIMIT = 40000
       const truncated = a.content.length > LIMIT
         ? a.content.slice(0, LIMIT) + `\n\n[...内容过长已截断, 完整 ${a.content.length} 字符。若需修改被截断部分,先说明,我会分段处理]`

@@ -8,6 +8,7 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 /**
  * Artifact reads. {@link #listSummaryByTask} (A2) populates {@code TaskDetail.artifacts};
@@ -58,10 +59,28 @@ public interface ArtifactMapper {
             """)
     long count(@Param("userId") String userId, @Param("type") String type, @Param("q") String q);
 
-    @Select("SELECT id, type, title, content, language FROM jarvis_artifacts "
+    @Select("SELECT id, type, title, content, language, version FROM jarvis_artifacts "
             + "WHERE id = #{id} AND user_id = #{userId}")
     Optional<ArtifactDetail> findDetailByIdAndUser(@Param("id") String id,
             @Param("userId") String userId);
+
+    /**
+     * In-place content update, version bumped by 1 and {@code updated_at} set to the given
+     * epoch-millis (ports tools.ts update_artifact). {@code title} is optional — when null the
+     * title clause is skipped so the stored title is preserved (mirrors the TS branch that only
+     * updates title when supplied). Returns affected rows so the caller can detect a missing id.
+     */
+    @Update("""
+            <script>
+            UPDATE jarvis_artifacts
+            SET content = #{content}, version = version + 1, updated_at = #{updatedAt}
+            <if test="title != null"> , title = #{title} </if>
+            WHERE id = #{id} AND user_id = #{userId}
+            </script>
+            """)
+    int updateContent(@Param("id") String id, @Param("userId") String userId,
+            @Param("content") String content, @Param("title") String title,
+            @Param("updatedAt") long updatedAt);
 
     /**
      * Store a new artifact (ports the internal TS saveArtifact). {@code createdAt} is BIGINT

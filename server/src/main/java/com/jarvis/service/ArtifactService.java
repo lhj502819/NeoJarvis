@@ -48,6 +48,23 @@ public class ArtifactService {
     }
 
     /**
+     * In-place content update with a version bump and fresh {@code updated_at} (ports tools.ts
+     * update_artifact). {@code title} is optional (null keeps the stored title). Returns the
+     * refreshed artifact, or empty when no row matched the id/user (so the controller can 404).
+     */
+    @Transactional
+    public Optional<ArtifactDetail> updateContent(String userId, String id, String content,
+            String title) {
+        int updated = artifactMapper.updateContent(id, userId, content, title,
+                System.currentTimeMillis());
+        if (updated == 0) {
+            return Optional.empty();
+        }
+        log.debug("update_artifact userId={} id={} withTitle={}", userId, id, title != null);
+        return artifactMapper.findDetailByIdAndUser(id, userId);
+    }
+
+    /**
      * Store a new artifact (ports the internal TS saveArtifact): random UUID id, BIGINT
      * epoch-millis created_at, version left to the DB default (1). Returns the new id.
      */
