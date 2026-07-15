@@ -1,81 +1,73 @@
-import { randomUUID } from 'crypto'
-import pool from '../shared/db.js'
 import { redactSecrets } from '../shared/redact.js'
 import { addMemory } from '../memory/everos.js'
+import { serverGet, serverPost } from '../shared/server-client.js'
 import type { ChatImage } from '../shared/types.js'
+
+/**
+ * v0.3: the conversation data layer no longer touches PostgreSQL directly — it calls the
+ * Java server's REST API (ConversationController / ArtifactController). Session reuse/create,
+ * id generation and message ordering are all done server-side now. Signatures are unchanged
+ * from the old pool-based version; every `userId` is forwarded as X-Internal-User by the
+ * server-client.
+ */
 
 const MAX_BUFFER_TURNS = 20
 
-async function getOrCreateSession(userId: string): Promise<string> {
-  const { rows } = await pool.query(
-    `SELECT id FROM user_jarvis_sessions WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 1`,
-    [userId]
-  )
-  if (rows[0]) return rows[0].id
-
-  const id = randomUUID()
-  const now = new Date().toISOString()
-  await pool.query(
-    'INSERT INTO user_jarvis_sessions (id, user_id, created_at, updated_at) VALUES ($1, $2, $3, $4)',
-    [id, userId, now, now]
-  )
-  return id
-}
+/**
+ * Base URL for the single endpoint (getChatImage) that returns raw bytes instead of JSON,
+ * so it can't go through the JSON-parsing server-client. Kept in sync with server-client.ts.
+ */
+const SERVER_URL = process.env.JARVIS_SERVER_URL || 'http://localhost:8080'
 
 export async function addToBuffer(userId: string, role: 'user' | 'jarvis', content: string, artifactId?: string, imageIds?: string[]) {
-  const sessionId = await getOrCreateSession(userId)
-  const now = Date.now()
-
-  await pool.query(
-    'INSERT INTO user_jarvis_messages (session_id, user_id, role, content, timestamp, artifact_id, image_ids) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-    [sessionId, userId, role, content, now, artifactId || null, imageIds && imageIds.length ? JSON.stringify(imageIds) : null]
-  )
-  await pool.query(
-    'UPDATE user_jarvis_sessions SET updated_at = $1 WHERE id = $2',
-    [new Date().toISOString(), sessionId]
-  )
+  // POST /api/conversation/messages appends to the user's latest session (server picks/creates it).
+  // Undefined artifactId/imageIds are dropped by JSON.stringify → Java stores NULL (mirrors old SQL).
+  await serverPost(userId, '/api/conversation/messages', { role, content, artifactId, imageIds })
 }
 
 // 存用户发来的图片(base64),返回 id 列表,供挂到消息 image_ids
 export async function saveChatImages(userId: string, images: ChatImage[]): Promise<string[]> {
-  const ids: string[] = []
-  for (const img of images) {
-    const id = randomUUID()
-    await pool.query(
-      'INSERT INTO jarvis_chat_images (id, user_id, media_type, data, created_at) VALUES ($1, $2, $3, $4, $5)',
-      [id, userId, img.mediaType, img.data, Date.now()]
-    )
-    ids.push(id)
-  }
+  // POST /api/chat-images → { ids } in input order (server assigns the ids the old code UUID'd locally).
+  const { ids } = await serverPost<{ ids: string[] }>(userId, '/api/chat-images', { images })
   return ids
 }
 
 // 按 id 取回图片(供 /api/chat-image/:id)
 export async function getChatImage(userId: string, id: string): Promise<{ mediaType: string; data: string } | null> {
-  const { rows } = await pool.query(
-    'SELECT media_type, data FROM jarvis_chat_images WHERE id = $1 AND user_id = $2',
-    [id, userId]
-  )
-  if (!rows[0]) return null
-  return { mediaType: rows[0].media_type, data: rows[0].data }
+  // Java GET /api/chat-image/{id} returns the DECODED image bytes with a Content-Type header
+  // (built for the browser), not JSON — so serverGet's JSON.parse can't be used here. We fetch
+  // raw (forwarding the same X-Internal-User header server-client uses), map 404 → null, and
+  // re-encode the body to base64 so the return shape { mediaType, data } is unchanged from PG.
+  const res = await fetch(`${SERVER_URL}/api/chat-image/${encodeURIComponent(id)}`, {
+    headers: { 'X-Internal-User': userId },
+  })
+  if (res.status === 404) return null
+  if (!res.ok) {
+    throw new Error(`server GET /api/chat-image/${id} -> ${res.status} ${res.statusText}`)
+  }
+  const mediaType = res.headers.get('content-type') || 'application/octet-stream'
+  const data = Buffer.from(await res.arrayBuffer()).toString('base64')
+  return { mediaType, data }
 }
 
 export async function getRecentConversation(userId: string): Promise<string> {
-  const sessionId = await getOrCreateSession(userId)
-  const { rows } = await pool.query(
-    `SELECT role, content FROM (
-      SELECT role, content, timestamp FROM user_jarvis_messages WHERE session_id = $1 ORDER BY timestamp DESC LIMIT $2
-    ) sub ORDER BY timestamp ASC`,
-    [sessionId, MAX_BUFFER_TURNS]
-  )
-
-  if (rows.length === 0) return ''
-  return rows
-    .map((t: any) => `${t.role === 'user' ? 'Sir' : 'Jarvis'}: ${redactSecrets(t.content)}`)
+  // GET /api/conversation returns the latest session's messages oldest-first (server caps at 500).
+  // The old PG query kept only the last MAX_BUFFER_TURNS, so we slice the tail to match, then build
+  // the same "Sir/Jarvis: <redacted>" transcript string (empty string when there are no messages).
+  const messages = await serverGet<Array<{ role: string; content: string }>>(userId, '/api/conversation')
+  if (messages.length === 0) return ''
+  return messages
+    .slice(-MAX_BUFFER_TURNS)
+    .map(m => `${m.role === 'user' ? 'Sir' : 'Jarvis'}: ${redactSecrets(m.content)}`)
     .join('\n')
 }
 
 export async function saveConversation(userId: string, userMessage: string, jarvisResponse: string) {
+  // Unchanged from the old data layer: this function never touched PostgreSQL — it only pushes the
+  // exchange to EverOS long-term memory. Both messages are already persisted to the DB via the
+  // addToBuffer → /api/conversation/messages calls in orchestrator.ts (user) and brain.ts (jarvis),
+  // so we deliberately do NOT also POST /api/conversation here — that endpoint writes the pair to
+  // the DB and would duplicate those two messages.
   const sessionId = `jarvis-${userId}`
   const now = Date.now()
   addMemory(userId, sessionId, [
@@ -85,10 +77,13 @@ export async function saveConversation(userId: string, userMessage: string, jarv
 }
 
 export async function saveArtifact(userId: string, artifact: { type: string; title: string; content: string; language?: string }, taskId?: string): Promise<string> {
-  const id = randomUUID()
-  await pool.query(
-    'INSERT INTO jarvis_artifacts (id, user_id, type, title, content, language, created_at, task_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-    [id, userId, artifact.type, artifact.title, artifact.content, artifact.language || null, Date.now(), taskId || null]
-  )
+  // POST /api/artifacts → { id } (server assigns the id + created_at + version default).
+  const { id } = await serverPost<{ id: string }>(userId, '/api/artifacts', {
+    type: artifact.type,
+    title: artifact.title,
+    content: artifact.content,
+    language: artifact.language,
+    taskId,
+  })
   return id
 }
