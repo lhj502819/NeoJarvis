@@ -16,6 +16,8 @@ public final class Json {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
     };
+    private static final TypeReference<List<Object>> OBJECT_LIST = new TypeReference<>() {
+    };
     private static final TypeReference<Map<String, Object>> STRING_MAP = new TypeReference<>() {
     };
 
@@ -72,6 +74,46 @@ public final class Json {
         } catch (Exception e) {
             throw new IllegalStateException("failed to serialise JSON object", e);
         }
+    }
+
+    /**
+     * Parse a JSON array of arbitrary values (e.g. A2A message {@code parts}), returning an
+     * empty list when the column is null/blank. Preserves nested object structure as
+     * {@code Map}/{@code List} so the round-trip TS→Java→TS is byte-for-byte equivalent.
+     */
+    public static List<Object> objectList(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        try {
+            return MAPPER.readValue(raw, OBJECT_LIST);
+        } catch (Exception e) {
+            throw new IllegalStateException("failed to parse JSON array: " + raw, e);
+        }
+    }
+
+    /**
+     * Serialise any value (list/map/scalar) to JSON TEXT for storage, returning {@code null}
+     * when the value is null (mirrors TS {@code value ? JSON.stringify(value) : null}). Used
+     * for the A2A message {@code parts}/{@code metadata} JSON columns.
+     */
+    public static String write(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return MAPPER.writeValueAsString(value);
+        } catch (Exception e) {
+            throw new IllegalStateException("failed to serialise JSON value", e);
+        }
+    }
+
+    /**
+     * Parse a JSON object, returning {@code null} when the column is null/blank so the field
+     * is omitted from JSON (mirrors TS {@code metadata ? JSON.parse : undefined}).
+     */
+    public static Map<String, Object> mapOrNull(String raw) {
+        return (raw == null || raw.isBlank()) ? null : map(raw);
     }
 
     /** Parse a JSON object, returning an empty map when the column is null/blank. */

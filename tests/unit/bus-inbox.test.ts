@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-// bus 依赖 db(recordMessage 会写库)。mock 掉 db,让我们能纯内存验证 inbox/drain 语义。
-// 按 SQL 返回合适结果:COUNT 查询要有 cnt 字段,其余返回空行。
-vi.mock('../../src/shared/db.js', () => ({
-  default: {
-    query: vi.fn(async (sql: string) => {
-      if (/COUNT\(\*\)/i.test(sql)) return { rows: [{ cnt: '0' }] }
-      return { rows: [] }
-    }),
-  },
+// bus 依赖 Java server-client(recordMessage → POST /api/agent-messages)。mock 掉 server-client,
+// 用一个内存 fake 记录 POST 过的消息,让我们能纯内存验证 inbox/drain 语义,不起真实 HTTP。
+const posted: Array<{ path: string; body: unknown }> = []
+vi.mock('../../src/shared/server-client.js', () => ({
+  serverPost: vi.fn(async (_userId: string, path: string, body?: unknown) => {
+    posted.push({ path, body })
+    return undefined
+  }),
+  serverGet: vi.fn(async () => undefined),
 }))
 
 import { bus, type A2AMessage } from '../../src/a2a/bus.js'
@@ -22,6 +22,7 @@ describe('MessageBus inbox/drain 语义（Jarvis → 小弟 中途注入）', ()
   const AGENT = 'subtask-abc123'
 
   beforeEach(() => {
+    posted.length = 0
     bus.unregister(AGENT)
     bus.setOwner('test-user')
   })
@@ -35,6 +36,10 @@ describe('MessageBus inbox/drain 语义（Jarvis → 小弟 中途注入）', ()
     const pending = bus.peekInbox(AGENT)
     expect(pending.length).toBe(1)
     expect(lastText(pending)).toBe('补充需求：加上代理IP')
+
+    // recordMessage 已改走 Java server-client:POST /api/agent-messages
+    expect(posted).toHaveLength(1)
+    expect(posted[0].path).toBe('/api/agent-messages')
   })
 
   it('drainInbox 取出后清空（模拟小弟回合迭代时读取并注入）', async () => {
