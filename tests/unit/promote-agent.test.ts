@@ -1,8 +1,51 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import pool, { initDb } from '../../src/shared/db.js'
-import { upsertAdhocAgent } from '../../src/a2a/adhoc.js'
-import { promoteAdhocToRecipe } from '../../src/jarvis/tools.js'
-import { listRecipes } from '../../src/team/registry.js'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import { randomUUID } from 'crypto'
+
+// registry.ts (createRecipe/listRecipes) now calls the Java server via shared/server-client.
+// The adhoc side (upsertAdhocAgent/markAdhocPromoted) still uses PostgreSQL directly, so this
+// stays a hybrid test: real PG for adhoc state, an in-memory fake for the recipe layer.
+const store = vi.hoisted(() => ({ recipes: [] as any[] }))
+
+vi.mock('../../src/shared/server-client.js', () => ({
+  serverGet: async (userId: string, path: string) => {
+    if (path === '/api/recipes') return store.recipes.filter(r => r._userId === userId)
+    if (path.startsWith('/api/recipes/by-ids')) {
+      const ids = new URLSearchParams(path.split('?')[1]).get('ids')?.split(',') ?? []
+      return store.recipes.filter(r => ids.includes(r.id))
+    }
+    return []
+  },
+  serverPost: async (userId: string, path: string, body?: any) => {
+    if (path === '/api/recipes') {
+      const recipe = {
+        id: randomUUID().slice(0, 8),
+        name: body.name,
+        description: body.description,
+        systemPrompt: body.systemPrompt,
+        tools: body.tools,
+        skills: body.skills ?? [],
+        model: body.model ?? 'sonnet',
+        context: body.context ?? {},
+        persistent: body.persistent ?? false,
+        usageCount: 0,
+        createdBy: body.createdBy ?? 'jarvis',
+        createdAt: new Date().toISOString(),
+        lastUsedAt: '',
+      }
+      store.recipes.push({ ...recipe, _userId: userId })
+      return recipe
+    }
+    return { ok: true }
+  },
+  serverDelete: async () => ({ ok: true }),
+  serverPatch: async () => ({ ok: true }),
+}))
+
+const pool = (await import('../../src/shared/db.js')).default
+const { initDb } = await import('../../src/shared/db.js')
+const { upsertAdhocAgent } = await import('../../src/a2a/adhoc.js')
+const { promoteAdhocToRecipe } = await import('../../src/jarvis/tools.js')
+const { listRecipes } = await import('../../src/team/registry.js')
 
 const USER = `u-promo-${Date.now()}`
 
@@ -14,7 +57,6 @@ describe('promoteAdhocToRecipe', () => {
   })
   afterAll(async () => {
     await pool.query('DELETE FROM jarvis_adhoc_agents WHERE user_id=$1', [USER])
-    await pool.query('DELETE FROM jarvis_recipes WHERE user_id=$1', [USER])
   })
 
   it('转正创建 persistent recipe 并标记 adhoc promoted', async () => {

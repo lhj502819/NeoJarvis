@@ -1,41 +1,33 @@
-import { randomUUID } from 'crypto'
 import type { AgentRecipe } from '../shared/types.js'
-import pool from '../shared/db.js'
+import { serverGet, serverPost, serverDelete } from '../shared/server-client.js'
 
-function rowToRecipe(row: any): AgentRecipe {
-  return {
-    id: row.id,
-    name: row.name,
-    description: row.description,
-    systemPrompt: row.system_prompt,
-    tools: JSON.parse(row.tools),
-    skills: row.skills ? JSON.parse(row.skills) : [],
-    model: row.model,
-    context: JSON.parse(row.context),
-    persistent: row.persistent === 1 || row.persistent === true,
-    usageCount: row.usage_count,
-    createdBy: row.created_by,
-    createdAt: row.created_at,
-    lastUsedAt: row.last_used_at || '',
-  }
-}
+/**
+ * v0.3: the recipe data layer no longer touches PostgreSQL directly — it calls the Java
+ * server's REST API (see RecipeController). The Java AgentRecipe record is field-for-field
+ * identical to the TS AgentRecipe (camelCase JSON), so responses deserialize directly with
+ * no row->object mapping. Signatures are unchanged from the old pool-based version.
+ */
 
 export async function listRecipes(userId: string): Promise<AgentRecipe[]> {
-  const { rows } = await pool.query('SELECT * FROM jarvis_recipes WHERE user_id = $1', [userId])
-  return rows.map(rowToRecipe)
+  return serverGet<AgentRecipe[]>(userId, '/api/recipes')
 }
 
 export async function listRecipesByIds(ids: string[]): Promise<Map<string, AgentRecipe>> {
   if (ids.length === 0) return new Map()
-  const { rows } = await pool.query('SELECT * FROM jarvis_recipes WHERE id = ANY($1)', [ids])
+  // by-ids is NOT user-scoped (the Java endpoint ignores UserContext). There is no userId in
+  // this signature, so we pass a placeholder for the X-Internal-User header just to satisfy
+  // the dev-bypass auth filter — the value is irrelevant to the query.
+  const query = ids.map(encodeURIComponent).join(',')
+  const rows = await serverGet<AgentRecipe[]>('local', `/api/recipes/by-ids?ids=${query}`)
   const map = new Map<string, AgentRecipe>()
-  for (const row of rows) map.set(row.id, rowToRecipe(row))
+  for (const r of rows) map.set(r.id, r)
   return map
 }
 
 export async function getRecipe(userId: string, id: string): Promise<AgentRecipe | undefined> {
-  const { rows } = await pool.query('SELECT * FROM jarvis_recipes WHERE id = $1 AND user_id = $2', [id, userId])
-  return rows[0] ? rowToRecipe(rows[0]) : undefined
+  // No single-recipe endpoint; filter the user-scoped list (preserves the old WHERE user_id guard).
+  const recipes = await listRecipes(userId)
+  return recipes.find(r => r.id === id)
 }
 
 export async function findMatchingRecipe(userId: string, description: string): Promise<AgentRecipe | undefined> {
@@ -56,40 +48,19 @@ export async function createRecipe(userId: string, params: {
   context?: Record<string, unknown>
   persistent?: boolean
 }): Promise<AgentRecipe> {
-  const recipe: AgentRecipe = {
-    id: randomUUID().slice(0, 8),
-    name: params.name,
-    description: params.description,
-    systemPrompt: params.systemPrompt,
-    tools: params.tools,
-    skills: params.skills || [],
-    model: params.model || 'sonnet',
-    context: params.context || {},
-    persistent: params.persistent ?? false,
-    usageCount: 0,
-    createdBy: 'jarvis',
-    createdAt: new Date().toISOString(),
-    lastUsedAt: '',
-  }
-
-  await pool.query(`
-    INSERT INTO jarvis_recipes (id, user_id, name, description, system_prompt, tools, skills, model, context, persistent, usage_count, created_by, created_at, last_used_at)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-  `, [recipe.id, userId, recipe.name, recipe.description, recipe.systemPrompt, JSON.stringify(recipe.tools), JSON.stringify(recipe.skills), recipe.model, JSON.stringify(recipe.context), recipe.persistent ? 1 : 0, recipe.usageCount, recipe.createdBy, recipe.createdAt, recipe.lastUsedAt || null])
-
-  return recipe
+  // Java applies the same defaults the old TS did (id, skills=[], model='sonnet', context={},
+  // persistent=false, createdBy='jarvis', usageCount=0) and returns the full AgentRecipe.
+  return serverPost<AgentRecipe>(userId, '/api/recipes', params)
 }
 
 export async function incrementUsage(userId: string, id: string): Promise<void> {
-  await pool.query(`
-    UPDATE jarvis_recipes SET usage_count = usage_count + 1, last_used_at = $1 WHERE id = $2 AND user_id = $3
-  `, [new Date().toISOString(), id, userId])
+  await serverPost(userId, `/api/recipe/${id}/increment-usage`)
 }
 
 export async function promoteRecipe(userId: string, id: string): Promise<void> {
-  await pool.query('UPDATE jarvis_recipes SET persistent = 1 WHERE id = $1 AND user_id = $2', [id, userId])
+  await serverPost(userId, `/api/recipe/${id}/promote`)
 }
 
 export async function removeRecipe(userId: string, id: string): Promise<void> {
-  await pool.query('DELETE FROM jarvis_recipes WHERE id = $1 AND user_id = $2', [id, userId])
+  await serverDelete(userId, `/api/recipe/${id}`)
 }

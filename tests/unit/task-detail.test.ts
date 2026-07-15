@@ -1,6 +1,18 @@
-import { describe, it, expect, beforeAll } from 'vitest'
-import pool, { initDb } from '../../src/shared/db.js'
-import { getTaskDetail } from '../../src/task/manager.js'
+import { describe, it, expect, beforeAll, vi } from 'vitest'
+
+// getTaskDetail -> loadSubTasks -> registry.listRecipesByIds now calls the Java server.
+// This test only cares about task/subtask/turn data (real PG), so stub the recipe lookup
+// to an empty result; unmatched assignees fall back to 'adhoc', which is fine here.
+vi.mock('../../src/shared/server-client.js', () => ({
+  serverGet: async () => [],
+  serverPost: async () => ({ ok: true }),
+  serverDelete: async () => ({ ok: true }),
+  serverPatch: async () => ({ ok: true }),
+}))
+
+const pool = (await import('../../src/shared/db.js')).default
+const { initDb } = await import('../../src/shared/db.js')
+const { getTaskDetail } = await import('../../src/task/manager.js')
 
 const TASK = `t-detail-${Date.now()}`
 const SUB = `s-detail-${Date.now()}`
