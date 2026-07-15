@@ -11,7 +11,7 @@ const JAVA = 'http://localhost:8080' // v0.3 Java 服务端(纯 CRUD)
 const useJava = process.env.VITE_JAVA_BACKEND === '1'
 
 // Java A0-A4 已实现的数据类精确路径(其余 /api 留 3000)
-const javaProxy = useJava
+const javaProxy: Record<string, string> = useJava
   ? {
       '/api/tasks': JAVA,
       '/api/task': JAVA,

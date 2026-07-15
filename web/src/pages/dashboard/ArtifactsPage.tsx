@@ -94,17 +94,12 @@ export function ArtifactsPage() {
         </div>
       </div>
 
-      {/* 右预览 */}
-      <div className="dash-artifacts-preview-col">
-        {preview ? (
+      {/* 右预览 — 仅在选中制品时渲染 */}
+      {preview && (
+        <div className="dash-artifacts-preview-col">
           <ArtifactPanel artifact={preview} onClose={() => { setPreview(null); setSelected(null) }} />
-        ) : (
-          <div className="dash-artifacts-empty">
-            <div className="dash-artifacts-empty-icon">📦</div>
-            <div>点击左侧制品查看预览</div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

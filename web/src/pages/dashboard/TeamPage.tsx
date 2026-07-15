@@ -138,15 +138,6 @@ function AgentDetailPanel({
   )
 }
 
-function EmptyDrawer() {
-  return (
-    <div className="dash-drawer-empty">
-      <div className="dash-drawer-empty-icon">👥</div>
-      <div>点击左侧卡片查看 Agent 详情</div>
-    </div>
-  )
-}
-
 export function TeamPage() {
   const recipes = usePolling<Recipe[]>('/api/recipes', 10000)
   const history = usePolling<AgentSession[]>('/api/history', 10000)
@@ -163,8 +154,8 @@ export function TeamPage() {
     tab === 'settled' ? settledRecipes :
     allRecipes
 
-  // auto-select first on load
-  const effectiveSelected = selected ?? (allRecipes.length > 0 ? allRecipes[0] : null)
+  // 未选中时不 auto-select,与技能页保持一致(点击才弹抽屉)
+  const effectiveSelected = selected
 
   const selectedSessions = history
     ? history.filter(s =>
@@ -244,23 +235,21 @@ export function TeamPage() {
         )}
       </div>
 
-      {/* Right drawer */}
-      <div className="dash-team-drawer-wrap">
-        <DetailDrawer
-          onClose={() => setSelected(null)}
-          onBack={undefined}
-          parentLabel="团体"
-        >
-          {effectiveSelected ? (
+      {/* Right drawer — 仅在选中 Agent 时渲染 */}
+      {effectiveSelected && (
+        <div className="dash-team-drawer-wrap">
+          <DetailDrawer
+            onClose={() => setSelected(null)}
+            onBack={undefined}
+            parentLabel="团体"
+          >
             <AgentDetailPanel
               recipe={effectiveSelected}
               sessions={selectedSessions}
             />
-          ) : (
-            <EmptyDrawer />
-          )}
-        </DetailDrawer>
-      </div>
+          </DetailDrawer>
+        </div>
+      )}
     </div>
   )
 }

@@ -64,15 +64,6 @@ function SkillDetailPanel({
   )
 }
 
-function EmptyDrawer() {
-  return (
-    <div className="dash-drawer-empty">
-      <div className="dash-drawer-empty-icon">⚡</div>
-      <div>点击左侧卡片查看技能详情</div>
-    </div>
-  )
-}
-
 // ─── Main Page ─────────────────────────────────────────────────────────────
 
 export function SkillsPage() {
@@ -211,22 +202,20 @@ export function SkillsPage() {
         ))}
       </div>
 
-      {/* Right drawer */}
-      <div className="dash-team-drawer-wrap">
-        <DetailDrawer
-          parentLabel="技能"
-          onClose={() => setSelected(null)}
-        >
-          {effectiveSelected ? (
+      {/* Right drawer — 仅在选中技能时渲染 */}
+      {effectiveSelected && (
+        <div className="dash-team-drawer-wrap">
+          <DetailDrawer
+            parentLabel="技能"
+            onClose={() => setSelected(null)}
+          >
             <SkillDetailPanel
               skill={effectiveSelected}
               onToggle={toggle}
             />
-          ) : (
-            <EmptyDrawer />
-          )}
-        </DetailDrawer>
-      </div>
+          </DetailDrawer>
+        </div>
+      )}
     </div>
   )
 }
