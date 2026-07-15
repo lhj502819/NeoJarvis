@@ -20,9 +20,14 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * (for authorization). Ports src/auth/middleware.ts.
  *
  * <p>Dev bypass ({@code jarvis.auth.dev-bypass=true}, default on): when no valid token is
- * present, the request is authenticated as {@link UserContext#LOCAL_USER} so local runs
- * and web-slice tests need no login. With the flag off (prod), a missing/invalid token
- * leaves the request anonymous and {@code SecurityConfig} returns 401 for protected paths.
+ * present, the request is resolved by (in priority order) an {@code X-Internal-User} header
+ * — set by the TS intelligence layer's internal HTTP calls to carry the acting user id —
+ * else {@link UserContext#LOCAL_USER}, so local runs and web-slice tests need no login.
+ * With the flag off (prod), a missing/invalid token leaves the request anonymous and
+ * {@code SecurityConfig} returns 401 for protected paths.
+ *
+ * <p>TODO(prod): {@code X-Internal-User} is trusted only under dev-bypass. A real
+ * service-to-service auth scheme (shared secret / mTLS) is needed before honouring it in prod.
  *
  * <p>Both contexts are always cleared in {@code finally} to avoid leaking onto pooled
  * request threads.
@@ -35,6 +40,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private static final List<SimpleGrantedAuthority> AUTHORITIES =
             List.of(new SimpleGrantedAuthority("ROLE_USER"));
+
+    /** Header carrying the acting user id on internal calls from the TS layer (dev-bypass only). */
+    static final String INTERNAL_USER_HEADER = "X-Internal-User";
 
     private final JwtService jwtService;
     private final boolean devBypass;
@@ -53,7 +61,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             if (payload.isPresent()) {
                 authenticate(payload.get().userId(), payload.get().username());
             } else if (devBypass) {
-                authenticate(UserContext.LOCAL_USER, UserContext.LOCAL_USER);
+                // Internal TS calls forward the acting user via X-Internal-User; fall back to LOCAL_USER.
+                String internalUser = request.getHeader(INTERNAL_USER_HEADER);
+                if (internalUser != null && !internalUser.isBlank()) {
+                    authenticate(internalUser, internalUser);
+                } else {
+                    authenticate(UserContext.LOCAL_USER, UserContext.LOCAL_USER);
+                }
             }
             chain.doFilter(request, response);
         } finally {

@@ -1,4 +1,4 @@
-import pool from '../shared/db.js'
+import { serverGet, serverPatch } from '../shared/server-client.js'
 
 export interface JarvisState {
   mood: number
@@ -10,18 +10,6 @@ export interface JarvisState {
   lastDayReset: string
   familiarity: number
   trustLevel: number
-}
-
-const DEFAULT_STATE: JarvisState = {
-  mood: 80,
-  energy: 90,
-  confidence: 70,
-  tasksCompletedToday: 0,
-  messagesHandledToday: 0,
-  lastInteractionAt: '',
-  lastDayReset: new Date().toISOString().slice(0, 10),
-  familiarity: 50,
-  trustLevel: 45,
 }
 
 function resetIfNewDay(state: JarvisState): JarvisState {
@@ -38,44 +26,23 @@ function resetIfNewDay(state: JarvisState): JarvisState {
   return state
 }
 
-function rowToState(row: any): JarvisState {
-  return {
-    mood: row.mood,
-    energy: row.energy,
-    confidence: row.confidence,
-    tasksCompletedToday: row.tasks_completed_today,
-    messagesHandledToday: row.messages_handled_today,
-    lastInteractionAt: row.last_interaction_at || '',
-    lastDayReset: row.last_day_reset,
-    familiarity: row.familiarity,
-    trustLevel: row.trust_level,
-  }
-}
-
 export async function getState(userId: string): Promise<JarvisState> {
-  const { rows } = await pool.query('SELECT * FROM jarvis_state WHERE user_id = $1', [userId])
-  if (!rows[0]) return resetIfNewDay({ ...DEFAULT_STATE })
-  return resetIfNewDay(rowToState(rows[0]))
+  // Java (StateService.getState) already applies the new-day reset server-side.
+  // We re-apply resetIfNewDay here as an idempotent safety net: on the same day it is a
+  // no-op, so behaviour matches the old direct-PG path without depending on server timezone.
+  const state = await serverGet<JarvisState>(userId, '/api/state')
+  return resetIfNewDay(state)
 }
 
 export async function updateState(userId: string, updates: Partial<JarvisState>): Promise<void> {
-  const state = await getState(userId)
-  const updated = { ...state, ...updates, lastInteractionAt: new Date().toISOString() }
-
-  await pool.query(`
-    INSERT INTO jarvis_state (user_id, mood, energy, confidence, tasks_completed_today, messages_handled_today, last_interaction_at, last_day_reset, familiarity, trust_level)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-    ON CONFLICT(user_id) DO UPDATE SET
-      mood = excluded.mood,
-      energy = excluded.energy,
-      confidence = excluded.confidence,
-      tasks_completed_today = excluded.tasks_completed_today,
-      messages_handled_today = excluded.messages_handled_today,
-      last_interaction_at = excluded.last_interaction_at,
-      last_day_reset = excluded.last_day_reset,
-      familiarity = excluded.familiarity,
-      trust_level = excluded.trust_level
-  `, [userId, updated.mood, updated.energy, updated.confidence, updated.tasksCompletedToday, updated.messagesHandledToday, updated.lastInteractionAt, updated.lastDayReset, updated.familiarity, updated.trustLevel])
+  // Old PG path: read-merge-write all fields + lastInteractionAt=now.
+  // Java PATCH /api/state overlays only the provided fields over the stored state, so we
+  // forward the caller's partial `updates` plus a fresh lastInteractionAt (StatePatchRequest
+  // accepts it). Untouched fields keep their stored values — same net result as the merge.
+  await serverPatch<JarvisState>(userId, '/api/state', {
+    ...updates,
+    lastInteractionAt: new Date().toISOString(),
+  })
 }
 
 export async function onTaskCompleted(userId: string): Promise<void> {
