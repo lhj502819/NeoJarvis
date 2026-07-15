@@ -86,6 +86,7 @@ export interface TaskArtifact {
 export interface TaskDetail {
   task: Task
   turnsBySubtask: Record<string, SubTaskTurn[]>
+  messagesBySubtask?: Record<string, Array<{ id: string; from: string; to: string; role: string; parts: Array<{ kind: string; text?: string }>; timestamp: string }>>
   conversation: {
     contextId: string
     participants: string[]

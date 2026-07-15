@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchJSON } from '../../../api/client'
 import type { TaskDetail as TaskDetailData, SubTaskTurn } from '../types'
-import { parseTurnsToSteps, countTools, toolIcon, toolLabel } from '../../../lib/turnSteps'
+import { buildStepsWithMessages, countTools, toolIcon, toolLabel, type MessageLike } from '../../../lib/turnSteps'
 import { ArtifactPanel, type Artifact } from '../../../components/ArtifactPanel'
 
 const ART_ICONS: Record<string, string> = { html: '🌐', markdown: '📄', code: '💻', mermaid: '📊' }
@@ -14,7 +14,7 @@ function fmtDuration(startIso?: string, endIso?: string): string {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
 }
 
-function SubtaskTree({ subtask, turns }: { subtask: TaskDetailData['task']['subtasks'][number]; turns: SubTaskTurn[] }) {
+function SubtaskTree({ subtask, turns, messages }: { subtask: TaskDetailData['task']['subtasks'][number]; turns: SubTaskTurn[]; messages: MessageLike[] }) {
   const [open, setOpen] = useState(false)
   const running = subtask.status === 'running'
   const lastEnd = turns.length ? turns[turns.length - 1].endedAt : undefined
@@ -32,21 +32,28 @@ function SubtaskTree({ subtask, turns }: { subtask: TaskDetailData['task']['subt
       {open && (
         <div className="dash-turns">
           {(() => {
-            const steps = parseTurnsToSteps(turns)
+            const steps = buildStepsWithMessages(turns, messages, subtask.id)
             if (steps.length === 0) return <div className="dash-empty-hint">无轨迹记录</div>
-            return steps.map(step => step.kind === 'thought' ? (
-              <div className="dash-step-thought" key={step.key}>{step.text}</div>
-            ) : (
-              <div className="dash-step-tools" key={step.key}>
-                {countTools(step.tools).map((t, i) => (
-                  <span className="dash-tool-chip" key={i}>
-                    <span>{toolIcon(t.name)}</span>
-                    <span className="dash-tool-name">{toolLabel(t.name)}</span>
-                    {t.count > 1 && <span className="dash-tool-count">×{t.count}</span>}
-                  </span>
-                ))}
-              </div>
-            ))
+            return steps.map(step => {
+              if (step.kind === 'thought') return <div className="dash-step-thought" key={step.key}>{step.text}</div>
+              if (step.kind === 'message') return (
+                <div className="dash-step-message" key={step.key}>
+                  <span className="dash-step-message-tag">Jarvis 补充指令</span>
+                  <span className="dash-step-message-text">{step.text}</span>
+                </div>
+              )
+              return (
+                <div className="dash-step-tools" key={step.key}>
+                  {countTools(step.tools).map((t, i) => (
+                    <span className="dash-tool-chip" key={i}>
+                      <span>{toolIcon(t.name)}</span>
+                      <span className="dash-tool-name">{toolLabel(t.name)}</span>
+                      {t.count > 1 && <span className="dash-tool-count">×{t.count}</span>}
+                    </span>
+                  ))}
+                </div>
+              )
+            })
           })()}
         </div>
       )}
@@ -90,6 +97,7 @@ export function TaskDetail({ taskId, onBack }: { taskId: string; onBack: () => v
   if (!detail) return <div><button className="dash-back-btn" onClick={onBack}>← 返回任务</button><div className="dash-empty-hint">任务不存在</div></div>
 
   const { task, turnsBySubtask, conversation } = detail
+  const messagesBySubtask = detail.messagesBySubtask || {}
   const artifacts = detail.artifacts || []
 
   const openArtifact = async (id: string) => {
@@ -128,7 +136,7 @@ export function TaskDetail({ taskId, onBack }: { taskId: string; onBack: () => v
       <div className="dash-task-desc" style={{ marginBottom: 12 }}>{task.description}</div>
 
       <div className="dash-section-title">子任务执行树</div>
-      {task.subtasks.map(st => <SubtaskTree key={st.id} subtask={st} turns={turnsBySubtask[st.id] || []} />)}
+      {task.subtasks.map(st => <SubtaskTree key={st.id} subtask={st} turns={turnsBySubtask[st.id] || []} messages={messagesBySubtask[st.id] || []} />)}
 
       {conversation && conversation.messages.length > 0 && (
         <>

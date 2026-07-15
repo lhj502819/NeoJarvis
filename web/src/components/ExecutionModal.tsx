@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { fetchJSON } from '../api/client'
+import { buildStepsWithMessages, countTools, toolIcon, toolLabel } from '../lib/turnSteps'
 import './ExecutionModal.css'
 
 interface SubTaskLite {
@@ -38,85 +39,6 @@ interface TaskDetail {
   task: { id: string; name: string; status: string; subtasks: SubTaskLite[] }
   turnsBySubtask: Record<string, TurnLite[]>
   messagesBySubtask: Record<string, MessageLite[]>
-}
-
-type Step =
-  | { kind: 'thought'; text: string; key: string }
-  | { kind: 'tools'; tools: string[]; key: string }
-  | { kind: 'message'; text: string; key: string }
-
-const TOOL_ICONS: Record<string, string> = {
-  Bash: '⚡', Read: '📄', Write: '✏️', Edit: '✏️', MultiEdit: '✏️', NotebookEdit: '✏️',
-  Glob: '🔍', Grep: '🔍', WebFetch: '🌐', WebSearch: '🌐', Skill: '✨',
-  TaskCreate: '📋', TaskUpdate: '📋', Workflow: '⚙️',
-}
-function toolIcon(name: string): string {
-  if (TOOL_ICONS[name]) return TOOL_ICONS[name]
-  if (name.startsWith('mcp__')) return '🔌'
-  return '🔧'
-}
-function toolLabel(name: string): string {
-  if (name.startsWith('mcp__')) {
-    // mcp__server__method → method(或 server)
-    const parts = name.split('__')
-    return parts[parts.length - 1] || name
-  }
-  return name
-}
-
-// 把 turn 文本(思考 + 🔧 工具行)解析成扁平 step 流,相邻工具聚合
-function buildSteps(turns: TurnLite[], messages: MessageLite[], subtaskId: string): Step[] {
-  // 先按时间把 turn 和 Jarvis 补充指令合成有序事件
-  type Ev = { time: number; turn?: TurnLite; msg?: MessageLite }
-  const evs: Ev[] = []
-  for (const t of turns) evs.push({ time: new Date(t.startedAt).getTime(), turn: t })
-  for (const m of messages) {
-    if (m.to !== subtaskId || m.role !== 'user') continue
-    evs.push({ time: new Date(m.timestamp).getTime(), msg: m })
-  }
-  evs.sort((a, b) => a.time - b.time)
-
-  const steps: Step[] = []
-  let keySeq = 0
-  const pushTools = (tools: string[]) => {
-    if (!tools.length) return
-    const last = steps[steps.length - 1]
-    if (last && last.kind === 'tools') last.tools.push(...tools)   // 相邻工具聚合
-    else steps.push({ kind: 'tools', tools: [...tools], key: `s${keySeq++}` })
-  }
-
-  for (const ev of evs) {
-    if (ev.msg) {
-      const text = ev.msg.parts.map(p => p.text || '').join('').trim()
-      if (text) steps.push({ kind: 'message', text, key: `s${keySeq++}` })
-      continue
-    }
-    const raw = ev.turn!.text
-    if (!raw || raw === '(无文本输出)') continue
-    const lines = raw.split('\n')
-    const tools: string[] = []
-    const thoughtLines: string[] = []
-    for (const ln of lines) {
-      const m = ln.match(/^🔧\s*(.+)$/)
-      if (m) tools.push(m[1].trim())
-      else if (ln.trim()) thoughtLines.push(ln)
-    }
-    const thought = thoughtLines.join('\n').trim()
-    if (thought) steps.push({ kind: 'thought', text: thought, key: `s${keySeq++}` })
-    pushTools(tools)
-  }
-  return steps
-}
-
-// 工具数组 → 按名归并计数,保持首次出现顺序
-function countTools(tools: string[]): Array<{ name: string; count: number }> {
-  const order: string[] = []
-  const counts: Record<string, number> = {}
-  for (const t of tools) {
-    if (!(t in counts)) { counts[t] = 0; order.push(t) }
-    counts[t]++
-  }
-  return order.map(name => ({ name, count: counts[name] }))
 }
 
 function fmtDuration(startIso?: string, endIso?: string): string {
@@ -163,7 +85,7 @@ export function ExecutionModal({ taskId, subtaskId, onClose }: { taskId: string;
   const sub = detail?.task.subtasks.find(s => s.id === subtaskId)
   const turns = detail?.turnsBySubtask[subtaskId] || []
   const messages = detail?.messagesBySubtask?.[subtaskId] || []
-  const steps = buildSteps(turns, messages, subtaskId)
+  const steps = buildStepsWithMessages(turns, messages, subtaskId)
   const toolCount = steps.reduce((n, s) => n + (s.kind === 'tools' ? s.tools.length : 0), 0)
   const thoughtCount = steps.filter(s => s.kind === 'thought').length
   const uiState = sub?.status === 'running' ? 'running' :
