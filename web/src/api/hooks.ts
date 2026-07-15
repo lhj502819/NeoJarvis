@@ -112,7 +112,12 @@ export function useChat() {
     const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: text, status: 'done', imageUrls }
     const jarvisMsg: Message = { id: `j-${Date.now()}`, role: 'jarvis', content: '', status: 'thinking' }
 
-    setMessages(prev => [...prev, userMsg, jarvisMsg])
+    // 若前一条 jarvis 消息还处于 thinking/streaming(用户在快速追问),清掉它。
+    // orchestrator 会把用户两条消息 merge 成一次 response,只保留最新那条 thinking 气泡。
+    setMessages(prev => {
+      const cleaned = prev.filter(m => !(m.role === 'jarvis' && (m.status === 'thinking' || m.status === 'streaming')))
+      return [...cleaned, userMsg, jarvisMsg]
+    })
     setIsLoading(true)
 
     const controller = new AbortController()
