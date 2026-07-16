@@ -221,13 +221,20 @@ export function useChat() {
           }
           return [...prev, { id: `j-live-${Date.now()}`, role: 'jarvis', content: event.content, status: 'streaming' }]
         }
-        case 'response':
-          if (isLiveJarvis) return updateLast({ content: event.content, status: 'done' })
+        case 'response': {
+          // 只有 live-reply(当前对话的实时回复)才能就地更新 thinking 气泡;
+          // task-report/task-error 是后台子任务的独立汇报,必须新气泡追加,否则会
+          // 把用户刚发出/恢复出的 thinking 气泡当成自己的位置盖掉。
+          const isLive = !event.source || event.source === 'live-reply'
+          if (isLive && isLiveJarvis) return updateLast({ content: event.content, status: 'done' })
           return [...prev, { id: `j-live-${Date.now()}`, role: 'jarvis', content: event.content, status: 'done' }]
+        }
         case 'artifact': {
           try {
             const artifact = JSON.parse(event.content) as MessageArtifact
-            // artifact 总在 response 之后到达,此时消息已 done。挂到最后一条 jarvis 消息(不论状态)
+            // live-reply 的 artifact 挂到最后一条 jarvis(通常就是刚 done 的那条);
+            // task-report 的 artifact 挂到刚追加的"任务汇报"气泡(也是最后一条 jarvis)。
+            // 两种情况都取 findLastJarvisIndex 即可。
             const idx = findLastJarvisIndex(prev)
             if (idx >= 0) return prev.map((m, i) => i === idx ? { ...m, artifact } : m)
           } catch { /* ignore */ }
@@ -278,6 +285,14 @@ export interface SSEEvent {
   type: string
   content: string
   timestamp?: string
+  /**
+   * 事件来源(仅 response/artifact 关心):
+   *   'live-reply' = 当前对话回复(与 /chat 流内容一致,可就地更新 thinking 气泡)
+   *   'task-report'= 后台子任务完成的独立汇报,必须作为新气泡追加
+   *   'task-error' = 子任务异常报错,新气泡追加
+   *   undefined    = 旧协议或非文本事件(progress/subtask/...) — 默认按 live-reply 行为兜底
+   */
+  source?: string
   _seq?: number  // useSSE 打的单调递增序号,供消费方去重(events 数组封顶后下标不可靠)
 }
 

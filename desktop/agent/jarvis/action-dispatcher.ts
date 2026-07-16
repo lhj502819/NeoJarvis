@@ -263,14 +263,14 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
         // 优先用确定性挑出的成品;若无,兜底看 LLM 是否手动 render_preview 过
         const artifact = autoArtifact || consumeArtifact(userId)
         const artifactId = artifact ? await saveArtifact(userId, artifact, taskId) : undefined
-        broadcast('response', report, userId)
-        if (artifact) broadcast('artifact', JSON.stringify(artifact), userId)
+        broadcast('response', report, userId, 'task-report')
+        if (artifact) broadcast('artifact', JSON.stringify(artifact), userId, 'task-report')
         await addToBuffer(userId, 'jarvis', report, artifactId)
       }
     }
   })().catch(err => {
     if (err?.message?.includes('取消')) return
-    broadcast('response', `[错误] 任务执行异常: ${err instanceof Error ? err.message : String(err)}`, userId)
+    broadcast('response', `[错误] 任务执行异常: ${err instanceof Error ? err.message : String(err)}`, userId, 'task-error')
   })
 }
 

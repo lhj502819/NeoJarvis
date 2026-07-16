@@ -203,10 +203,11 @@ async function executeThink(userId: string, session: UserSession, mergedMessage:
 
   const activeWriters = session.writers.filter(w => !w.closed)
 
-  // 同时发本次 /chat 连接(低延迟)与全局 /events(刷新后其他页面可 catch-up)
+  // 同时发本次 /chat 连接(低延迟)与全局 /events(刷新后其他页面可 catch-up)。
+  // source='live-reply' 告诉前端:这是当前对话回复,允许直接更新 thinking 气泡。
   const emit = (type: string, content: string) => {
     broadcastToWriters(activeWriters, type, content)
-    broadcast(type, content, userId)
+    broadcast(type, content, userId, 'live-reply')
   }
 
   if (activeWriters.length > 1) {

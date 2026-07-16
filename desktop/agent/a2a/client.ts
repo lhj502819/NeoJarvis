@@ -106,12 +106,14 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
 
 ## 沟通能力
 
-你有以下沟通工具（agent-comms MCP）：
-- message_jarvis: 给管家 Jarvis 发消息（type: question | progress | deliverable | blocked）
-- message_peer: 给并行协作的其他 Agent 发消息
+你有以下沟通工具（agent-comms MCP）:
+- message_jarvis: 给管家 Jarvis 发消息(type: question | progress | deliverable | blocked)
+- message_peer: 给并行协作的其他 Agent 发消息(异步、非阻塞,消息进对方收件箱)
+- check_inbox: 查看自己的收件箱(Jarvis 的追加指令、其他 Agent 的消息/回复)。建议每几轮工作后主动查一次
 - list_peers: 查看和你并行工作的其他 Agent
 
-何时沟通、是否沟通，由你自主判断。判断原则：信息不足时问，有风险时确认，能独立完成时直接交付。`
+何时沟通、是否沟通,由你自主判断。判断原则:信息不足时问,有风险时确认,能独立完成时直接交付。
+message_peer 发出去后你不用等,继续干活即可;等对方回复到了,在下一轮工作前 check_inbox 看到就行。`
 
   const agentName = recipe?.name || recipeId
   const systemPrompt = recipe?.systemPrompt || adhocPrompt
