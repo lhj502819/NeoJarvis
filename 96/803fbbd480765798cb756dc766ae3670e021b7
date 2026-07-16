@@ -1,0 +1,33 @@
+server/src/main/java/com/jarvis/domain/ConversationRow.java
+  s_03d1fe9e2be4df::t_cc1233e8af6298 7-10,13
+desktop/agent/jarvis/brain.ts
+  s_03d1fe9e2be4df::t_f3cef0ffedbab4 17
+  s_03d1fe9e2be4df::t_997dcf5c710b8d 76-81
+  s_03d1fe9e2be4df::t_cb2ef93b77ddc5 133-134
+server/src/test/java/com/jarvis/web/ConversationControllerTest.java
+  s_03d1fe9e2be4df::t_843a4511e1531e 43,45
+server/src/main/java/com/jarvis/service/ConversationService.java
+  s_03d1fe9e2be4df::t_31c22cde3700d3 133
+server/src/main/java/com/jarvis/domain/ConversationMessage.java
+  s_03d1fe9e2be4df::t_47dc068f305c98 9-10,14
+server/src/main/java/com/jarvis/mapper/ConversationMapper.java
+  s_03d1fe9e2be4df::t_cefef187cf7f37 55,59
+desktop/agent/jarvis/tool-trace-context.ts
+  s_03d1fe9e2be4df::t_a3146e3ab7a021 1-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "96803fbbd480765798cb756dc766ae3670e021b7",
+  "prompts": {},
+  "sessions": {
+    "s_03d1fe9e2be4df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ef2e7e9-02b4-40bb-8fe3-5e753ec484aa",
+        "model": "Claude-Opus-4.7-hq"
+      },
+      "human_author": "lihongjian.34 <lihongjian.34@jd.com>"
+    }
+  }
+}
