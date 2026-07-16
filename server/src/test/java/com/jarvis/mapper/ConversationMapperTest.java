@@ -60,7 +60,8 @@ class ConversationMapperTest {
 
     @Test
     void insertMessageStoresEpochMillisTimestampAndImageIds() {
-        mapper.insertMessage("sess-new", "u1", "user", "hello", 1736900000000L, null, "[\"i1\"]");
+        long id = mapper.insertMessage("sess-new", "u1", "user", "hello", 1736900000000L, null, "[\"i1\"]");
+        assertThat(id).isPositive();
         var rows = mapper.listMessages("sess-new");
         assertThat(rows).hasSize(1);
         assertThat(rows.get(0).content()).isEqualTo("hello");

@@ -13,6 +13,7 @@ import { getPinnedArtifactId } from './orchestrator.js'
 import { getArtifactContent } from '../shared/artifact-content.js'
 import type { ChatImage } from '../shared/types.js'
 import { listSkillsForUser } from './skill-prefs.js'
+import { recordToolTrace, type ToolTraceInput } from '../shared/tool-trace.js'
 
 export { parseAction } from './action-dispatcher.js'
 export { addToBuffer } from './conversation.js'
@@ -136,14 +137,20 @@ ${userMessage}`
   }
   // agent 模式:LLM 在 loop 内自主调工具(create_task 等),文字实时流式给前端。
   // rawLlmCall 跑完整 agent loop 并返回最终文字,不再需要 parseAction/dispatchAction。
-  const llmResponse = await llmCall(userId, contextualPrompt, onDelta, ac, images)
+  // toolTraces 收集本次调用里所有 tool_use/tool_result 配对(不含 messageId),稍后回填
+  const toolTraces: Array<Omit<ToolTraceInput, 'scope' | 'messageId'>> = []
+  const llmResponse = await llmCall(userId, contextualPrompt, onDelta, ac, images, toolTraces)
   console.log(`[perf] llmCall: ${Date.now() - t2}ms`)
   console.log(`[perf] total think(): ${Date.now() - t0}ms`)
 
   const finalResponse = llmResponse
   const artifact = consumeArtifact(userId)
   const artifactId = artifact ? await saveArtifact(userId, artifact) : undefined
-  await addToBuffer(userId, 'jarvis', finalResponse, artifactId)
+  const messageId = await addToBuffer(userId, 'jarvis', finalResponse, artifactId)
+  // 拿到 messageId 后回填 traces 的归属并逐条 POST(失败不阻塞主流程,内部 catch)
+  for (const t of toolTraces) {
+    recordToolTrace(userId, { ...t, scope: 'jarvis', messageId })
+  }
   await saveConversation(userId, userMessage, finalResponse)
   return { response: finalResponse, artifact: artifact || undefined }
 }

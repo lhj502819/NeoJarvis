@@ -19,10 +19,12 @@ const MAX_BUFFER_TURNS = 20
  */
 const SERVER_URL = process.env.JARVIS_SERVER_URL || 'http://localhost:8080'
 
-export async function addToBuffer(userId: string, role: 'user' | 'jarvis', content: string, artifactId?: string, imageIds?: string[]) {
+export async function addToBuffer(userId: string, role: 'user' | 'jarvis', content: string, artifactId?: string, imageIds?: string[]): Promise<number> {
   // POST /api/conversation/messages appends to the user's latest session (server picks/creates it).
   // Undefined artifactId/imageIds are dropped by JSON.stringify → Java stores NULL (mirrors old SQL).
-  await serverPost(userId, '/api/conversation/messages', { role, content, artifactId, imageIds })
+  // 返回自增主键 id,供工具调用 traces 按 message_id 关联使用。
+  const { id } = await serverPost<{ id: number }>(userId, '/api/conversation/messages', { role, content, artifactId, imageIds })
+  return id
 }
 
 // 存用户发来的图片(base64),返回 id 列表,供挂到消息 image_ids

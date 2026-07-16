@@ -4,6 +4,7 @@ import com.jarvis.auth.UserContext;
 import com.jarvis.domain.ChatImage;
 import com.jarvis.domain.ChatImagesResponse;
 import com.jarvis.domain.ConversationMessage;
+import com.jarvis.domain.MessageIdResponse;
 import com.jarvis.domain.OkResponse;
 import com.jarvis.domain.SaveChatImagesRequest;
 import com.jarvis.domain.SaveConversationRequest;
@@ -59,12 +60,12 @@ class ConversationController {
                 .body(bytes);
     }
 
-    /** POST /api/conversation/messages — append one message to the latest session (ports addToBuffer). */
+    /** POST /api/conversation/messages — append one message to the latest session (ports addToBuffer). Returns the auto-generated id. */
     @PostMapping("/conversation/messages")
-    OkResponse addMessage(@Valid @RequestBody SaveMessageRequest request) {
-        conversationService.addToBuffer(UserContext.currentUserId(), request.role(),
+    MessageIdResponse addMessage(@Valid @RequestBody SaveMessageRequest request) {
+        long id = conversationService.addToBuffer(UserContext.currentUserId(), request.role(),
                 request.content(), request.artifactId(), request.imageIds());
-        return new OkResponse(true);
+        return new MessageIdResponse(id);
     }
 
     /** POST /api/conversation — persist a user↔Jarvis exchange as a message pair (ports saveConversation). */

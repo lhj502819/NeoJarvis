@@ -58,16 +58,19 @@ public class ConversationService {
      * newest session or creates one, stores the message with a BIGINT epoch-millis
      * {@code timestamp}, then bumps the session's ISO-8601 updated_at. An absent/empty
      * {@code imageIds} stores NULL (mirrors TS {@code imageIds && length ? stringify : null}).
+     *
+     * <p>返回自增主键 {@code id},供工具调用 traces 按 message_id 关联使用。
      */
     @Transactional
-    public void addToBuffer(String userId, String role, String content,
+    public long addToBuffer(String userId, String role, String content,
             String artifactId, List<String> imageIds) {
         String sessionId = getOrCreateSession(userId);
         String imageIdsJson = (imageIds != null && !imageIds.isEmpty()) ? Json.stringify(imageIds) : null;
-        conversationMapper.insertMessage(sessionId, userId, role, content,
+        long messageId = conversationMapper.insertMessage(sessionId, userId, role, content,
                 System.currentTimeMillis(), artifactId, imageIdsJson);
         conversationMapper.touchSession(sessionId, Instant.now().toString());
-        log.debug("add_to_buffer userId={} role={} sessionId={}", userId, role, sessionId);
+        log.debug("add_to_buffer userId={} role={} sessionId={} messageId={}", userId, role, sessionId, messageId);
+        return messageId;
     }
 
     /**

@@ -13,6 +13,13 @@ import { buildUserEnv } from '../shared/user-env.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
 import { buildUserMcpServers } from '../shared/user-mcp.js'
 import { getEnabledHubSkills, PIPELINE_SKILLS } from './skill-prefs.js'
+import {
+  flattenResultText,
+  isToolUseBlock,
+  extractToolResults,
+  type PendingToolCall,
+  type ToolTraceInput,
+} from '../shared/tool-trace.js'
 
 const CLAUDE_PATH = execSync('which claude', { encoding: 'utf-8' }).trim()
 
@@ -31,13 +38,20 @@ export function withBrainLock<T>(userId: string, fn: () => Promise<T>): Promise<
   return prev.then(fn).finally(() => resolve!())
 }
 
-export async function llmCall(userId: string, prompt: string, onDelta?: (text: string) => void, abortController?: AbortController, images?: ChatImage[]): Promise<string> {
+export async function llmCall(
+  userId: string,
+  prompt: string,
+  onDelta?: (text: string) => void,
+  abortController?: AbortController,
+  images?: ChatImage[],
+  toolTraces?: Array<Omit<ToolTraceInput, 'scope' | 'messageId'>>,
+): Promise<string> {
   const systemPrompt = await buildSystemPrompt(userId)
   const mcpServers: Record<string, McpServerConfig> = {
     'jarvis-system': createJarvisTools(userId),
     ...(await buildUserMcpServers(userId)),
   }
-  return rawLlmCall(userId, systemPrompt, prompt, onDelta, mcpServers, abortController, images)
+  return rawLlmCall(userId, systemPrompt, prompt, onDelta, mcpServers, abortController, images, toolTraces)
 }
 
 // 有图片时,把纯文本 prompt 换成一条带 image content block 的 SDKUserMessage。
@@ -62,7 +76,23 @@ function buildImagePrompt(text: string, images: ChatImage[]): AsyncIterable<SDKU
   })()
 }
 
-export async function rawLlmCall(userId: string, systemPrompt: string, prompt: string, onDelta?: (text: string) => void, mcpServers?: Record<string, McpServerConfig>, abortController?: AbortController, images?: ChatImage[]): Promise<string> {
+/**
+ * Jarvis 本体调用 LLM。返回值:纯文本 result(第一次调用给 finalResponse)。
+ *
+ * 若传了 {@code toolTraces} 数组,rawLlmCall 会把本次 query 里所有 tool_use/tool_result
+ * 配对好的 traces 追加进去(**不包含 messageId** —— 那需要调用方 addToBuffer 之后回填)。
+ * 数组顺序按工具调用完成时序,call_index 从 0 递增。
+ */
+export async function rawLlmCall(
+  userId: string,
+  systemPrompt: string,
+  prompt: string,
+  onDelta?: (text: string) => void,
+  mcpServers?: Record<string, McpServerConfig>,
+  abortController?: AbortController,
+  images?: ChatImage[],
+  toolTraces?: Array<Omit<ToolTraceInput, 'scope' | 'messageId'>>,
+): Promise<string> {
   const t0 = Date.now()
   debug('rawLlmCall start, prompt length:', prompt.length, images?.length ? `+${images.length} images` : '')
   console.log(`[perf] rawLlmCall start, system prompt: ${systemPrompt.length} chars, user prompt: ${prompt.length} chars`)
@@ -70,6 +100,9 @@ export async function rawLlmCall(userId: string, systemPrompt: string, prompt: s
   const enabledSkills = [...PIPELINE_SKILLS, ...(await getEnabledHubSkills(userId))]
   let finalResult = ''
   let firstTokenTime = 0
+  // 工具调用采集:tool_use 时暂存,tool_result 到达时配对
+  const pendingCalls = new Map<string, PendingToolCall>()
+  let callIdxGlobal = 0  // Jarvis 本体是单轮 query,call_index 全局递增(不像小弟有 turn 概念)
   for await (const message of query({
     prompt: promptInput,
     options: {
@@ -111,14 +144,51 @@ export async function rawLlmCall(userId: string, systemPrompt: string, prompt: s
 
     debug('msg:', message.type, (message as any).subtype || '', (message as any).message?.content?.map((b: any) => b.type).join(',') || '')
     if (message.type === 'assistant' && message.message?.content) {
+      const assistantAt = new Date().toISOString()
       for (const block of message.message.content) {
-        if ('type' in block && block.type === 'tool_use') {
-          const toolName = (block as any).name || 'tool'
+        if (isToolUseBlock(block)) {
+          const toolName = block.name
           debug('tool_use:', toolName)
           broadcast('progress', `🔧 Jarvis 正在使用 ${toolName}...`, userId)
+          if (toolTraces) {
+            pendingCalls.set(block.id, {
+              toolCallId: block.id,
+              toolName,
+              args: block.input,
+              callIndex: callIdxGlobal++,
+              startedAt: assistantAt,
+            })
+          }
         }
       }
     }
+
+    // SDK 用 type='user' 消息把 tool_result 送回来(Jarvis 本体侧同小弟一样处理)。
+    if (toolTraces && message.type === 'user' && (message as any).message?.content) {
+      const endedAt = new Date().toISOString()
+      const results = extractToolResults(message)
+      for (const tr of results) {
+        const pending = pendingCalls.get(tr.toolUseId)
+        if (!pending) continue
+        pendingCalls.delete(tr.toolUseId)
+        const resultText = flattenResultText(tr.content)
+        // 只放到 traces 数组,messageId 由 brain.ts 拿到 addToBuffer 的返回值后回填并 POST
+        toolTraces.push({
+          subtaskId: null,
+          turnIndex: null,
+          callIndex: pending.callIndex,
+          toolCallId: pending.toolCallId,
+          toolName: pending.toolName,
+          args: pending.args,
+          result: tr.content,
+          resultText,
+          isError: tr.isError,
+          startedAt: pending.startedAt,
+          endedAt,
+        })
+      }
+    }
+
     if (message.type === 'result') {
       debug('result:', (message as any).subtype, 'text length:', finalResult.length)
       if (message.subtype === 'success') {

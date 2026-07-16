@@ -1,6 +1,8 @@
 package com.jarvis.web;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
@@ -98,11 +100,14 @@ class ConversationControllerTest {
     }
 
     @Test
-    void addMessagePersistsAndReturnsOk() throws Exception {
+    void addMessagePersistsAndReturnsId() throws Exception {
+        when(conversationService.addToBuffer(anyString(), anyString(), anyString(), any(), any()))
+                .thenReturn(42L);
+
         mockMvc.perform(post("/api/conversation/messages").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\":\"user\",\"content\":\"hi\",\"imageIds\":[\"i1\"]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.ok").value(true));
+                .andExpect(jsonPath("$.id").value(42));
 
         verify(conversationService).addToBuffer("local", "user", "hi", null, List.of("i1"));
     }

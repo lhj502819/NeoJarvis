@@ -16,6 +16,13 @@ import { getUserWorkspace } from '../shared/user-workspace.js'
 import { buildUserMcpServers } from '../shared/user-mcp.js'
 import { createAgentCommsMcp } from './agent-comms.js'
 import { getDisabledSkills, getEnabledHubSkills } from '../jarvis/skill-prefs.js'
+import {
+  recordToolTrace,
+  flattenResultText,
+  isToolUseBlock,
+  extractToolResults,
+  type PendingToolCall,
+} from '../shared/tool-trace.js'
 
 const DEBUG = process.env.JARVIS_DEBUG === '1' || process.argv.includes('--debug')
 function debug(...args: any[]) {
@@ -221,6 +228,8 @@ message_peer 发出去后你不用等,继续干活即可;等对方回复到了,�
     const progressLog: string[] = []
     let apiError = false
     writtenFiles = []
+    // 工具调用采集:tool_use 时暂存,tool_result 到达时配对入库
+    const pendingCalls = new Map<string, PendingToolCall>()
 
     // 注册到 bus — handler 处理 Jarvis/其他 agent 发来的消息
     bus.register(subtaskId, `${agentName}#${subtaskId.slice(0, 6)}`, async (msg) => {
@@ -256,6 +265,7 @@ message_peer 发出去后你不用等,继续干活即可;等对方回复到了,�
           turnCount++
           totalTurns++
           let turnText = ''
+          let callIdxInTurn = 0  // 同一回合内 tool_use 的顺序
 
           for (const block of message.message.content) {
             if ('text' in block && block.text) {
@@ -264,15 +274,23 @@ message_peer 发出去后你不用等,继续干活即可;等对方回复到了,�
               const snippet = block.text.slice(0, 60).replace(/\n/g, ' ')
               progressLog.push(`[${turnCount}] ${snippet}`)
             }
-            if ('type' in block && block.type === 'tool_use') {
-              const toolName = (block as any).name || 'tool'
+            if (isToolUseBlock(block)) {
+              const toolName = block.name
               // 抓写文件动作,供任务完成时确定性挑成品预览
-              const fp = (block as any).input?.file_path
+              const fp = (block.input as any)?.file_path
               if (typeof fp === 'string' && ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(toolName)) {
                 writtenFiles.push(fp)
               }
               turnText += `\n🔧 ${toolName}`
               progressLog.push(`[${turnCount}] 🔧 ${toolName}`)
+              // 暂存,等 tool_result 到达时配对
+              pendingCalls.set(block.id, {
+                toolCallId: block.id,
+                toolName,
+                args: block.input,
+                callIndex: callIdxInTurn++,
+                startedAt: turnStart,
+              })
             }
           }
 
@@ -290,6 +308,33 @@ message_peer 发出去后你不用等,继续干活即可;等对方回复到了,�
               turnCount,
               currentTool: toolMatch ? toolMatch[1] : undefined,
               currentAction: lastLog.replace(/^\[\d+\] /, '').slice(0, 80),
+            })
+          }
+        }
+
+        // SDK 用 type='user' 消息把 tool_result 送回来(下一轮 LLM 调用的输入)。
+        // 每个 tool_result block 通过 tool_use_id 配对之前 pending 的 tool_use。
+        if (message.type === 'user' && (message as any).message?.content) {
+          const endedAt = new Date().toISOString()
+          const results = extractToolResults(message)
+          for (const tr of results) {
+            const pending = pendingCalls.get(tr.toolUseId)
+            if (!pending) continue  // 找不到配对(不太可能,但兜底)
+            pendingCalls.delete(tr.toolUseId)
+            const resultText = flattenResultText(tr.content)
+            recordToolTrace(userId, {
+              scope: 'subtask',
+              subtaskId,
+              turnIndex: totalTurns,
+              callIndex: pending.callIndex,
+              toolCallId: pending.toolCallId,
+              toolName: pending.toolName,
+              args: pending.args,
+              result: tr.content,
+              resultText,
+              isError: tr.isError,
+              startedAt: pending.startedAt,
+              endedAt,
             })
           }
         }

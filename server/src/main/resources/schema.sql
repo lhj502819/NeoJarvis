@@ -260,3 +260,34 @@ CREATE TABLE IF NOT EXISTS jarvis_mcp_prefs (
   mcp_name VARCHAR(191) NOT NULL,
   PRIMARY KEY (user_id, mcp_name)
 );
+
+-- ═══ 工具调用完整历史(Jarvis 本体 + 小弟 两端共用) ═══
+-- 参考 Letta 的做法:tool_call/tool_result 作为一等公民存下来,LLM 下一轮能看到"我上一步调了什么、返回了什么"。
+-- 一行 = 一次工具调用(tool_use)+ 匹配的返回(tool_result),用 tool_call_id 配对同一批 Anthropic API 事务。
+-- scope 二选一:'jarvis' 挂在 user_jarvis_messages(通过 message_id) / 'subtask' 挂在子任务(通过 subtask_id + turn_index)。
+-- 截断策略:入库 50K(在 ToolTraceService 里做);进 LLM 上下文时二次压缩到 5K(在 TS conversation.ts 组 prompt 时)。
+CREATE TABLE IF NOT EXISTS jarvis_tool_traces (
+  id             VARCHAR(191) PRIMARY KEY,
+  user_id        VARCHAR(191) NOT NULL,
+  scope          VARCHAR(16)  NOT NULL,
+  message_id     BIGINT,
+  subtask_id     VARCHAR(191),
+  turn_index     INT,
+  call_index     INT NOT NULL,
+  tool_call_id   VARCHAR(191) NOT NULL,
+  tool_name      VARCHAR(191) NOT NULL,
+  args           JSONB NOT NULL,
+  result         JSONB,
+  result_text    TEXT,
+  is_error       BOOLEAN NOT NULL DEFAULT FALSE,
+  bytes_original INT,
+  truncated      BOOLEAN NOT NULL DEFAULT FALSE,
+  started_at     TIMESTAMPTZ NOT NULL,
+  ended_at       TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK ((scope='jarvis'  AND message_id IS NOT NULL AND subtask_id IS NULL)
+      OR (scope='subtask' AND subtask_id IS NOT NULL AND message_id IS NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_tt_message ON jarvis_tool_traces(message_id) WHERE scope='jarvis';
+CREATE INDEX IF NOT EXISTS idx_tt_subtask ON jarvis_tool_traces(subtask_id, turn_index, call_index) WHERE scope='subtask';
+CREATE INDEX IF NOT EXISTS idx_tt_user_created ON jarvis_tool_traces(user_id, created_at DESC);

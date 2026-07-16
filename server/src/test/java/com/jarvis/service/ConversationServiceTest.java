@@ -42,11 +42,15 @@ class ConversationServiceTest {
     void addToBufferReusesLatestSessionAndBumpsIt() {
         // Given a user with an existing session
         when(conversationMapper.findLatestSessionId("u1")).thenReturn(Optional.of("sess-1"));
+        // insertMessage 现在返回 SERIAL id(long)
+        when(conversationMapper.insertMessage(anyString(), anyString(), anyString(), anyString(),
+                anyLong(), any(), any())).thenReturn(42L);
 
         // When
-        service.addToBuffer("u1", "user", "hello", null, null);
+        long id = service.addToBuffer("u1", "user", "hello", null, null);
 
-        // Then: no new session, message stored on the reused one, session touched
+        // Then: no new session, message stored on the reused one, session touched, returned id
+        assertThat(id).isEqualTo(42L);
         verify(conversationMapper, never()).insertSession(anyString(), anyString(), anyString(), anyString());
         verify(conversationMapper).insertMessage(eq("sess-1"), eq("u1"), eq("user"), eq("hello"),
                 anyLong(), isNull(), isNull());
@@ -57,6 +61,8 @@ class ConversationServiceTest {
     void addToBufferCreatesSessionWhenNoneExists() {
         // Given no session for the user
         when(conversationMapper.findLatestSessionId("u1")).thenReturn(Optional.empty());
+        when(conversationMapper.insertMessage(anyString(), anyString(), anyString(), anyString(),
+                anyLong(), any(), any())).thenReturn(1L);
 
         // When
         service.addToBuffer("u1", "jarvis", "hi", null, null);
@@ -71,6 +77,8 @@ class ConversationServiceTest {
     @Test
     void addToBufferSerialisesImageIdsButStoresNullForEmpty() {
         when(conversationMapper.findLatestSessionId("u1")).thenReturn(Optional.of("s"));
+        when(conversationMapper.insertMessage(anyString(), anyString(), anyString(), anyString(),
+                anyLong(), any(), any())).thenReturn(1L);
 
         // non-empty -> JSON array
         service.addToBuffer("u1", "user", "m", "art-1", List.of("i1", "i2"));
@@ -86,6 +94,8 @@ class ConversationServiceTest {
     @Test
     void saveConversationWritesUserThenJarvis() {
         when(conversationMapper.findLatestSessionId("u1")).thenReturn(Optional.of("s"));
+        when(conversationMapper.insertMessage(anyString(), anyString(), anyString(), anyString(),
+                anyLong(), any(), any())).thenReturn(1L);
 
         service.saveConversation("u1", "the question", "the answer");
 

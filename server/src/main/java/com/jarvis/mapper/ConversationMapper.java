@@ -38,12 +38,15 @@ public interface ConversationMapper {
     /**
      * Append one message (ports TS addToBuffer). {@code timestamp} is BIGINT epoch-millis
      * (quoted — reserved word); {@code artifactId}/{@code imageIds} are nullable.
+     *
+     * <p>PG 的 {@code RETURNING id} 让 INSERT 直接吐自增主键,MyBatis @Select 用来接
+     * 单值返回。用于工具调用 traces 后续按 message_id 关联。
      */
-    @Insert("INSERT INTO user_jarvis_messages "
+    @Select("INSERT INTO user_jarvis_messages "
             + "(session_id, user_id, role, content, \"timestamp\", artifact_id, image_ids) "
             + "VALUES (#{sessionId}, #{userId}, #{role}, #{content}, #{timestamp}, "
-            + "#{artifactId}, #{imageIds})")
-    void insertMessage(@Param("sessionId") String sessionId, @Param("userId") String userId,
+            + "#{artifactId}, #{imageIds}) RETURNING id")
+    long insertMessage(@Param("sessionId") String sessionId, @Param("userId") String userId,
             @Param("role") String role, @Param("content") String content,
             @Param("timestamp") long timestamp, @Param("artifactId") String artifactId,
             @Param("imageIds") String imageIds);
