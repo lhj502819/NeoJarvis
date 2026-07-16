@@ -1,0 +1,65 @@
+server/src/main/java/com/jarvis/domain/MessageIdResponse.java
+  s_03d1fe9e2be4df::t_62e387878b8b96 1-8
+server/src/main/java/com/jarvis/domain/ToolTraceRow.java
+  s_03d1fe9e2be4df::t_432e53bb1327fd 1-37
+server/src/main/java/com/jarvis/mapper/ToolTraceMapper.java
+  s_03d1fe9e2be4df::t_8548877987bd2d 1-63
+server/src/main/resources/schema.sql
+  s_03d1fe9e2be4df::t_ee132ba8acf753 263-293
+server/src/main/java/com/jarvis/service/ToolTraceService.java
+  s_03d1fe9e2be4df::t_4b352ae3b7a677 1-89
+server/src/test/java/com/jarvis/web/ConversationControllerTest.java
+  s_03d1fe9e2be4df::t_49b5f84067cf0c 3,5
+  s_03d1fe9e2be4df::t_d5b2eab5c798e6 103-106,110
+server/src/main/java/com/jarvis/web/ConversationController.java
+  s_03d1fe9e2be4df::t_55200eb48e20ca 63,65-66,68
+  s_03d1fe9e2be4df::t_8f9fa070590de2 7
+server/src/main/java/com/jarvis/mapper/ConversationMapper.java
+  s_03d1fe9e2be4df::t_df4007cf99b8bc 41-43,45,48-49
+desktop/agent/jarvis/conversation.ts
+  s_03d1fe9e2be4df::t_aef608716bf5d1 22,25-27
+server/src/main/java/com/jarvis/service/ConversationService.java
+  s_03d1fe9e2be4df::t_980526fba8ddeb 61-62,65,69,72-73
+desktop/agent/jarvis/llm.ts
+  s_03d1fe9e2be4df::t_eaca7bb65dd135 79-95,103-105
+  s_03d1fe9e2be4df::t_9fdaf0af003b2f 16-22
+  s_03d1fe9e2be4df::t_485221b55e2c06 147,149-150,153-161,165-191
+  s_03d1fe9e2be4df::t_8655daf3f23e9a 41-48,54
+desktop/agent/a2a/client.ts
+  s_03d1fe9e2be4df::t_a10ed494fea7cb 231-232,268,277-278,280,286-293,315-337
+  s_03d1fe9e2be4df::t_eb3f3dc728dbc9 19-25
+desktop/agent/jarvis/brain.ts
+  s_03d1fe9e2be4df::t_8c8121f8d89ce0 16
+  s_03d1fe9e2be4df::t_ec65918587bf3f 140-142,149-153
+server/src/main/java/com/jarvis/web/ToolTraceController.java
+  s_03d1fe9e2be4df::t_23bff50336f5ff 1-55
+server/src/test/java/com/jarvis/mapper/ToolTraceMapperTest.java
+  s_03d1fe9e2be4df::t_d868ab8fbf5345 1-114
+server/src/test/java/com/jarvis/service/ConversationServiceTest.java
+  s_03d1fe9e2be4df::t_112bac0301096e 45-47,50,52-53,64-65,80-81,97-98
+server/src/main/java/com/jarvis/domain/RecordToolTraceRequest.java
+  s_03d1fe9e2be4df::t_2a34bdb5fa104e 1-30
+server/src/test/java/com/jarvis/service/ToolTraceServiceTest.java
+  s_03d1fe9e2be4df::t_eb73eda41300bb 10,14,20,25-56,66-74,87-90,102-106,117-120,122-140
+  s_03d1fe9e2be4df::t_adfbae5a7abbe9 1-9,11-13,15-19,21-24,57-65,75-86,91-101,107-116,121,141-142
+desktop/agent/shared/tool-trace.ts
+  s_03d1fe9e2be4df::t_7186696282e473 1-151
+server/src/test/java/com/jarvis/mapper/ConversationMapperTest.java
+  s_03d1fe9e2be4df::t_1c64060b4ba31d 63-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "c1547c99f71007cea4b414a80e0e9503298db277",
+  "prompts": {},
+  "sessions": {
+    "s_03d1fe9e2be4df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ef2e7e9-02b4-40bb-8fe3-5e753ec484aa",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "lihongjian.34 <lihongjian.34@jd.com>"
+    }
+  }
+}
