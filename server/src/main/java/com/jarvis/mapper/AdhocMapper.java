@@ -11,8 +11,8 @@ import org.apache.ibatis.annotations.Update;
 
 /**
  * Adhoc (temporary) agent aggregate access (ports src/a2a/adhoc.ts). Rows are keyed by
- * the unique {@code (user_id, domain)}. {@link #upsert} is a MySQL
- * {@code INSERT ... ON DUPLICATE KEY UPDATE}: a fresh domain inserts with
+ * the unique {@code (user_id, domain)}. {@link #upsert} is a PostgreSQL
+ * {@code INSERT ... ON CONFLICT ... DO UPDATE}: a fresh domain inserts with
  * {@code task_count = 1}, an existing one bumps {@code task_count} and refreshes the
  * task/topics/session fields (the promoted-guard and topic-merge are applied in the
  * service before the write, matching the TS branch logic).
@@ -48,12 +48,12 @@ public interface AdhocMapper {
             + "last_session_id, promoted, created_at, updated_at) "
             + "VALUES (#{id}, #{userId}, #{domain}, 1, #{lastTaskDescription}, #{cwd}, "
             + "#{topics}, #{lastSessionId}, 0, #{now}, #{now}) "
-            + "ON DUPLICATE KEY UPDATE "
-            + "task_count = task_count + 1, "
-            + "last_task_description = VALUES(last_task_description), "
-            + "topics = VALUES(topics), "
-            + "last_session_id = COALESCE(VALUES(last_session_id), last_session_id), "
-            + "updated_at = VALUES(updated_at)")
+            + "ON CONFLICT (user_id, domain) DO UPDATE SET "
+            + "task_count = jarvis_adhoc_agents.task_count + 1, "
+            + "last_task_description = EXCLUDED.last_task_description, "
+            + "topics = EXCLUDED.topics, "
+            + "last_session_id = COALESCE(EXCLUDED.last_session_id, jarvis_adhoc_agents.last_session_id), "
+            + "updated_at = EXCLUDED.updated_at")
     void upsert(@Param("id") String id, @Param("userId") String userId,
             @Param("domain") String domain,
             @Param("lastTaskDescription") String lastTaskDescription,

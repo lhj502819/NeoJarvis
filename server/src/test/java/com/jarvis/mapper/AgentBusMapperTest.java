@@ -128,7 +128,7 @@ class AgentBusMapperTest {
     private void insertMessage(String id, String threadId, String sender, String receiver,
             String role, String parts, String timestamp, String metadata) {
         jdbc.update("INSERT INTO jarvis_agent_messages "
-                + "(id, thread_id, sender, receiver, role, parts, `timestamp`, metadata) "
+                + "(id, thread_id, sender, receiver, role, parts, \"timestamp\", metadata) "
                 + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 id, threadId, sender, receiver, role, parts, timestamp, metadata);
     }

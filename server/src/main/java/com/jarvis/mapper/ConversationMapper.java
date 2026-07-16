@@ -40,7 +40,7 @@ public interface ConversationMapper {
      * (quoted — reserved word); {@code artifactId}/{@code imageIds} are nullable.
      */
     @Insert("INSERT INTO user_jarvis_messages "
-            + "(session_id, user_id, role, content, `timestamp`, artifact_id, image_ids) "
+            + "(session_id, user_id, role, content, \"timestamp\", artifact_id, image_ids) "
             + "VALUES (#{sessionId}, #{userId}, #{role}, #{content}, #{timestamp}, "
             + "#{artifactId}, #{imageIds})")
     void insertMessage(@Param("sessionId") String sessionId, @Param("userId") String userId,
@@ -49,17 +49,17 @@ public interface ConversationMapper {
             @Param("imageIds") String imageIds);
 
     @Select("""
-            SELECT role, content, `timestamp`,
+            SELECT role, content, "timestamp",
                    artifact_id AS artifactId, artifact_type AS artifactType,
                    artifact_title AS artifactTitle, image_ids AS imageIds
             FROM (
-              SELECT m.role, m.content, m.`timestamp`, m.artifact_id, m.image_ids,
+              SELECT m.role, m.content, m."timestamp", m.artifact_id, m.image_ids,
                      a.type AS artifact_type, a.title AS artifact_title
               FROM user_jarvis_messages m
               LEFT JOIN jarvis_artifacts a ON m.artifact_id = a.id
               WHERE m.session_id = #{sessionId}
-              ORDER BY m.`timestamp` DESC LIMIT 500
-            ) sub ORDER BY `timestamp` ASC
+              ORDER BY m."timestamp" DESC LIMIT 500
+            ) sub ORDER BY "timestamp" ASC
             """)
     List<ConversationRow> listMessages(@Param("sessionId") String sessionId);
 }

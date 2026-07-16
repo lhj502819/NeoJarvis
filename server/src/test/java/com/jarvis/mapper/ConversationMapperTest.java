@@ -98,7 +98,7 @@ class ConversationMapperTest {
             long timestamp, String artifactId, String imageIds) {
         jdbc.update("""
                 INSERT INTO user_jarvis_messages
-                  (session_id, user_id, role, content, `timestamp`, artifact_id, image_ids)
+                  (session_id, user_id, role, content, "timestamp", artifact_id, image_ids)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, sessionId, userId, role, content, timestamp, artifactId, imageIds);
     }

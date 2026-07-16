@@ -1,10 +1,8 @@
--- Jarvis v0.3 MySQL schema (ported from src/shared/db.ts, PG -> MySQL).
+-- Jarvis v0.3 PostgreSQL schema (ported from MySQL).
 -- Runs on every boot via spring.sql.init.mode=always, so it must be idempotent:
---   * CREATE TABLE IF NOT EXISTS  -> tables created once, preserved thereafter
---   * indexes defined INLINE (KEY / UNIQUE KEY) -> created with the table, never
---     re-issued (MySQL has no CREATE INDEX IF NOT EXISTS; inline keeps re-runs safe)
--- Index names are kept globally unique (H2 requires schema-global unique index names).
--- H2 (MySQL mode) ignores ENGINE/CHARSET clauses and honours INT AUTO_INCREMENT.
+--   * CREATE TABLE IF NOT EXISTS
+--   * indexes as separate CREATE INDEX IF NOT EXISTS (PG has no inline KEY like MySQL)
+-- Index names are globally unique across the schema.
 
 -- ═══ 用户表 ═══
 CREATE TABLE IF NOT EXISTS jarvis_users (
@@ -15,7 +13,7 @@ CREATE TABLE IF NOT EXISTS jarvis_users (
   salt TEXT NOT NULL,
   role VARCHAR(191) NOT NULL DEFAULT 'user',
   created_at TEXT NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- ═══ 任务表 ═══
 CREATE TABLE IF NOT EXISTS jarvis_tasks (
@@ -28,9 +26,9 @@ CREATE TABLE IF NOT EXISTS jarvis_tasks (
   result TEXT,
   error TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  KEY idx_jarvis_tasks_user (user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_tasks_user ON jarvis_tasks(user_id);
 
 -- ═══ 子任务表(含 5 处执行元信息补列) ═══
 CREATE TABLE IF NOT EXISTS jarvis_subtasks (
@@ -55,9 +53,9 @@ CREATE TABLE IF NOT EXISTS jarvis_subtasks (
   retry_count INT,
   tokens_input INT,
   tokens_output INT,
-  KEY idx_jarvis_subtasks_task (task_id),
   FOREIGN KEY (task_id) REFERENCES jarvis_tasks(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_subtasks_task ON jarvis_subtasks(task_id);
 
 -- ═══ Agent Recipe 表(含 skills 补列) ═══
 CREATE TABLE IF NOT EXISTS jarvis_recipes (
@@ -74,13 +72,13 @@ CREATE TABLE IF NOT EXISTS jarvis_recipes (
   created_by VARCHAR(191) NOT NULL DEFAULT 'jarvis',
   created_at TEXT NOT NULL,
   last_used_at TEXT,
-  skills VARCHAR(191) DEFAULT '[]',
-  KEY idx_jarvis_recipes_user (user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  skills VARCHAR(191) DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_recipes_user ON jarvis_recipes(user_id);
 
 -- ═══ Claude Code Session 登记簿 ═══
 CREATE TABLE IF NOT EXISTS jarvis_claude_sessions (
-  id INT AUTO_INCREMENT PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   user_id VARCHAR(191) NOT NULL,
   session_id VARCHAR(191) NOT NULL,
   recipe_id VARCHAR(191) NOT NULL,
@@ -89,10 +87,10 @@ CREATE TABLE IF NOT EXISTS jarvis_claude_sessions (
   topics VARCHAR(191) NOT NULL DEFAULT '[]',
   last_task_description TEXT NOT NULL,
   completed_at TEXT NOT NULL,
-  task_count INT NOT NULL DEFAULT 1,
-  KEY idx_jarvis_claude_sessions_user (user_id),
-  KEY idx_jarvis_claude_sessions_recipe (user_id, recipe_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  task_count INT NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_claude_sessions_user ON jarvis_claude_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_jarvis_claude_sessions_recipe ON jarvis_claude_sessions(user_id, recipe_id);
 
 -- ═══ Jarvis 人格状态表 ═══
 CREATE TABLE IF NOT EXISTS jarvis_state (
@@ -106,30 +104,30 @@ CREATE TABLE IF NOT EXISTS jarvis_state (
   last_day_reset TEXT NOT NULL,
   familiarity INT NOT NULL DEFAULT 50,
   trust_level INT NOT NULL DEFAULT 45
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- ═══ 用户↔Jarvis 会话表 ═══
 CREATE TABLE IF NOT EXISTS user_jarvis_sessions (
   id VARCHAR(191) PRIMARY KEY,
   user_id VARCHAR(191) NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  KEY idx_user_jarvis_sessions_user (user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_user_jarvis_sessions_user ON user_jarvis_sessions(user_id);
 
 -- ═══ 用户↔Jarvis 消息表(含 image_ids 补列) ═══
 CREATE TABLE IF NOT EXISTS user_jarvis_messages (
-  id INT AUTO_INCREMENT PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
   session_id VARCHAR(191) NOT NULL,
   user_id VARCHAR(191) NOT NULL,
   role VARCHAR(191) NOT NULL,
   content TEXT NOT NULL,
-  `timestamp` BIGINT NOT NULL,
+  "timestamp" BIGINT NOT NULL,
   artifact_id VARCHAR(191),
   image_ids TEXT,
-  KEY idx_user_jarvis_messages_session (session_id, `timestamp`),
   FOREIGN KEY (session_id) REFERENCES user_jarvis_sessions(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
+CREATE INDEX IF NOT EXISTS idx_user_jarvis_messages_session ON user_jarvis_messages(session_id, "timestamp");
 
 -- ═══ Artifact 制品表(含 version/updated_at/task_id/uri 补列) ═══
 -- content 允许 NULL:新数据把制品正文写到本机文件(uri 指向),content 存 NULL;
@@ -145,9 +143,9 @@ CREATE TABLE IF NOT EXISTS jarvis_artifacts (
   created_at BIGINT NOT NULL,
   version INT NOT NULL DEFAULT 1,
   updated_at BIGINT,
-  task_id VARCHAR(191),
-  KEY idx_jarvis_artifacts_user (user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  task_id VARCHAR(191)
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_artifacts_user ON jarvis_artifacts(user_id);
 
 -- ═══ Jarvis↔Agent 会话表 ═══
 CREATE TABLE IF NOT EXISTS jarvis_agent_threads (
@@ -155,9 +153,9 @@ CREATE TABLE IF NOT EXISTS jarvis_agent_threads (
   user_id VARCHAR(191) NOT NULL,
   participants VARCHAR(191) NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  KEY idx_jarvis_agent_threads_user (user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_agent_threads_user ON jarvis_agent_threads(user_id);
 
 -- ═══ Jarvis↔Agent 消息表 ═══
 CREATE TABLE IF NOT EXISTS jarvis_agent_messages (
@@ -167,11 +165,11 @@ CREATE TABLE IF NOT EXISTS jarvis_agent_messages (
   receiver VARCHAR(191) NOT NULL,
   role VARCHAR(191) NOT NULL,
   parts TEXT NOT NULL,
-  `timestamp` TEXT NOT NULL,
+  "timestamp" TEXT NOT NULL,
   metadata TEXT,
-  KEY idx_jarvis_agent_messages_thread (thread_id),
   FOREIGN KEY (thread_id) REFERENCES jarvis_agent_threads(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_agent_messages_thread ON jarvis_agent_messages(thread_id);
 
 -- ═══ 用户凭证表(BYOK) ═══
 CREATE TABLE IF NOT EXISTS jarvis_user_credentials (
@@ -184,9 +182,9 @@ CREATE TABLE IF NOT EXISTS jarvis_user_credentials (
   model TEXT NOT NULL,
   is_default INT NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  KEY idx_jarvis_user_credentials_user (user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_user_credentials_user ON jarvis_user_credentials(user_id);
 
 -- ═══ 用户 MCP servers 表 ═══
 CREATE TABLE IF NOT EXISTS jarvis_user_mcp_servers (
@@ -201,9 +199,9 @@ CREATE TABLE IF NOT EXISTS jarvis_user_mcp_servers (
   description TEXT,
   enabled INT NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  UNIQUE KEY idx_jarvis_user_mcp_name (user_id, name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jarvis_user_mcp_name ON jarvis_user_mcp_servers(user_id, name);
 
 -- ═══ 子任务执行回合表(完整轨迹) ═══
 CREATE TABLE IF NOT EXISTS jarvis_subtask_turns (
@@ -213,9 +211,9 @@ CREATE TABLE IF NOT EXISTS jarvis_subtask_turns (
   text TEXT NOT NULL,
   started_at TEXT NOT NULL,
   ended_at TEXT,
-  created_at TEXT NOT NULL,
-  KEY idx_jarvis_subtask_turns_subtask (subtask_id, turn_index)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_subtask_turns_subtask ON jarvis_subtask_turns(subtask_id, turn_index);
 
 -- ═══ 临时工(adhoc agent)聚合表 ═══
 CREATE TABLE IF NOT EXISTS jarvis_adhoc_agents (
@@ -229,9 +227,9 @@ CREATE TABLE IF NOT EXISTS jarvis_adhoc_agents (
   last_session_id TEXT,
   promoted INT NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  UNIQUE KEY idx_jarvis_adhoc_user_domain (user_id, domain)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jarvis_adhoc_user_domain ON jarvis_adhoc_agents(user_id, domain);
 
 -- ═══ 对话图片(v0.3 迁本机文件存储:uri 指向 ~/.jarvis/chat-images/{userId}/{id}.{ext}) ═══
 -- data 允许 NULL:新数据把图片写到本机文件(uri 指向),data 存 NULL;
@@ -243,16 +241,16 @@ CREATE TABLE IF NOT EXISTS jarvis_chat_images (
   media_type VARCHAR(191) NOT NULL,
   data TEXT,
   uri VARCHAR(512),
-  created_at BIGINT NOT NULL,
-  KEY idx_jarvis_chat_images_user (user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jarvis_chat_images_user ON jarvis_chat_images(user_id);
 
 -- ═══ 技能启禁偏好(黑名单:有行=该用户禁用了此 skill) ═══
 CREATE TABLE IF NOT EXISTS jarvis_skill_prefs (
   user_id VARCHAR(191) NOT NULL,
   skill_name VARCHAR(191) NOT NULL,
   PRIMARY KEY (user_id, skill_name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- ═══ MCP 启禁偏好(黑名单:有行=该用户禁用了此 MCP) ═══
 -- 完全对称 jarvis_skill_prefs;name 可为 hub 里读到的本机 MCP,或 jarvis_user_mcp_servers 里"自加"的。
@@ -261,4 +259,4 @@ CREATE TABLE IF NOT EXISTS jarvis_mcp_prefs (
   user_id VARCHAR(191) NOT NULL,
   mcp_name VARCHAR(191) NOT NULL,
   PRIMARY KEY (user_id, mcp_name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);

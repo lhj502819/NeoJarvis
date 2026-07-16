@@ -29,6 +29,7 @@ class AgentSessionMapperTest {
     @BeforeEach
     void setUp() {
         jdbc = new JdbcTemplate(dataSource);
+        jdbc.execute("DELETE FROM jarvis_claude_sessions");
         insertSession("u1", "sess-old", "2026-07-10T00:00:00Z");
         insertSession("u1", "sess-new", "2026-07-14T00:00:00Z");
         insertSession("u2", "sess-other", "2026-07-14T00:00:00Z");

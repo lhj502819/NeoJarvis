@@ -5,10 +5,10 @@ spring:
   application:
     name: jarvis-server
   datasource:
-    url: ${DATABASE_URL:jdbc:mysql://localhost:3306/jarvis?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
-    username: ${DATABASE_USER:root}
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/jarvis}
+    username: ${DATABASE_USER:lihongjian.34}
     password: ${DATABASE_PASSWORD:}
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    driver-class-name: org.postgresql.Driver
   sql:
     init:
       mode: always

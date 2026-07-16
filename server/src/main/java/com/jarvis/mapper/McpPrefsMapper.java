@@ -10,8 +10,8 @@ import org.apache.ibatis.annotations.Select;
 /**
  * MCP-preference blacklist (ports src/jarvis/mcp-prefs.ts). A row means the user disabled
  * that MCP. Structurally identical to {@link SkillPrefsMapper} — {@link #insertIgnore} uses
- * MySQL {@code INSERT IGNORE} so re-disabling an already-disabled MCP is idempotent
- * against the (user_id, mcp_name) composite primary key.
+ * PostgreSQL {@code INSERT ... ON CONFLICT DO NOTHING} so re-disabling an already-disabled
+ * MCP is idempotent against the (user_id, mcp_name) composite primary key.
  */
 @Mapper
 public interface McpPrefsMapper {
@@ -19,8 +19,8 @@ public interface McpPrefsMapper {
     @Select("SELECT mcp_name FROM jarvis_mcp_prefs WHERE user_id = #{userId}")
     List<String> listDisabled(@Param("userId") String userId);
 
-    @Insert("INSERT IGNORE INTO jarvis_mcp_prefs (user_id, mcp_name) "
-            + "VALUES (#{userId}, #{name})")
+    @Insert("INSERT INTO jarvis_mcp_prefs (user_id, mcp_name) "
+            + "VALUES (#{userId}, #{name}) ON CONFLICT DO NOTHING")
     void insertIgnore(@Param("userId") String userId, @Param("name") String name);
 
     @Delete("DELETE FROM jarvis_mcp_prefs WHERE user_id = #{userId} AND mcp_name = #{name}")

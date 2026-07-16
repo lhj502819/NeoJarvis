@@ -38,13 +38,13 @@ public interface AgentBusMapper {
 
     // ─── message reads ───
 
-    @Select("SELECT id, thread_id, sender, receiver, role, parts, `timestamp`, metadata "
-            + "FROM jarvis_agent_messages WHERE thread_id = #{threadId} ORDER BY `timestamp` ASC")
+    @Select("SELECT id, thread_id, sender, receiver, role, parts, \"timestamp\", metadata "
+            + "FROM jarvis_agent_messages WHERE thread_id = #{threadId} ORDER BY \"timestamp\" ASC")
     List<AgentMessageRow> listMessagesAsc(@Param("threadId") String threadId);
 
-    @Select("SELECT id, thread_id, sender, receiver, role, parts, `timestamp`, metadata "
+    @Select("SELECT id, thread_id, sender, receiver, role, parts, \"timestamp\", metadata "
             + "FROM jarvis_agent_messages WHERE thread_id = #{threadId} "
-            + "ORDER BY `timestamp` DESC LIMIT #{limit}")
+            + "ORDER BY \"timestamp\" DESC LIMIT #{limit}")
     List<AgentMessageRow> listRecentMessages(@Param("threadId") String threadId,
             @Param("limit") int limit);
 
@@ -65,7 +65,7 @@ public interface AgentBusMapper {
     void touchThread(@Param("id") String id, @Param("updatedAt") String updatedAt);
 
     @Insert("INSERT INTO jarvis_agent_messages "
-            + "(id, thread_id, sender, receiver, role, parts, `timestamp`, metadata) "
+            + "(id, thread_id, sender, receiver, role, parts, \"timestamp\", metadata) "
             + "VALUES (#{id}, #{threadId}, #{sender}, #{receiver}, #{role}, #{parts}, "
             + "#{timestamp}, #{metadata})")
     void insertMessage(@Param("id") String id, @Param("threadId") String threadId,
