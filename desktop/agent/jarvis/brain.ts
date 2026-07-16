@@ -14,6 +14,7 @@ import { getArtifactContent } from '../shared/artifact-content.js'
 import type { ChatImage } from '../shared/types.js'
 import { listSkillsForUser } from './skill-prefs.js'
 import { recordToolTrace, type ToolTraceInput } from '../shared/tool-trace.js'
+import { getRecentJarvisToolTraces, formatToolTracesForPrompt } from './tool-trace-context.js'
 
 export { parseAction } from './action-dispatcher.js'
 export { addToBuffer } from './conversation.js'
@@ -72,6 +73,12 @@ export async function think(userId: string, userMessage: string, onProgress?: (t
   const recentConvo = await getRecentConversation(userId)
   if (signal?.aborted) throw new Error('aborted')
 
+  // 拉 Jarvis 自己最近几轮的工具调用轨迹(create_task 拿到的 task_id 等),注入 prompt
+  // 让下一轮能看到"我上一步调了什么、返回了什么"。失败降级到空段落,不阻塞 think。
+  const toolTraceItems = await getRecentJarvisToolTraces(userId, 10)
+  if (signal?.aborted) throw new Error('aborted')
+  const toolTraceSection = formatToolTracesForPrompt(toolTraceItems)
+
   // Pinned artifact context
   let pinnedContext = ''
   const pinnedId = getPinnedArtifactId(userId)
@@ -122,6 +129,8 @@ ${enabledSkillLines || '(暂无已启用技能)'}
 ${memories ? `## 关于 Sir 的记忆\n${memories}\n` : ''}
 ## 本次会话对话记录
 ${recentConvo || '(刚开始对话)'}
+
+${toolTraceSection}
 
 ## Sir 最新消息
 ${userMessage}`

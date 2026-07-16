@@ -40,9 +40,9 @@ class ConversationControllerTest {
 
     @Test
     void conversationOmitsNullArtifactAndImageIds() throws Exception {
-        var withArtifact = new ConversationMessage("jarvis", "hi", 2000L,
+        var withArtifact = new ConversationMessage(2L, "jarvis", "hi", 2000L,
                 new ArtifactRef("a1", "code", "Snippet"), null);
-        var plain = new ConversationMessage("user", "yo", 1000L, null, null);
+        var plain = new ConversationMessage(1L, "user", "yo", 1000L, null, null);
         when(conversationService.getConversation("local")).thenReturn(List.of(plain, withArtifact));
 
         mockMvc.perform(get("/api/conversation"))

@@ -130,6 +130,6 @@ public class ConversationService {
         if (imageIds != null && imageIds.isEmpty()) {
             imageIds = null;
         }
-        return new ConversationMessage(r.role(), r.content(), r.timestamp(), artifact, imageIds);
+        return new ConversationMessage(r.id(), r.role(), r.content(), r.timestamp(), artifact, imageIds);
     }
 }
