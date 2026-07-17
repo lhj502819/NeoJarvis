@@ -1,0 +1,49 @@
+desktop/agent/jarvis/action-dispatcher.ts
+  s_03d1fe9e2be4df::t_3062b1d3f59b36 123
+  s_03d1fe9e2be4df::t_e3deff4d6edf69 171-172
+  s_03d1fe9e2be4df::t_2dbe28006fe99d 102
+  s_03d1fe9e2be4df::t_7bf53bce436e22 290
+  s_03d1fe9e2be4df::t_3e0c7cff2a6654 150
+server/src/test/java/com/jarvis/web/TaskControllerTest.java
+  s_03d1fe9e2be4df::t_4b185980870b15 16,19
+  s_03d1fe9e2be4df::t_fdf5db70ddfede 200-211
+  s_03d1fe9e2be4df::t_31f681f03256d9 40-41
+server/src/main/java/com/jarvis/web/TaskController.java
+  s_03d1fe9e2be4df::t_56ffb85d578c0b 98-106
+  s_03d1fe9e2be4df::t_9e5060c51284ad 12,18
+  s_03d1fe9e2be4df::t_5c986b0f61d525 36,38,40
+desktop/agent/a2a/client.ts
+  s_03d1fe9e2be4df::t_73724ad7f787e6 48
+  s_03d1fe9e2be4df::t_2f3594767b93a6 151-164
+  s_03d1fe9e2be4df::t_f2101c1b329f2d 10,18
+desktop/agent/jarvis/prompt.ts
+  s_03d1fe9e2be4df::t_cfdd98f4c287ae 185
+desktop/agent/a2a/history.ts
+  s_03d1fe9e2be4df::t_46ef4a1ead5e2a 126-184
+desktop/agent/a2a/subtask-history-context.ts
+  s_03d1fe9e2be4df::t_4d7daf6c5ad397 1-133
+server/src/main/java/com/jarvis/domain/SubtaskFullHistory.java
+  s_03d1fe9e2be4df::t_fcc06f3352b6da 1-26
+server/src/main/java/com/jarvis/service/SubtaskHistoryService.java
+  s_03d1fe9e2be4df::t_290fd629cd76b4 1-98
+desktop/agent/jarvis/tools.ts
+  s_03d1fe9e2be4df::t_b51986ac96d804 367,378
+server/src/test/java/com/jarvis/service/SubtaskHistoryServiceTest.java
+  s_03d1fe9e2be4df::t_8b15435fb4658c 1-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "2c9f9828d0da11388359e7adf1ac812704585687",
+  "prompts": {},
+  "sessions": {
+    "s_03d1fe9e2be4df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ef2e7e9-02b4-40bb-8fe3-5e753ec484aa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "lihongjian.34 <lihongjian.34@jd.com>"
+    }
+  }
+}
