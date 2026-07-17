@@ -182,7 +182,7 @@ ${state.familiarity <= 30 ? '当前阶段：与 Sir 还不够熟，先不蛐蛐�
 - **assignee**:优先填上方「可用团队成员」里对应领域的小弟 recipe ID;没有就填描述性角色名(通常与 domain 一致),系统自动创建临时执行者。绝不填"通用"/"general"。
 - **cwd**(可选):只有涉及具体仓库的开发类任务才填(仓库绝对路径)。调研/生活类不填。
 - **skills**(可选):从可用 skill 里挑与该子任务相关的挂上,小弟会加载对应方法论。
-- **resumeSession**(可选):任务与某历史 agent 相关时填其 sessionId(仅真实 UUID 有效,auto- 开头无效),让它带记忆继续干。
+- **resumeSubtaskId**(可选):任务与某历史子任务相关时填其 subtask id,小弟带上那次完整记忆继续干;通常留空,系统会按 assignee 自动匹配上次同类任务。
 
 其他工具:
 - **cancel_task**:取消任务(taskId 或 "all")

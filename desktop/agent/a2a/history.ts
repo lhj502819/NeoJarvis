@@ -123,3 +123,62 @@ export async function findMatchingSessionByDomain(userId: string, domain: string
   }
   return best
 }
+
+/** listSubtasksByAssignee 返回的历史子任务摘要(对齐 GET /api/recipe/{assignee}/subtasks)。 */
+interface SubtaskSummary {
+  id: string
+  taskId: string
+  name: string
+  description: string
+  status: string
+  domain?: string
+  turnCount?: number
+  createdAt: string
+}
+
+/**
+ * 为即将派发的小弟找一个可复用的历史 subtask_id(替代 findMatchingSessionByDomain 的 session 路线)。
+ *
+ * 按 assignee 定位:正式小弟 assignee=recipe.id,临时工 assignee=角色名(≈domain)——
+ * 两者都能直接查 GET /api/recipe/{assignee}/subtasks。拿到 subtask_id 后,上层用
+ * getSubtaskHistoryForPrompt 拉全历史(turns/traces/comms 都按 subtask_id 存)。
+ *
+ * 打分:completed + domain 过滤后,复用 extractKeywords + 关键词重叠(≥0.3 取最高分);
+ * assignee 本身已是强信号,无匹配则退回最近一条 completed。找不到返回 undefined。
+ */
+export async function findLastSubtaskForReuse(
+  userId: string,
+  assignee: string,
+  domain: string | undefined,
+  description: string,
+): Promise<string | undefined> {
+  if (!assignee) return undefined
+  let list: SubtaskSummary[]
+  try {
+    list = await serverGet<SubtaskSummary[]>(userId, `/api/recipe/${encodeURIComponent(assignee)}/subtasks`)
+  } catch {
+    return undefined
+  }
+  // 端点已按 created_at DESC;只留 completed,有 domain 再按 domain 过滤
+  let candidates = list.filter(s => s.status === 'completed')
+  if (domain) candidates = candidates.filter(s => s.domain === domain)
+  if (candidates.length === 0) return undefined
+
+  const keywords = extractKeywords(description)
+  if (keywords.length > 0) {
+    let best: string | undefined
+    let bestScore = 0
+    for (const s of candidates) {
+      const kw = extractKeywords(`${s.name} ${s.description}`)
+      const overlap = keywords.filter(k => kw.some(t => t.includes(k) || k.includes(t)))
+      const score = overlap.length / keywords.length
+      if (score > bestScore && score >= 0.3) {
+        bestScore = score
+        best = s.id
+      }
+    }
+    if (best) return best
+  }
+  // assignee 已是强信号,无关键词命中就取最近一条 completed
+  return candidates[0].id
+}

@@ -364,7 +364,7 @@ export function createJarvisTools(userId: string) {
           'assignee 优先填现有团队成员的 recipe ID(见上下文「可用团队成员」);没有合适的就填描述性角色名(通常与 domain 一致),系统会创建临时执行者。绝不填"通用"或"general"。' +
           'cwd 只在涉及具体仓库的开发类任务填(仓库绝对路径),调研/生活类不填。' +
           'skills 可选:从可用 skill 里挑出与该子任务相关的(如调研类挂 deep-research),小弟会加载对应方法论。' +
-          'resumeSession 可选:若该任务与某历史 agent 做过的事相关,填其 sessionId(仅真实 UUID 有效,auto- 开头无效)让它带记忆继续干。',
+          'resumeSubtaskId 可选:若该任务与某历史子任务做过的事相关,填其 subtask id,小弟会带上那次的完整记忆(任务描述+思考+工具轨迹+沟通)继续干。通常不用填 —— 系统会按 assignee 自动匹配上次同类任务。',
         {
           name: z.string().describe('任务名(简短)'),
           description: z.string().describe('任务原始需求描述'),
@@ -375,7 +375,7 @@ export function createJarvisTools(userId: string) {
             domain: z.string().describe('能力领域名(稳定可复用)'),
             cwd: z.string().optional().describe('仅开发类任务填,仓库绝对路径'),
             skills: z.array(z.string()).optional().describe('挂载的 skill 名列表(可选)'),
-            resumeSession: z.string().optional().describe('历史 session UUID(可选)'),
+            resumeSubtaskId: z.string().optional().describe('历史子任务 id(可选,通常留空由系统自动匹配)'),
           })).describe('子任务列表'),
         },
         async (args) => {

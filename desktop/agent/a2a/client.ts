@@ -7,7 +7,7 @@ import { getPeerAgents } from './registry.js'
 const JARVIS_PLUGIN_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'jarvis', 'plugins', 'jarvis')
 const SKILLS_HUB_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'jarvis', 'plugins', 'skills-hub')
 import { getRecipe } from '../team/registry.js'
-import { recordAgentSession, findMatchingSessionByDomain, extractKeywords } from './history.js'
+import { recordAgentSession, findLastSubtaskForReuse, extractKeywords } from './history.js'
 import { upsertAdhocAgent } from './adhoc.js'
 import { setSubtaskStarted, recordTurn, finalizeSubtaskMeta } from '../task/manager.js'
 import { bus } from './bus.js'
@@ -15,6 +15,7 @@ import { buildUserEnv } from '../shared/user-env.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
 import { buildUserMcpServers } from '../shared/user-mcp.js'
 import { createAgentCommsMcp } from './agent-comms.js'
+import { getSubtaskHistoryForPrompt } from './subtask-history-context.js'
 import { getDisabledSkills, getEnabledHubSkills } from '../jarvis/skill-prefs.js'
 import {
   recordToolTrace,
@@ -44,7 +45,7 @@ export interface DispatchContext {
   domain?: string
   cwd?: string
   signal?: AbortSignal
-  resumeSession?: string
+  resumeSubtaskId?: string
   skills?: string[]
   onProgress?: (progress: { text: string; turnCount: number; currentTool?: string; currentAction?: string }) => void
 }
@@ -144,19 +145,23 @@ message_peer 发出去后你不用等,继续干活即可;等对方回复到了,�
 
   if (context?.signal?.aborted) throw new Error('任务已取消')
 
-  let resumeSessionId = context?.resumeSession
-  // 临时工(无 recipe)且调用方未指定 resume 时,按 domain 自动匹配历史记忆
-  if (!recipe && !resumeSessionId && domain) {
-    const matched = await findMatchingSessionByDomain(userId, domain, taskDescription).catch(() => undefined)
-    if (matched) {
-      resumeSessionId = matched
-      debug('adhoc reuse: matched session', matched.slice(0, 8), 'for domain', domain)
-    }
-  }
   const subtaskId = context?.subtaskId || `anon-${Date.now()}`
   const taskId = context?.taskId || 'unknown'
 
-  debug('dispatch start:', recipeId, 'task:', taskDescription.slice(0, 50), resumeSessionId ? `(resume: ${resumeSessionId.slice(0, 8)})` : '(new)')
+  // 历史注入(替代 SDK resume 黑盒):找一个可复用的历史 subtask,把它的完整执行记忆
+  // (任务描述+思考+工具轨迹+Jarvis 沟通)拼进 prompt。显式指定优先,否则按 assignee 自动匹配。
+  // 全程 .catch 降级 —— 拉不到历史绝不阻塞派单。
+  const reuseSubtaskId = context?.resumeSubtaskId
+    ?? await findLastSubtaskForReuse(userId, recipeId, domain, taskDescription).catch(() => undefined)
+  if (reuseSubtaskId && reuseSubtaskId !== subtaskId) {
+    const history = await getSubtaskHistoryForPrompt(userId, reuseSubtaskId).catch(() => '')
+    if (history) {
+      enrichedDescription += `\n\n${history}`
+      debug('history injected from subtask', reuseSubtaskId.slice(0, 8), `(${history.length} chars)`)
+    }
+  }
+
+  debug('dispatch start:', recipeId, 'task:', taskDescription.slice(0, 50), reuseSubtaskId ? `(reuse: ${reuseSubtaskId.slice(0, 8)})` : '(new)')
 
   const userMcpServers = await buildUserMcpServers(userId)
   const agentCommsMcp = createAgentCommsMcp(subtaskId, taskId, userId, agentName)
@@ -187,10 +192,6 @@ message_peer 发出去后你不用等,继续干活即可;等对方回复到了,�
     env: await buildUserEnv(userId),
     maxTurns: 99999,
     mcpServers: { ...userMcpServers, 'agent-comms': agentCommsMcp },
-  }
-
-  if (resumeSessionId) {
-    queryOptions.resume = resumeSessionId
   }
 
   const MAX_RETRIES = 2

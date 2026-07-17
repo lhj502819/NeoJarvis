@@ -9,11 +9,13 @@ import com.jarvis.domain.RecordTurnRequest;
 import com.jarvis.domain.SetSubtaskStartedRequest;
 import com.jarvis.domain.SubTask;
 import com.jarvis.domain.SubTaskTurn;
+import com.jarvis.domain.SubtaskFullHistory;
 import com.jarvis.domain.Task;
 import com.jarvis.domain.TaskDetail;
 import com.jarvis.domain.TasksResponse;
 import com.jarvis.domain.UpdateSubTaskRequest;
 import com.jarvis.domain.UpdateTaskRequest;
+import com.jarvis.service.SubtaskHistoryService;
 import com.jarvis.service.TaskService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -31,9 +33,11 @@ import org.springframework.web.bind.annotation.RestController;
 class TaskController {
 
     private final TaskService taskService;
+    private final SubtaskHistoryService subtaskHistoryService;
 
-    TaskController(TaskService taskService) {
+    TaskController(TaskService taskService, SubtaskHistoryService subtaskHistoryService) {
         this.taskService = taskService;
+        this.subtaskHistoryService = subtaskHistoryService;
     }
 
     /** GET /api/tasks — {@code { summary, tasks }} (mirrors TS dashboard /tasks). */
@@ -89,6 +93,15 @@ class TaskController {
     @GetMapping("/subtask/{id}/turns")
     List<SubTaskTurn> subtaskTurns(@PathVariable String id) {
         return taskService.getSubtaskTurns(id);
+    }
+
+    /**
+     * GET /api/subtask/{id}/full-history — 聚合子任务完整执行历史(description + turns +
+     * toolTraces + comms),供 TS 侧组装"上次记忆"注入同类小弟的 prompt(替代 SDK resume)。
+     */
+    @GetMapping("/subtask/{id}/full-history")
+    SubtaskFullHistory subtaskFullHistory(@PathVariable String id) {
+        return subtaskHistoryService.getFullHistory(UserContext.currentUserId(), id);
     }
 
     /** POST /api/subtask/{id}/turns — record one execution turn (mirrors TS recordTurn). */

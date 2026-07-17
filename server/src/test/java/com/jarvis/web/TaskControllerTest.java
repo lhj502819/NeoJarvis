@@ -13,8 +13,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jarvis.domain.SubTask;
 import com.jarvis.domain.SubTaskTurn;
+import com.jarvis.domain.SubtaskFullHistory;
 import com.jarvis.domain.Task;
 import com.jarvis.domain.TaskDetail;
+import com.jarvis.service.SubtaskHistoryService;
 import com.jarvis.service.TaskService;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +37,8 @@ class TaskControllerTest {
     private MockMvc mockMvc;
     @MockBean
     private TaskService taskService;
+    @MockBean
+    private SubtaskHistoryService subtaskHistoryService;
 
     @Test
     void tasksReturnsSummaryAndTasksShape() throws Exception {
@@ -192,5 +196,17 @@ class TaskControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ok").value(true));
         verify(taskService).cleanupStaleTasks("local");
+    }
+
+    @Test
+    void fullHistoryReturnsAggregatedShape() throws Exception {
+        when(subtaskHistoryService.getFullHistory("local", "s1")).thenReturn(
+                new SubtaskFullHistory("s1", "t1", "数 md 文件", List.of(), List.of(), List.of()));
+
+        mockMvc.perform(get("/api/subtask/s1/full-history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.subtaskId").value("s1"))
+                .andExpect(jsonPath("$.taskId").value("t1"))
+                .andExpect(jsonPath("$.description").value("数 md 文件"));
     }
 }

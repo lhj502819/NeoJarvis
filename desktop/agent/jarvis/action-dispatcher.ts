@@ -99,7 +99,7 @@ export function parseAction(text: string): ActionResponse | null {
   return null
 }
 
-async function executeSubTask(userId: string, taskId: string, subtaskId: string, description: string, assignee: string, signal: AbortSignal, resumeSession?: string, domain?: string, cwd?: string, skills?: string[]): Promise<string> {
+async function executeSubTask(userId: string, taskId: string, subtaskId: string, description: string, assignee: string, signal: AbortSignal, resumeSubtaskId?: string, domain?: string, cwd?: string, skills?: string[]): Promise<string> {
   if (signal.aborted) throw new Error('任务已取消')
 
   const recipe = await getRecipe(userId, assignee)
@@ -120,7 +120,7 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
       cwd,
       skills,
       signal,
-      resumeSession,
+      resumeSubtaskId,
       onProgress: (progress) => {
         updateSubTask(userId, taskId, subtaskId, { progress: progress.text }).catch(() => {})
         const payload = buildSubtaskEvent({
@@ -147,7 +147,7 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
   }
 }
 
-export function executeTaskInBackground(userId: string, taskId: string, subtasks: Array<{ name: string; description: string; assignee?: string; resumeSession?: string; domain?: string; cwd?: string; skills?: string[] }>) {
+export function executeTaskInBackground(userId: string, taskId: string, subtasks: Array<{ name: string; description: string; assignee?: string; resumeSubtaskId?: string; domain?: string; cwd?: string; skills?: string[] }>) {
   ;(async () => {
     const task = await getTask(userId, taskId)
     if (!task) return
@@ -168,8 +168,8 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
         broadcast('progress', `⚠️ 忽略无效 cwd "${st.cwd}"(路径不存在),小弟改到用户工作区执行`, userId)
       }
       const sub = await addSubTask(userId, taskId, { name: st.name, description: st.description, assignee, domain: st.domain, cwd: safeCwd })
-      if (st.resumeSession) {
-        resumeMap.set(sub.id, st.resumeSession)
+      if (st.resumeSubtaskId) {
+        resumeMap.set(sub.id, st.resumeSubtaskId)
       }
       if (st.domain) domainMap.set(sub.id, st.domain)
       if (safeCwd) cwdMap.set(sub.id, safeCwd)
@@ -287,7 +287,7 @@ export async function dispatchAction(
       const { name, description, subtasks } = action.data as {
         name: string
         description: string
-        subtasks?: Array<{ name: string; description: string; assignee?: string; resumeSession?: string; domain?: string; cwd?: string }>
+        subtasks?: Array<{ name: string; description: string; assignee?: string; resumeSubtaskId?: string; domain?: string; cwd?: string }>
       }
       const task = await createTask(userId, name, description)
       await updateTask(userId, task.id, { status: 'planning' })
