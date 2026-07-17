@@ -1,0 +1,22 @@
+server/src/main/resources/schema.sql
+  s_03d1fe9e2be4df::t_bf529650073de4 226
+  s_03d1fe9e2be4df::t_5b7d0b0079462e 69,75
+  s_03d1fe9e2be4df::t_4ea926d428aaaa 154
+  s_03d1fe9e2be4df::t_55732f3c499b31 87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "9750e6fd57ea2baa69f963c0039df904f4f39ee6",
+  "prompts": {},
+  "sessions": {
+    "s_03d1fe9e2be4df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ef2e7e9-02b4-40bb-8fe3-5e753ec484aa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "lihongjian.34 <lihongjian.34@jd.com>"
+    }
+  }
+}
