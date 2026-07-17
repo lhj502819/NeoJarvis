@@ -66,13 +66,13 @@ CREATE TABLE IF NOT EXISTS jarvis_recipes (
   system_prompt TEXT NOT NULL,
   tools TEXT NOT NULL,
   model VARCHAR(191) NOT NULL DEFAULT 'sonnet',
-  context VARCHAR(191) NOT NULL DEFAULT '{}',
+  context TEXT NOT NULL DEFAULT '{}',
   persistent INT NOT NULL DEFAULT 0,
   usage_count INT NOT NULL DEFAULT 0,
   created_by VARCHAR(191) NOT NULL DEFAULT 'jarvis',
   created_at TEXT NOT NULL,
   last_used_at TEXT,
-  skills VARCHAR(191) DEFAULT '[]'
+  skills TEXT DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_jarvis_recipes_user ON jarvis_recipes(user_id);
 
@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS jarvis_claude_sessions (
   recipe_id VARCHAR(191) NOT NULL,
   domain TEXT,
   cwd TEXT,
-  topics VARCHAR(191) NOT NULL DEFAULT '[]',
+  topics TEXT NOT NULL DEFAULT '[]',
   last_task_description TEXT NOT NULL,
   completed_at TEXT NOT NULL,
   task_count INT NOT NULL DEFAULT 1
@@ -151,7 +151,7 @@ CREATE INDEX IF NOT EXISTS idx_jarvis_artifacts_user ON jarvis_artifacts(user_id
 CREATE TABLE IF NOT EXISTS jarvis_agent_threads (
   id VARCHAR(191) PRIMARY KEY,
   user_id VARCHAR(191) NOT NULL,
-  participants VARCHAR(191) NOT NULL DEFAULT '[]',
+  participants TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -223,7 +223,7 @@ CREATE TABLE IF NOT EXISTS jarvis_adhoc_agents (
   task_count INT NOT NULL DEFAULT 0,
   last_task_description TEXT NOT NULL,
   cwd TEXT,
-  topics VARCHAR(191) NOT NULL DEFAULT '[]',
+  topics TEXT NOT NULL DEFAULT '[]',
   last_session_id TEXT,
   promoted INT NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
