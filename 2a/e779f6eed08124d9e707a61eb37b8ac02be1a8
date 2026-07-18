@@ -1,0 +1,36 @@
+web/src/components/MonitorPanel.tsx
+  s_03d1fe9e2be4df::t_28206d9fb30bf6 58-59
+  s_03d1fe9e2be4df::t_459f5ca9eafd9c 27-29
+web/src/api/hooks.ts
+  s_03d1fe9e2be4df::t_887337a99f0342 195-197,199-200
+server/src/main/java/com/jarvis/mapper/ArtifactMapper.java
+  s_03d1fe9e2be4df::t_3d41c205380ffb 28-29
+desktop/agent/a2a/registry.ts
+  s_03d1fe9e2be4df::t_0122c0250f54d5 65-71
+  s_03d1fe9e2be4df::t_fb494e799c2cdb 87-88
+  s_03d1fe9e2be4df::t_f8928d652fca29 13-15,21-30
+desktop/agent/jarvis/action-dispatcher.ts
+  s_03d1fe9e2be4df::t_d42b213e4f0381 6
+  s_03d1fe9e2be4df::t_4487495c45d933 82-86,95-96
+  s_03d1fe9e2be4df::t_002a758f37c667 5
+  s_03d1fe9e2be4df::t_8554049b3c1f44 163-164
+  s_03d1fe9e2be4df::t_e899d4513cfddc 87-94,97
+  s_03d1fe9e2be4df::t_098ba0252b9bcb 290-295,303
+  s_03d1fe9e2be4df::t_9366ddc63029de 59-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "2ae779f6eed08124d9e707a61eb37b8ac02be1a8",
+  "prompts": {},
+  "sessions": {
+    "s_03d1fe9e2be4df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ef2e7e9-02b4-40bb-8fe3-5e753ec484aa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "lihongjian.34 <lihongjian.34@jd.com>"
+    }
+  }
+}
