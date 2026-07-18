@@ -34,7 +34,7 @@ class RecipeServiceTest {
         // Given: raw JSON columns and persistent=1
         when(recipeMapper.listByUser("local")).thenReturn(List.of(new RecipeRow(
                 "r1", "Coder", "d", "sp", "[\"Bash\",\"Edit\"]", "sonnet",
-                "{\"scope\":\"repo\"}", 1, 3, "jarvis", "2026-07-14", null, "[\"tdd\"]")));
+                "{\"scope\":\"repo\"}", 1, 3, "jarvis", "2026-07-14", null, "[\"tdd\"]", "🔍")));
 
         // When
         AgentRecipe r = service.listRecipes("local").get(0);
@@ -45,6 +45,7 @@ class RecipeServiceTest {
         assertThat(r.context()).containsEntry("scope", "repo");
         assertThat(r.persistent()).isTrue();
         assertThat(r.lastUsedAt()).isEmpty();
+        assertThat(r.avatar()).isEqualTo("🔍");
     }
 
     @Test
@@ -52,7 +53,7 @@ class RecipeServiceTest {
         // Given: only the required fields, all optionals null
         CreateRecipeRequest req = new CreateRecipeRequest(
                 "Coder", "builds things", "sp", List.of("Bash", "Edit"),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
 
         // When
         AgentRecipe r = service.createRecipe("local", req);
@@ -66,11 +67,12 @@ class RecipeServiceTest {
         assertThat(r.usageCount()).isZero();
         assertThat(r.createdBy()).isEqualTo("jarvis");
         assertThat(r.lastUsedAt()).isEmpty();
+        assertThat(r.avatar()).isNull();
 
-        // And: mapper.insert got serialised JSON, persistent=0, usageCount=0, null last_used_at
+        // And: mapper.insert got serialised JSON, persistent=0, usageCount=0, null last_used_at + null avatar
         verify(recipeMapper).insert(eq(r.id()), eq("local"), eq("Coder"), eq("builds things"),
                 eq("sp"), eq("[\"Bash\",\"Edit\"]"), eq("[]"), eq("sonnet"), eq("{}"),
-                eq(0), eq(0), eq("jarvis"), eq(r.createdAt()), isNull());
+                eq(0), eq(0), eq("jarvis"), eq(r.createdAt()), isNull(), isNull());
     }
 
     @Test
@@ -78,7 +80,7 @@ class RecipeServiceTest {
         // Given
         CreateRecipeRequest req = new CreateRecipeRequest(
                 "Coder", "d", "sp", List.of("Bash"), List.of("tdd"), "opus",
-                Map.of("scope", "repo"), true, "alice");
+                Map.of("scope", "repo"), true, "alice", "📊");
 
         // When
         AgentRecipe r = service.createRecipe("local", req);
@@ -89,9 +91,10 @@ class RecipeServiceTest {
         assertThat(r.context()).containsEntry("scope", "repo");
         assertThat(r.persistent()).isTrue();
         assertThat(r.createdBy()).isEqualTo("alice");
+        assertThat(r.avatar()).isEqualTo("📊");
         verify(recipeMapper).insert(eq(r.id()), eq("local"), eq("Coder"), eq("d"), eq("sp"),
                 eq("[\"Bash\"]"), eq("[\"tdd\"]"), eq("opus"), eq("{\"scope\":\"repo\"}"),
-                eq(1), eq(0), eq("alice"), eq(r.createdAt()), isNull());
+                eq(1), eq(0), eq("alice"), eq(r.createdAt()), isNull(), eq("📊"));
     }
 
     @Test
@@ -105,7 +108,7 @@ class RecipeServiceTest {
     void listRecipesByIdsMapsRows() {
         when(recipeMapper.findByIds(List.of("r1"))).thenReturn(List.of(new RecipeRow(
                 "r1", "Coder", "d", "sp", "[\"Bash\"]", "sonnet", "{}", 0, 0,
-                "jarvis", "2026-07-15", null, "[]")));
+                "jarvis", "2026-07-15", null, "[]", null)));
 
         AgentRecipe r = service.listRecipesByIds(List.of("r1")).get(0);
         assertThat(r.id()).isEqualTo("r1");

@@ -119,4 +119,15 @@ class DatabaseSchemaTest {
                 Integer.class);
         assertThat(count).isEqualTo(1);
     }
+
+    @Test
+    void recipesHasAvatarColumn() {
+        // 验证 schema.sql 的 ALTER TABLE ... ADD COLUMN IF NOT EXISTS avatar 真补进了旧库
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                        + "WHERE UPPER(table_name) = UPPER('jarvis_recipes') "
+                        + "AND UPPER(column_name) = UPPER('avatar')",
+                Integer.class);
+        assertThat(count).isEqualTo(1);
+    }
 }

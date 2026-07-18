@@ -72,8 +72,11 @@ CREATE TABLE IF NOT EXISTS jarvis_recipes (
   created_by VARCHAR(191) NOT NULL DEFAULT 'jarvis',
   created_at TEXT NOT NULL,
   last_used_at TEXT,
-  skills TEXT DEFAULT '[]'
+  skills TEXT DEFAULT '[]',
+  avatar TEXT
 );
+-- 已存在的库补列(CREATE IF NOT EXISTS 对旧表是 no-op);ADD COLUMN IF NOT EXISTS 幂等
+ALTER TABLE jarvis_recipes ADD COLUMN IF NOT EXISTS avatar TEXT;
 CREATE INDEX IF NOT EXISTS idx_jarvis_recipes_user ON jarvis_recipes(user_id);
 
 -- ═══ Claude Code Session 登记簿 ═══

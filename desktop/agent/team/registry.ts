@@ -47,6 +47,7 @@ export async function createRecipe(userId: string, params: {
   model?: string
   context?: Record<string, unknown>
   persistent?: boolean
+  avatar?: string
 }): Promise<AgentRecipe> {
   // Java applies the same defaults the old TS did (id, skills=[], model='sonnet', context={},
   // persistent=false, createdBy='jarvis', usageCount=0) and returns the full AgentRecipe.

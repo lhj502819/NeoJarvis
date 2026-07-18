@@ -3,6 +3,7 @@ import { usePolling } from '../../api/hooks'
 import { fetchJSON } from '../../api/client'
 import { DetailDrawer } from '../../components/DetailDrawer'
 import { ExecutionModal } from '../../components/ExecutionModal'
+import { AgentAvatar } from '../../components/AgentAvatar'
 import type { Recipe, AgentSession } from './types'
 
 type FilterTab = 'all' | 'builtin' | 'settled'
@@ -53,7 +54,7 @@ function AgentDetailPanel({
       .catch(() => {})
   }, [recipe.id])
 
-  const isBuiltin = recipe.createdBy === 'builtin' || recipe.persistent
+  const isBuiltin = recipe.createdBy === 'builtin'
 
   const totalExecuted = recipe.usageCount ?? 0
   const successCount = subtasks.filter(s => s.status === 'completed').length
@@ -65,9 +66,7 @@ function AgentDetailPanel({
     <div className="dash-agent-detail">
       {/* Hero */}
       <div className="dash-agent-hero">
-        <div className="dash-agent-avatar">
-          <span>{recipe.name.slice(0, 1)}</span>
-        </div>
+        <AgentAvatar seed={recipe.id} emoji={recipe.avatar} fallback={recipe.name} size={60} radius={20} />
         <div className="dash-agent-hero-info">
           <div className="dash-agent-hero-name">{recipe.name}</div>
           <span className={`dash-badge ${isBuiltin ? 'dash-badge-builtin' : 'dash-badge-settled'}`}>
@@ -146,8 +145,10 @@ export function TeamPage() {
 
   const allRecipes = recipes ?? []
 
-  const builtinRecipes = allRecipes.filter(r => r.createdBy === 'builtin' || r.persistent)
-  const settledRecipes = allRecipes.filter(r => r.createdBy !== 'builtin' && !r.persistent)
+  // 内置 = 系统预置(createdBy=builtin);沉淀 = Jarvis 转正来的(createdBy=jarvis)。
+  // 转正小弟本就是 persistent=true,不能拿 persistent 当"内置"判据,否则沉淀分类永远为空。
+  const builtinRecipes = allRecipes.filter(r => r.createdBy === 'builtin')
+  const settledRecipes = allRecipes.filter(r => r.createdBy !== 'builtin')
 
   const filtered =
     tab === 'builtin' ? builtinRecipes :
@@ -208,7 +209,7 @@ export function TeamPage() {
         {filtered.length > 0 ? (
           <div className="dash-team-grid">
             {filtered.map(r => {
-              const isBuiltin = r.createdBy === 'builtin' || r.persistent
+              const isBuiltin = r.createdBy === 'builtin'
               const isActive = effectiveSelected?.id === r.id
               return (
                 <div
@@ -217,7 +218,10 @@ export function TeamPage() {
                   onClick={() => setSelected(r)}
                 >
                   <div className="dash-team-card-head">
-                    <span className="dash-agent-name">{r.name}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                      <AgentAvatar seed={r.id} emoji={r.avatar} fallback={r.name} size={28} />
+                      <span className="dash-agent-name">{r.name}</span>
+                    </div>
                     <span className={`dash-badge ${isBuiltin ? 'dash-badge-builtin' : 'dash-badge-settled'}`}>
                       {isBuiltin ? '内置' : '沉淀'}
                     </span>

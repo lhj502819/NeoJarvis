@@ -107,6 +107,8 @@ export interface AgentRecipe {
   createdBy: 'builtin' | 'jarvis'
   createdAt: string
   lastUsedAt: string
+  /** 拟人化头像:单个 emoji(如 🔍),缺省由前端兜底渲染首字符。字段兼容以后换真实图 URL。 */
+  avatar?: string
 }
 
 export interface AdhocAgent {

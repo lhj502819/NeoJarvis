@@ -18,5 +18,6 @@ public record RecipeRow(
         String createdBy,
         String createdAt,
         String lastUsedAt,
-        String skills) {
+        String skills,
+        String avatar) {
 }

@@ -42,6 +42,7 @@ export interface Recipe {
   usageCount: number
   createdBy: string
   lastUsedAt: string
+  avatar?: string
 }
 
 export interface AgentSession {

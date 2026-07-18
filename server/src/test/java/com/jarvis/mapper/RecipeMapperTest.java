@@ -56,7 +56,7 @@ class RecipeMapperTest {
         // When: insert with serialised JSON columns and a null last_used_at
         mapper.insert("r-new", "u1", "Builder", "builds", "sp", "[\"Bash\",\"Edit\"]",
                 "[\"tdd\"]", "sonnet", "{\"scope\":\"repo\"}", 0, 0, "jarvis",
-                "2026-07-15T00:00:00Z", null);
+                "2026-07-15T00:00:00Z", null, "🔨");
 
         // Then: it reads back with raw JSON intact and defaults preserved
         RecipeRow row = mapper.findByIds(List.of("r-new")).get(0);
@@ -68,6 +68,7 @@ class RecipeMapperTest {
         assertThat(row.usageCount()).isZero();
         assertThat(row.createdBy()).isEqualTo("jarvis");
         assertThat(row.lastUsedAt()).isNull();
+        assertThat(row.avatar()).isEqualTo("🔨");
     }
 
     @Test

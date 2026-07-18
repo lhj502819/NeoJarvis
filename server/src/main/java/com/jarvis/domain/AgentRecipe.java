@@ -21,5 +21,6 @@ public record AgentRecipe(
         int usageCount,
         String createdBy,
         String createdAt,
-        String lastUsedAt) {
+        String lastUsedAt,
+        String avatar) {
 }

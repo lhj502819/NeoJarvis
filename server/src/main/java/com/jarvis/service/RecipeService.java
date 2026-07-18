@@ -75,13 +75,14 @@ public class RecipeService {
         Map<String, Object> context = req.context() != null ? req.context() : Map.of();
         boolean persistent = req.persistent() != null && req.persistent();
         String createdBy = req.createdBy() != null ? req.createdBy() : "jarvis";
+        String avatar = req.avatar();  // 可空:Jarvis 生成时填 emoji,缺省由前端兜底
 
         recipeMapper.insert(id, userId, req.name(), req.description(), req.systemPrompt(),
                 Json.stringify(tools), Json.stringify(skills), model, Json.stringify(context),
-                persistent ? 1 : 0, 0, createdBy, now, null);
+                persistent ? 1 : 0, 0, createdBy, now, null, avatar);
         log.debug("create_recipe userId={} id={}", userId, id);
         return new AgentRecipe(id, req.name(), req.description(), req.systemPrompt(),
-                tools, skills, model, context, persistent, 0, createdBy, now, "");
+                tools, skills, model, context, persistent, 0, createdBy, now, "", avatar);
     }
 
     /** usage_count + 1 and last_used_at = now (mirrors TS incrementUsage). No-op if missing. */
@@ -110,6 +111,6 @@ public class RecipeService {
                 r.id(), r.name(), r.description(), r.systemPrompt(),
                 Json.stringList(r.tools()), Json.stringList(r.skills()), r.model(),
                 Json.map(r.context()), r.persistent() == 1, r.usageCount(),
-                r.createdBy(), r.createdAt(), r.lastUsedAt() != null ? r.lastUsedAt() : "");
+                r.createdBy(), r.createdAt(), r.lastUsedAt() != null ? r.lastUsedAt() : "", r.avatar());
     }
 }

@@ -22,5 +22,6 @@ public record CreateRecipeRequest(
         String model,
         Map<String, Object> context,
         Boolean persistent,
-        String createdBy) {
+        String createdBy,
+        String avatar) {
 }

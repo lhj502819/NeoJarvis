@@ -309,6 +309,6 @@ class TaskServiceTest {
 
     private static RecipeRow recipeRow(String id, String name) {
         return new RecipeRow(id, name, "d", "sp", "[]", "sonnet", "{}", 1, 0, "jarvis",
-                "2026-07-14", "", "[]");
+                "2026-07-14", "", "[]", null);
     }
 }

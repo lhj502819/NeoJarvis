@@ -1,4 +1,5 @@
 import { postJSON } from '../api/client'
+import { AgentAvatar } from './AgentAvatar'
 
 interface Agent {
   subtaskId: string
@@ -14,6 +15,7 @@ interface Recipe {
   description: string
   usageCount: number
   context: Record<string, unknown>
+  avatar?: string
 }
 
 interface Props {
@@ -68,16 +70,7 @@ export function AgentsSidebar({ running, recipes }: Props) {
           <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>小弟 ({recipes.length})</p>
           {recipes.map(r => (
             <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12 }}>
-              <div
-                style={{
-                  width: 22, height: 22, borderRadius: '50%',
-                  background: 'var(--accent-light)', color: 'var(--accent)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 10, fontWeight: 600, flexShrink: 0,
-                }}
-              >
-                {r.name[0]}
-              </div>
+              <AgentAvatar seed={r.id} emoji={r.avatar} fallback={r.name} size={22} radius={11} />
               <div style={{ minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 4 }}>
                 <span style={{ color: 'var(--text)' }}>{r.name}</span>
                 <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>×{r.usageCount}</span>

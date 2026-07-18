@@ -36,12 +36,13 @@ class RecipeControllerTest {
     void recipesReturnsTypedFields() throws Exception {
         when(recipeService.listRecipes("local")).thenReturn(List.of(new AgentRecipe(
                 "r1", "Coder", "d", "sp", List.of("Bash"), List.of("tdd"), "sonnet",
-                Map.of("scope", "repo"), true, 3, "jarvis", "2026-07-14", "")));
+                Map.of("scope", "repo"), true, 3, "jarvis", "2026-07-14", "", "🔍")));
 
         mockMvc.perform(get("/api/recipes"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value("r1"))
                 .andExpect(jsonPath("$[0].tools[0]").value("Bash"))
+                .andExpect(jsonPath("$[0].avatar").value("🔍"))
                 .andExpect(jsonPath("$[0].persistent").value(true));
     }
 
@@ -62,7 +63,7 @@ class RecipeControllerTest {
     void recipesByIdsReturnsMatches() throws Exception {
         when(recipeService.listRecipesByIds(List.of("r1", "r2"))).thenReturn(List.of(new AgentRecipe(
                 "r1", "Coder", "d", "sp", List.of("Bash"), List.of(), "sonnet",
-                Map.of(), false, 0, "jarvis", "2026-07-14", "")));
+                Map.of(), false, 0, "jarvis", "2026-07-14", "", null)));
 
         mockMvc.perform(get("/api/recipes/by-ids").param("ids", "r1,r2"))
                 .andExpect(status().isOk())
@@ -73,7 +74,7 @@ class RecipeControllerTest {
     void createRecipeReturnsCreatedRecipe() throws Exception {
         when(recipeService.createRecipe(eq("local"), any())).thenReturn(new AgentRecipe(
                 "ab12cd34", "Coder", "builds things", "sp", List.of("Bash"), List.of("tdd"),
-                "sonnet", Map.of(), false, 0, "jarvis", "2026-07-15", ""));
+                "sonnet", Map.of(), false, 0, "jarvis", "2026-07-15", "", null));
 
         mockMvc.perform(post("/api/recipes").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Coder\",\"description\":\"builds things\","
