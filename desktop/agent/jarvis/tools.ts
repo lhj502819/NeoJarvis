@@ -40,7 +40,13 @@ export function consumeArtifact(userId: string): PendingArtifact | null {
   return artifact
 }
 
-export async function promoteAdhocToRecipe(userId: string, domain: string): Promise<{ ok: boolean; message: string }> {
+export interface PromotePersona {
+  nickname?: string
+  avatar?: string
+  description?: string
+}
+
+export async function promoteAdhocToRecipe(userId: string, domain: string, persona?: PromotePersona): Promise<{ ok: boolean; message: string }> {
   const adhoc = await getAdhocAgent(userId, domain)
   if (!adhoc) return { ok: false, message: `「${domain}」领域暂无临时工记录,无法转正。` }
   if (adhoc.promoted) return { ok: false, message: `「${domain}」领域已有正式小弟。` }
@@ -53,20 +59,26 @@ export async function promoteAdhocToRecipe(userId: string, domain: string): Prom
   }
   const cwd = adhoc.cwd || dominantCwd(cluster)
 
+  // 拟人化身份:Jarvis 起的昵称/头像/描述优先;没给就退回功能名模板(兜底,不阻塞转正)
+  const nickname = persona?.nickname?.trim() || `${domain}专家`
+  const description = persona?.description?.trim() || buildExpertDescription(domain, cwd)
+  const avatar = persona?.avatar?.trim() || undefined
+
   await createRecipe(userId, {
-    name: `${domain}专家`,
-    description: buildExpertDescription(domain, cwd),
-    systemPrompt: buildDomainExpertPrompt(domain, cwd, cluster),
+    name: nickname,
+    description,
+    systemPrompt: buildDomainExpertPrompt(domain, cwd, cluster, nickname),
     tools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch'],
     skills: [],
     context: cwd ? { domain, cwd } : { domain },
     persistent: true,
+    avatar,
   })
   await markAdhocPromoted(userId, domain)
 
   const where = cwd ? `(主战场:${cwd})` : ''
-  broadcast('progress', `🎓 新小弟入队:「${domain}专家」${where} — 由 Sir 拍板转正`, userId)
-  return { ok: true, message: `已把「${domain}」临时工转正为正式小弟「${domain}专家」。` }
+  broadcast('progress', `🎓 新小弟入队:「${nickname}」${avatar || ''}${where} — 由 Sir 拍板转正`, userId)
+  return { ok: true, message: `已把「${domain}」临时工转正为正式小弟「${nickname}」。` }
 }
 
 export function createJarvisTools(userId: string) {
@@ -152,10 +164,20 @@ export function createJarvisTools(userId: string) {
         }
       ),
 
-      tool('promote_agent', '把某个领域的临时工转正为正式小弟(persistent 专家)。仅在用户确认转正后调用。',
-        { domain: z.string().describe('要转正的领域名,如"技术调研"') },
+      tool('promote_agent', '把某个领域的临时工转正为正式小弟(persistent 专家)。仅在用户确认转正后调用。' +
+        '转正时你要为这位新同事塑造拟人形象:起一个像真人同事的昵称、选一个贴切 emoji 当头像、写一句拟人化的自我介绍。',
+        {
+          domain: z.string().describe('要转正的领域名,如"技术调研"'),
+          nickname: z.string().optional().describe('拟人昵称(2-3 字,像同事名不像职能,如"阿档""小差""老账"。不填则退回"XX专家")'),
+          avatar: z.string().optional().describe('单个 emoji 当头像,贴合领域(如技术调研 🔍、财务整理 📊、差旅出行 ✈️)'),
+          description: z.string().optional().describe('一句拟人化自我介绍(如"文档堆里长大的,再乱的资料我都能理出头绪")'),
+        },
         async (args) => {
-          const res = await promoteAdhocToRecipe(userId, args.domain)
+          const res = await promoteAdhocToRecipe(userId, args.domain, {
+            nickname: args.nickname,
+            avatar: args.avatar,
+            description: args.description,
+          })
           return { content: [{ type: 'text' as const, text: res.message }] }
         }
       ),

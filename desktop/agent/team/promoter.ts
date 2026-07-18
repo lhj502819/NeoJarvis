@@ -1,76 +1,12 @@
-import { listAgentSessions, AgentSession } from '../a2a/history.js'
-import { listRecipes, createRecipe } from './registry.js'
-import { broadcast } from '../jarvis/sse.js'
-import { basename } from 'path'
+import { AgentSession } from '../a2a/history.js'
 
-const PROMOTION_THRESHOLD = 3
-
-export async function evaluatePromotion(userId: string): Promise<void> {
-  const sessions = await listAgentSessions(userId)
-  if (sessions.length < PROMOTION_THRESHOLD) return
-
-  const existingRecipes = await listRecipes(userId)
-  // 已沉淀的领域（专家的身份是领域，不是路径）
-  const existingDomains = new Set(
-    existingRecipes.map(r => r.context.domain as string).filter(Boolean)
-  )
-
-  const domainClusters = clusterByDomain(sessions)
-
-  for (const [domain, cluster] of domainClusters) {
-    if (cluster.taskCount < PROMOTION_THRESHOLD) continue
-    if (!domain) continue
-    if (existingDomains.has(domain)) continue
-
-    // 门牌号辅料：若该领域的任务集中在某个仓库（开发类），带上 cwd 当上下文；纯调研类为空
-    const cwd = dominantCwd(cluster)
-
-    const recipe = await createRecipe(userId, {
-      name: `${domain}专家`,
-      description: buildExpertDescription(domain, cwd),
-      systemPrompt: buildDomainExpertPrompt(domain, cwd, cluster),
-      tools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch'],
-      context: cwd ? { domain, cwd } : { domain },
-      persistent: true,
-    })
-
-    const where = cwd ? `（主战场：${basename(cwd)}）` : ''
-    broadcast('progress', `🎓 新小弟入队：「${domain}专家」${where} — 该领域已执行 ${cluster.taskCount} 次任务，沉淀为专属 agent`, userId)
-    return
-  }
-}
+// 晋升由 Jarvis 推荐 + 用户确认(promote_agent 工具)执行,不再自动发生。
+// 这里只保留晋升时用来生成专家 systemPrompt / 描述的构建函数,供 tools.ts 复用。
 
 export interface DomainCluster {
   sessions: AgentSession[]
   taskCount: number
   topics: string[]
-}
-
-/**
- * 按语义领域标签聚类——这是身份的主键。
- * 物理路径（cwd）不再参与聚类，只在专家沉淀后作为门牌号辅料。
- */
-export function clusterByDomain(sessions: AgentSession[]): Map<string, DomainCluster> {
-  const map = new Map<string, DomainCluster>()
-
-  for (const session of sessions) {
-    if (!session.domain) continue
-
-    const existing = map.get(session.domain)
-    if (existing) {
-      existing.sessions.push(session)
-      existing.taskCount += session.taskCount
-      existing.topics = [...new Set([...existing.topics, ...session.topics])].slice(0, 20)
-    } else {
-      map.set(session.domain, {
-        sessions: [session],
-        taskCount: session.taskCount,
-        topics: [...session.topics],
-      })
-    }
-  }
-
-  return map
 }
 
 /**
@@ -101,7 +37,7 @@ export function buildExpertDescription(domain: string, cwd: string): string {
     : `负责「${domain}」领域的所有任务`
 }
 
-export function buildDomainExpertPrompt(domain: string, cwd: string, cluster: DomainCluster): string {
+export function buildDomainExpertPrompt(domain: string, cwd: string, cluster: DomainCluster, nickname?: string): string {
   const taskExamples = cluster.sessions
     .slice(-5)
     .map(s => `- ${s.lastTaskDescription.slice(0, 100)}`)
@@ -114,7 +50,7 @@ export function buildDomainExpertPrompt(domain: string, cwd: string, cluster: Do
     : `## 工作方式
 你的专长不绑定任何固定目录——你靠的是「${domain}」这门本事，走到哪用到哪。`
 
-  return `你是「${domain}专家」，专门负责一切「${domain}」相关的事务。
+  return `你是「${nickname || `${domain}专家`}」，专门负责一切「${domain}」相关的事务。
 
 ## 你的领域
 你是这个领域的行家，经手过大量同类任务，熟悉其中的门道、常见坑和高效做法。

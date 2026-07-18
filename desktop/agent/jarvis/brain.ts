@@ -1,5 +1,6 @@
 import { homedir, userInfo } from 'os'
 import { listRecipes } from '../team/registry.js'
+import { listAdhocAgents } from '../a2a/adhoc.js'
 import { bus } from '../a2a/bus.js'
 import { searchMemory } from '../memory/everos.js'
 import { consumeArtifact, type PendingArtifact } from './tools.js'
@@ -55,6 +56,15 @@ export async function think(userId: string, userMessage: string, onProgress?: (t
 
   const recipes = await listRecipes(userId)
   const teamInfo = recipes.map(r => `- ${r.name} (id: ${r.id}): ${r.description}`).join('\n')
+
+  // 待转正候选:临时工累计 ≥3 次(与 get_team_stats 的 readyToPromote 同阈值)。
+  // 把信号主动喂进 prompt,Jarvis 不必先调 get_team_stats 才发现——它会按 promote-agent
+  // skill 在合适时机(汇报后/被问起时)顺口推荐。拉不到就降级空串,绝不阻塞。
+  const promoteHint = await listAdhocAgents(userId)
+    .then(adhocs => adhocs.filter(a => a.taskCount >= 3)
+      .map(a => `- 「${a.domain}」临时工已干 ${a.taskCount} 次,达转正线,可考虑推荐 Sir 收编(promote-agent)`)
+      .join('\n'))
+    .catch(() => '')
 
   const availableSkills = await listSkillsForUser(userId)
   const enabledSkillLines = availableSkills
@@ -122,6 +132,7 @@ ${taskContext}
 
 ## 可用团队成员
 ${teamInfo || '暂无团队成员'}
+${promoteHint ? `\n### ⚠️ 待转正候选(临时工已达转正线)\n${promoteHint}\n` : ''}
 
 ## 可用技能(派任务时可挂给小弟)
 ${enabledSkillLines || '(暂无已启用技能)'}
