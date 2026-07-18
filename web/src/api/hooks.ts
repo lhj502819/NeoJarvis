@@ -192,9 +192,12 @@ export function useChat() {
   }, [])
 
   // 处理全局 /events 流的实时事件(刷新恢复 / 多标签页 / 后台任务报告)。
-  // 发起方(本页 send 进行中,abortRef 非空)靠 /chat 流,忽略 /events 避免重复。
+  // 发起方(本页 send 进行中,abortRef 非空)靠 /chat 流,忽略 /events 避免重复 ——
+  // 但只忽略 live-reply(当前对话的实时回复);后台任务的独立汇报(task-report/task-error)
+  // 是异步产物,不是 /chat 流的重复,必须放行,否则边等汇报边发新消息会把汇报吞掉。
   const applyLiveEvent = useCallback((event: SSEEvent) => {
-    if (abortRef.current) return  // 本页是发起方,/chat 已在处理
+    const isBackgroundReport = event.source === 'task-report' || event.source === 'task-error'
+    if (abortRef.current && !isBackgroundReport) return  // 本页是发起方,/chat 已在处理 live-reply
 
     // response 去重:判断在 setMessages updater 之外做(纯 ref,避免 React 严格模式 updater 重入污染)
     if (event.type === 'response') {

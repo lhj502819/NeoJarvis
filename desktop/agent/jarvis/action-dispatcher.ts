@@ -2,7 +2,8 @@ import { createTask, updateTask, addSubTask, getTask, getTaskSummary, listTasks,
 import { scheduleAllRunnable, handleSubTaskComplete, handleSubTaskFailed, checkTaskCompletion } from '../task/scheduler.js'
 import { listRecipes, getRecipe, incrementUsage } from '../team/registry.js'
 import { dispatchToAgent, interruptAgent, takeWrittenFiles } from '../a2a/client.js'
-import { registerRunningTask, unregisterRunningTask } from '../a2a/registry.js'
+import { listAdhocAgents } from '../a2a/adhoc.js'
+import { registerRunningTask, unregisterRunningTask, getRunningSubtasksForTask, updateRunningTaskProgress } from '../a2a/registry.js'
 import { bus } from '../a2a/bus.js'
 import { broadcast } from './sse.js'
 import { buildSubtaskEvent } from './subtask-event.js'
@@ -55,9 +56,45 @@ interface ActionResponse {
   data: Record<string, unknown>
 }
 
+// 任务完成后,算出本次涉及的领域里"该转正"的临时工(累计 ≥3 次、尚未转正),
+// 生成一段汇报附言让 Jarvis 主动向 Sir 推荐收编。只看本任务干过的 domain。
+// 拿不到数据 / 无候选 → 返回空串,汇报里就不提。
+async function buildPromoteNote(
+  userId: string,
+  subtasks: Array<{ domain?: string }>,
+): Promise<string> {
+  const touchedDomains = new Set(subtasks.map(st => st.domain).filter((d): d is string => !!d))
+  if (touchedDomains.size === 0) return ''
+
+  const adhocs = await listAdhocAgents(userId)  // 已按 promoted=0 过滤
+  const ready = adhocs.filter(a => touchedDomains.has(a.domain) && a.taskCount >= 3)
+  if (ready.length === 0) return ''
+
+  const list = ready.map(a => `「${a.domain}」(已干 ${a.taskCount} 次)`).join('、')
+  return `\n\n【主动推荐转正】本次涉及的 ${list} 领域,临时工已累计达转正线。` +
+    `请在汇报末尾自然地顺带向 Sir 推荐把他转正为正式小弟 —— 按 promote-agent skill 的做法,` +
+    `简短说明理由 + 给他起个拟人昵称和 emoji,让 Sir 一句话决定。别生硬,像同事间顺口提一嘴。`
+}
+
 const taskAbortControllers: Map<string, AbortController> = new Map()
 
 export function abortTask(taskId: string) {
+  // 取消不走小弟的正常完成流程,得主动收尾两件事,否则前端和 DB 都留残影:
+  //  ① 给前端补发结束事件 —— 否则 MonitorPanel 里那条 running 会一直挂到页面刷新。
+  //  ② 把运行中子任务标记 cancelled —— cancel_task 只改了任务表,子任务会永远停在 running。
+  // 用 failed + error='已取消'(前端对非 running 一视同仁:立即结束态、30s 后淡出),
+  // 避免为取消新增一套状态枚举;子任务侧则落 'cancelled' 语义。
+  for (const st of getRunningSubtasksForTask(taskId)) {
+    broadcast('subtask', JSON.stringify(buildSubtaskEvent({
+      subtaskId: st.subtaskId, taskId,
+      agentName: st.agentName, agentType: st.agentType,
+      taskName: st.description.slice(0, 60),
+      status: 'failed', turnCount: 0,
+      startedAt: st.startedAt, error: '已取消',
+    })), st.userId)
+    // fire-and-forget:不阻塞取消,更新失败也不影响 abort(DB 偶发失败可容忍)
+    updateSubTask(st.userId, taskId, st.subtaskId, { status: 'cancelled', error: '已取消' }).catch(() => {})
+  }
   const controller = taskAbortControllers.get(taskId)
   if (controller) {
     controller.abort()
@@ -123,6 +160,8 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
       resumeSubtaskId,
       onProgress: (progress) => {
         updateSubTask(userId, taskId, subtaskId, { progress: progress.text }).catch(() => {})
+        // 同步实时进度到 registry,让前端刷新后能从 /api/agents 拿到真实回合数(而非重置为 0)
+        updateRunningTaskProgress(subtaskId, progress.turnCount, progress.currentTool)
         const payload = buildSubtaskEvent({
           subtaskId, taskId,
           agentName: recipe?.name || assignee,
@@ -248,6 +287,12 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
         const previewNote = autoArtifact
           ? `\n\n【已自动预览】团队产出的成品「${autoArtifact.title}」已推送到右侧预览面板,汇报时可以自然提一句"已在右侧预览"。`
           : ''
+
+        // 主动推荐转正:本次任务涉及的领域里,若有临时工累计达线(≥3 次且未转正),
+        // 把推荐指令拼进汇报 prompt —— Jarvis 汇报完顺口提一句,不用 Sir 开口问。
+        // 只看本任务干过的 domain(刚干完活、顺势推荐的自然时机),不翻无关历史候选。
+        const promoteNote = await buildPromoteNote(userId, finalTask.subtasks).catch(() => '')
+
         const reportPrompt = `你是 Jarvis，一个有幽默感的私人管家。称呼用户为 Sir。\n` +
           `你刚刚完成了任务「${finalTask.name}」。以下是团队交回的原始结果：\n\n${finalTask.result}\n\n` +
           `请向 Sir 汇报结果。要求：\n` +
@@ -255,7 +300,7 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
           `- 保留关键信息，去掉冗余\n` +
           `- 用清晰的结构（列表、表格都行）\n` +
           `- 语气像管家汇报，不是写文档\n` +
-          `- 太长就给精华摘要，说一句"详细版随时可以展开"${previewNote}`
+          `- 太长就给精华摘要，说一句"详细版随时可以展开"${previewNote}${promoteNote}`
 
         const summary = await withBrainLock(userId, () => rawLlmCall(userId, reportPrompt, '请汇报'))
         const report = summary || finalTask.result

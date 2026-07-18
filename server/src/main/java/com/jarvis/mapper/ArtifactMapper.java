@@ -25,7 +25,8 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface ArtifactMapper {
 
-    @Select("SELECT id, type, title, language, version, created_at AS createdAt "
+    @Select("SELECT id, type, title, language, version, created_at AS createdAt, "
+            + "updated_at AS updatedAt "
             + "FROM jarvis_artifacts "
             + "WHERE task_id = #{taskId} AND user_id = #{userId} ORDER BY created_at ASC")
     List<ArtifactSummary> listSummaryByTask(@Param("taskId") String taskId,

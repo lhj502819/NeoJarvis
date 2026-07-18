@@ -24,6 +24,9 @@ interface RunningTaskInit {
   description: string
   startedAt: number
   name?: string
+  agentType?: 'permanent' | 'adhoc'
+  turnCount?: number
+  currentTool?: string
 }
 
 const FADE_MS = 30_000  // done/failed 保留 30s 后淡出
@@ -52,7 +55,8 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
             agentName: r.name || r.recipeId,
             agentType: r.agentType || 'adhoc',
             taskName: r.description.slice(0, 60),
-            status: 'running', turnCount: 0,
+            status: 'running', turnCount: r.turnCount ?? 0,
+            currentTool: r.currentTool,
             startedAtMs: r.startedAt,
           })
         }
