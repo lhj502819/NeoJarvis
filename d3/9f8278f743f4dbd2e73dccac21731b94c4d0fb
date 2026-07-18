@@ -1,0 +1,68 @@
+server/src/test/java/com/jarvis/service/RecipeServiceTest.java
+  s_03d1fe9e2be4df::t_27c9f0decb75a6 37,48
+  s_03d1fe9e2be4df::t_fc0b0c86722caa 111
+  s_03d1fe9e2be4df::t_40199b2f1899b9 83,94,97
+  s_03d1fe9e2be4df::t_7098582f51dd61 56,70,72,75
+server/src/test/java/com/jarvis/web/RecipeControllerTest.java
+  s_03d1fe9e2be4df::t_bb4505ba018151 66
+  s_03d1fe9e2be4df::t_5e192b2226749e 39,45
+  s_03d1fe9e2be4df::t_65231e39d1c84c 77
+server/src/test/java/com/jarvis/mapper/RecipeMapperTest.java
+  s_03d1fe9e2be4df::t_5e1cdfd9315602 59,71
+web/src/components/AgentAvatar.tsx
+  s_03d1fe9e2be4df::t_5a2a9699d6cb37 1-69
+server/src/main/java/com/jarvis/domain/AgentRecipe.java
+  s_03d1fe9e2be4df::t_6afdaebdf5d356 24-25
+server/src/test/java/com/jarvis/service/TaskServiceTest.java
+  s_03d1fe9e2be4df::t_4ece078f5a39e4 312
+web/src/pages/dashboard/types.ts
+  s_03d1fe9e2be4df::t_a7f54a6282924e 45
+desktop/agent/shared/types.ts
+  s_03d1fe9e2be4df::t_c1dd8eececa7db 110-111
+web/src/components/AgentsSidebar.tsx
+  s_03d1fe9e2be4df::t_568169252b6281 2
+  s_03d1fe9e2be4df::t_9269d8d74e7ded 18
+  s_03d1fe9e2be4df::t_57a9b49d1801ef 73
+server/src/main/java/com/jarvis/mapper/RecipeMapper.java
+  s_03d1fe9e2be4df::t_da633f42dfdad2 43,46,53-54
+  s_03d1fe9e2be4df::t_0c0278280458f3 20
+server/src/main/resources/schema.sql
+  s_03d1fe9e2be4df::t_a6fd441e99e08a 75-76,78-79
+server/src/main/java/com/jarvis/domain/RecipeRow.java
+  s_03d1fe9e2be4df::t_8faedc4006fac7 21-22
+web/src/pages/dashboard/TeamPage.tsx
+  s_03d1fe9e2be4df::t_c013948759c6ab 6
+  s_03d1fe9e2be4df::t_246d8d35e763b4 212
+  s_03d1fe9e2be4df::t_6bfacaa57325c7 221-224
+  s_03d1fe9e2be4df::t_19ae662da83c9e 69
+  s_03d1fe9e2be4df::t_12e3e7715c174f 148-151
+  s_03d1fe9e2be4df::t_e1996b6d6e2f0b 57
+server/src/test/java/com/jarvis/DatabaseSchemaTest.java
+  s_03d1fe9e2be4df::t_542fe121cb1918 122-132
+server/src/main/java/com/jarvis/service/RecipeService.java
+  s_03d1fe9e2be4df::t_d14a4d5068742a 114
+  s_03d1fe9e2be4df::t_5aadd8e6f8e385 78,82,85
+web/src/pages/dashboard/components/TaskRunningRail.tsx
+  s_03d1fe9e2be4df::t_70b54c169152e9 56
+  s_03d1fe9e2be4df::t_74809323f8a49a 2
+server/src/main/java/com/jarvis/domain/CreateRecipeRequest.java
+  s_03d1fe9e2be4df::t_10c9bc85d1985f 25-26
+desktop/agent/team/registry.ts
+  s_03d1fe9e2be4df::t_72fb68fa515ed8 50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.7",
+  "base_commit_sha": "d39f8278f743f4dbd2e73dccac21731b94c4d0fb",
+  "prompts": {},
+  "sessions": {
+    "s_03d1fe9e2be4df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ef2e7e9-02b4-40bb-8fe3-5e753ec484aa",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "lihongjian.34 <lihongjian.34@jd.com>"
+    }
+  }
+}
