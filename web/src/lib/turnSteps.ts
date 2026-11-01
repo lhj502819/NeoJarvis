@@ -16,6 +16,19 @@ export type Step =
   | { kind: 'tools'; tools: string[]; key: string }
   | { kind: 'message'; text: string; key: string }
 
+/** 重设计的任务详情时间线事件:执行轨迹 + 收发消息合流,消息带方向/收发方/类型。 */
+export type TimelineEvent =
+  | { kind: 'thought'; text: string; key: string; time: number }
+  | { kind: 'tools'; tools: string[]; key: string; time: number }
+  | {
+      kind: 'message'; key: string; time: number
+      direction: 'outgoing' | 'incoming' | 'directive'  // 本小弟发出 / 别人发来 / Jarvis 指令
+      fromId: string; toId: string
+      fromName: string; toName: string
+      msgKind?: 'progress' | 'question' | 'deliverable' | 'blocked'  // 从 [type] 前缀解析
+      text: string
+    }
+
 const TOOL_ICONS: Record<string, string> = {
   Bash: '⚡', Read: '📄', Write: '✏️', Edit: '✏️', MultiEdit: '✏️', NotebookEdit: '✏️',
   Glob: '🔍', Grep: '🔍', WebFetch: '🌐', WebSearch: '🌐', Skill: '✨',
@@ -99,4 +112,76 @@ export function countTools(tools: string[]): Array<{ name: string; count: number
     counts[t]++
   }
   return order.map(name => ({ name, count: counts[name] }))
+}
+
+// 小弟→Jarvis 的消息带 `[progress]`/`[question]`/`[deliverable]`/`[blocked]` 前缀(见 agent-comms.ts)。
+// 解析出类型并剥掉前缀用于展示。无前缀返回原文。
+const MSG_KINDS = ['progress', 'question', 'deliverable', 'blocked'] as const
+function parseMsgKind(text: string): { msgKind?: typeof MSG_KINDS[number]; body: string } {
+  const m = text.match(/^\s*\[(progress|question|deliverable|blocked)\]\s*/)
+  if (m) return { msgKind: m[1] as typeof MSG_KINDS[number], body: text.slice(m[0].length) }
+  return { body: text }
+}
+
+/**
+ * 重设计任务详情:为单个小弟合成完整时间线 —— 执行轨迹(turns)+ 与他相关的所有消息
+ * (他发出的 / 别人发给他的 / Jarvis 指令),按时间戳穿成一条线。
+ *
+ * messages 应传"和这个小弟相关的全集":任务级 conversation(小弟↔小弟、小弟↔Jarvis)
+ * + 子任务级(Jarvis→小弟 补充指令)。这里按 from/to 是否等于 subtaskId 过滤 + 分类方向,
+ * 让每个小弟都能看到自己的完整上下文(此前只显示 to===自己 的单向指令)。
+ *
+ * nameOf:把 subtaskId / 'jarvis' 映射成显示名。
+ */
+export function buildSubtaskTimeline(
+  turns: TurnLike[],
+  messages: MessageLike[],
+  subtaskId: string,
+  nameOf: (id: string) => string,
+): TimelineEvent[] {
+  const evs: TimelineEvent[] = []
+  let keySeq = 0
+
+  // ① 执行轨迹:每个 turn 拆成 thought / tools 事件,挂 turn 的 startedAt
+  for (const t of turns) {
+    const time = new Date(t.startedAt).getTime()
+    const raw = t.text
+    if (!raw || raw === '(无文本输出)') continue
+    const { thought, tools } = turnToPieces(raw)
+    if (thought) evs.push({ kind: 'thought', text: thought, key: `e${keySeq++}`, time })
+    if (tools.length) evs.push({ kind: 'tools', tools, key: `e${keySeq++}`, time })
+  }
+
+  // ② 消息:只取与本小弟相关的(收或发),去重(任务级+子任务级可能有重叠 id)
+  const seen = new Set<string>()
+  for (const m of messages) {
+    if (seen.has(m.id)) continue
+    const related = m.from === subtaskId || m.to === subtaskId
+    if (!related) continue
+    seen.add(m.id)
+    const rawText = m.parts.map(p => p.text || '').join('').trim()
+    if (!rawText) continue
+    const { msgKind, body } = parseMsgKind(rawText)
+    const direction: 'outgoing' | 'incoming' | 'directive' =
+      m.from === subtaskId ? 'outgoing' : m.from === 'jarvis' ? 'directive' : 'incoming'
+    evs.push({
+      kind: 'message', key: `e${keySeq++}`, time: new Date(m.timestamp).getTime(),
+      direction, fromId: m.from, toId: m.to,
+      fromName: nameOf(m.from), toName: nameOf(m.to),
+      msgKind, text: body,
+    })
+  }
+
+  // ③ 按时间升序;相邻同名工具事件合并(减少碎片)
+  evs.sort((a, b) => a.time - b.time)
+  const merged: TimelineEvent[] = []
+  for (const ev of evs) {
+    const last = merged[merged.length - 1]
+    if (ev.kind === 'tools' && last && last.kind === 'tools') {
+      last.tools.push(...ev.tools)
+    } else {
+      merged.push(ev)
+    }
+  }
+  return merged
 }

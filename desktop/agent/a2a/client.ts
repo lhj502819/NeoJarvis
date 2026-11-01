@@ -1,11 +1,6 @@
-import { query, type Query } from '@anthropic-ai/claude-agent-sdk'
-import { execSync } from 'child_process'
-import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
+import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager, getAgentDir, type ToolDefinition, type AgentSession } from '@earendil-works/pi-coding-agent'
+import { getModelRuntime, getJarvisModel } from '../shared/pi-models.js'
 import { getPeerAgents } from './registry.js'
-
-const JARVIS_PLUGIN_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'jarvis', 'plugins', 'jarvis')
-const SKILLS_HUB_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'jarvis', 'plugins', 'skills-hub')
 import { getRecipe } from '../team/registry.js'
 import { recordAgentSession, findLastSubtaskForReuse, extractKeywords } from './history.js'
 import { upsertAdhocAgent } from './adhoc.js'
@@ -14,23 +9,18 @@ import { bus } from './bus.js'
 import { buildUserEnv } from '../shared/user-env.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
 import { buildUserMcpServers } from '../shared/user-mcp.js'
-import { createAgentCommsMcp } from './agent-comms.js'
+import { createAgentCommsTools } from './agent-comms.js'
 import { getSubtaskHistoryForPrompt } from './subtask-history-context.js'
 import { getDisabledSkills, getEnabledHubSkills } from '../jarvis/skill-prefs.js'
 import {
   recordToolTrace,
   flattenResultText,
-  isToolUseBlock,
-  extractToolResults,
-  type PendingToolCall,
 } from '../shared/tool-trace.js'
 
 const DEBUG = process.env.JARVIS_DEBUG === '1' || process.argv.includes('--debug')
 function debug(...args: any[]) {
   if (DEBUG) console.log('\x1b[2m[agent-debug]\x1b[0m', ...args)
 }
-
-const CLAUDE_PATH = execSync('which claude', { encoding: 'utf-8' }).trim()
 
 function isRetryableError(err: string): boolean {
   const retryable = ['internal server error', 'overloaded', '529', '500', '502', '503', 'rate limit', 'timeout', 'ECONNRESET', 'ETIMEDOUT']
@@ -50,14 +40,63 @@ export interface DispatchContext {
   onProgress?: (progress: { text: string; turnCount: number; currentTool?: string; currentAction?: string }) => void
 }
 
-const activeQueries = new Map<string, Query>()
 
-export function getActiveQuery(subtaskId: string): Query | undefined {
-  return activeQueries.get(subtaskId)
+/**
+ * 活跃小弟的 session 句柄。Pi 用 AgentSession 替代 Claude SDK 的 Query。
+ *
+ * 流式输入模式:Claude SDK 用 AsyncIterable<SDKUserMessage> + q.interrupt();
+ * Pi 用 session.steer()(转向消息,当前 turn 工具跑完后投递)。
+ * 中途打断用 session.abort()(替代 q.interrupt())。
+ *
+ * 生命周期:小弟 session.prompt() 完成 → agent_settled → 检查收件箱 → 有消息就再
+ * prompt(steer 已投递);否则 close/dispose。
+ */
+interface ActiveAgent {
+  session: AgentSession
+  unsubscribe: () => void
+}
+const activeAgents = new Map<string, ActiveAgent>()
+
+// ── InputQueue:保留导出(测试依赖),但 dispatchToAgent 不再使用 ──
+// Pi 用 session.steer() 替代流式输入,InputQueue 仅作为纯数据结构留存供测试。
+export interface InputQueue {
+  push: (msg: any) => void
+  close: () => void
+  isDrained: () => boolean
+  stream: AsyncGenerator<any>
+}
+export function createInputQueue(first: any): InputQueue {
+  const pending: any[] = [first]
+  let closed = false
+  let wake: (() => void) | null = null
+  const wakeup = () => { if (wake) { wake(); wake = null } }
+  async function* gen(): AsyncGenerator<any> {
+    while (true) {
+      while (pending.length) yield pending.shift()!
+      if (closed) return
+      await new Promise<void>(resolve => { wake = resolve })
+    }
+  }
+  return {
+    push: (msg) => { if (!closed) { pending.push(msg); wakeup() } },
+    close: () => { closed = true; wakeup() },
+    isDrained: () => closed && pending.length === 0,
+    stream: gen(),
+  }
+}
+
+// 刚被"主动打断"的 subtask 集合。Jarvis 发消息时会 abort 小弟当前 turn,随后 session
+// 会发 agent_end(willRetry=false)——这是预期的,不代表小弟结束。消费侧据此吸收掉,
+// 让 steer 的消息在下一轮 prompt 生效。
+const interruptedSubtasks = new Set<string>()
+
+// 兼容旧 export(getActiveQuery):Pi 无 Query 对象,返回 undefined。
+// routes/agent.ts 用 interruptAgent/closeAgent(已迁移到 session),不再需要 getActiveQuery。
+export function getActiveQuery(_subtaskId: string): undefined {
+  return undefined
 }
 
 // 小弟实际写过的文件路径(按写入顺序),供任务完成时确定性挑成品预览。
-// 不依赖 LLM 主动调 render_preview——那会偷懒/幻觉。
 const writtenFilesMap = new Map<string, string[]>()
 export function takeWrittenFiles(subtaskId: string): string[] {
   const files = writtenFilesMap.get(subtaskId) || []
@@ -65,18 +104,27 @@ export function takeWrittenFiles(subtaskId: string): string[] {
   return files
 }
 
+/**
+ * 给运行中的小弟投递一条消息。
+ *
+ * 迁移自 Claude SDK 的流式输入 push。Pi 用 session.steer():
+ *   - steer 是"转向"消息,当前 turn 的工具调用跑完后投递(不像旧 interrupt 那么粗暴)
+ *   - 不需要单独 interrupt —— steer 本身会让小弟下一轮看到新指令
+ *
+ * 注意:旧版靠 interrupt + push 配合实现"立即生效";Pi 的 steer 是"工具跑完后生效",
+ * 语义上更温和,不会打断正在执行的工具调用。对小弟来说通常没问题(工具调用都很快)。
+ */
 export async function sendToAgent(subtaskId: string, message: string): Promise<boolean> {
-  const q = activeQueries.get(subtaskId)
-  if (!q) return false
-
-  const userMessage = {
-    type: 'user' as const,
-    message: { role: 'user' as const, content: message },
-    parent_tool_use_id: null,
-  }
-
+  const ag = activeAgents.get(subtaskId)
+  if (!ag) return false
   try {
-    await q.streamInput((async function*() { yield userMessage })())
+    // steer 需要 session 处于 streaming 状态;如果小弟当前空闲(prompt 已完成),
+    // 用 prompt() 重新发起一轮。
+    if (ag.session.isStreaming) {
+      await ag.session.steer(message)
+    } else {
+      await ag.session.prompt(message)
+    }
     debug('sent message to agent:', subtaskId.slice(0, 6), message.slice(0, 40))
     return true
   } catch (err) {
@@ -86,22 +134,25 @@ export async function sendToAgent(subtaskId: string, message: string): Promise<b
 }
 
 export async function interruptAgent(subtaskId: string): Promise<boolean> {
-  const q = activeQueries.get(subtaskId)
-  if (!q) return false
+  const ag = activeAgents.get(subtaskId)
+  if (!ag) return false
   try {
-    await q.interrupt()
+    interruptedSubtasks.add(subtaskId)
+    await ag.session.abort()
     debug('interrupted agent:', subtaskId.slice(0, 6))
     return true
   } catch {
+    interruptedSubtasks.delete(subtaskId)
     return false
   }
 }
 
 export function closeAgent(subtaskId: string): boolean {
-  const q = activeQueries.get(subtaskId)
-  if (!q) return false
-  q.close()
-  activeQueries.delete(subtaskId)
+  const ag = activeAgents.get(subtaskId)
+  if (!ag) return false
+  ag.unsubscribe()
+  ag.session.dispose()
+  activeAgents.delete(subtaskId)
   debug('closed agent:', subtaskId.slice(0, 6))
   return true
 }
@@ -110,26 +161,39 @@ export async function dispatchToAgent(recipeId: string, taskDescription: string,
   const userId = context?.userId || 'system'
   const recipe = await getRecipe(userId, recipeId)
 
-  const adhocPrompt = `你是一个专项任务执行者，负责完成分配给你的任务。认真执行，返回详细结果。
+  const adhocPrompt = `你是 Jarvis 团队里的一名干活的小弟,专门接手分配给你的这摊活儿。踏实干、把结果做扎实,该说话时像个活人一样开口。
 
 ## 沟通能力
 
-你有以下沟通工具（agent-comms MCP）:
-- message_jarvis: 给管家 Jarvis 发消息(type: question | progress | deliverable | blocked)
-- message_peer: 给并行协作的其他 Agent 发消息(异步、非阻塞,消息进对方收件箱)
-- check_inbox: 查看自己的收件箱(Jarvis 的追加指令、其他 Agent 的消息/回复)。建议每几轮工作后主动查一次
-- list_peers: 查看和你并行工作的其他 Agent
+你有以下沟通工具（agent-comms）:
+- message_jarvis: 给管家 Jarvis 捎话(type: question | progress | deliverable | blocked)
+- message_peer: 跟一起干活的其他小弟搭句话(异步,发完不用等)
+- check_inbox: 看收件箱(Jarvis 的追加指令、其他小弟的消息/回复)。建议每几轮活儿主动瞄一次
+- list_peers: 看看有哪些兄弟在跟你并肩干
 
-何时沟通、是否沟通,由你自主判断。判断原则:信息不足时问,有风险时确认,能独立完成时直接交付。
-message_peer 发出去后你不用等,继续干活即可;等对方回复到了,在下一轮工作前 check_inbox 看到就行。`
+何时开口、要不要开口,你自己拿捏。原则:信息不够就问,有风险就确认,能自己搞定就直接交付。
+message_peer 发出去不用等,继续干;对方回了,下一轮 check_inbox 看到就行。`
 
   const agentName = recipe?.name || recipeId
-  const systemPrompt = recipe?.systemPrompt || adhocPrompt
-  const tools = recipe?.tools || ['Read', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch']
-  // 门牌号：小弟 recipe 自带 cwd > 本次任务指定 cwd（开发类）。纯调研类无门牌号。
+  const talkLikeHuman = `
+
+## 沟通时说人话(重要)
+你在和 Jarvis、和其他小弟沟通时,像一个真同事那样说话,别像客服机器人或写公文:
+- **口语、简短、直给**。想说啥直接说,别绕。"这块我卡住了,缺 XX""搞定,发你了""这里我有个不同看法"——就这样。
+- **不要**用"现汇报如下""请知悉""收到,即刻执行""特此说明"这类腔调;**不要**动不动就分点罗列、加一堆小标题。一两句能说清就一两句。
+- 和其他小弟说话,你们是并肩干活的搭子,可以随意点、有点性子:该催就催,该吐槽就吐槽,该夸就夸。别端着。
+- 有情绪、有判断就带出来:"这需求有点怪""我觉得这样更顺""这个我拿不准"。别把自己写成没有温度的执行器。
+- 这只是**说话的语气**;干活的专业、严谨、结果该怎样还怎样,不打折。`
+  const systemPrompt = (recipe?.systemPrompt || adhocPrompt) + talkLikeHuman
+  // Pi 内置工具名是小写:read/bash/edit/write/grep/find/ls。recipe.tools 存的是 Claude 大写名。
+  // 映射:大写 → 小写;未知工具名原样透传(Pi 会忽略不存在的)。
+  const toolNameMap: Record<string, string> = {
+    Read: 'read', Write: 'write', Edit: 'edit', Bash: 'bash',
+    Glob: 'find', Grep: 'grep', WebSearch: 'web', WebFetch: 'web',
+  }
+  const builtinTools = (recipe?.tools || ['Read', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch'])
+    .map(t => toolNameMap[t] || t.toLowerCase())
   const recordedCwd = (recipe?.context?.cwd as string) || context?.cwd || ''
-  // 执行工作目录：有门牌号（开发类）就用；否则（调研/生活类）落到用户专属沙盒，
-  // 避免临时产物污染项目目录或进程 cwd。兜底值不写进 history（recordedCwd 保持为空）。
   const workDir = recordedCwd || getUserWorkspace(userId)
   const domain = context?.domain || ''
 
@@ -148,9 +212,7 @@ message_peer 发出去后你不用等,继续干活即可;等对方回复到了,�
   const subtaskId = context?.subtaskId || `anon-${Date.now()}`
   const taskId = context?.taskId || 'unknown'
 
-  // 历史注入(替代 SDK resume 黑盒):找一个可复用的历史 subtask,把它的完整执行记忆
-  // (任务描述+思考+工具轨迹+Jarvis 沟通)拼进 prompt。显式指定优先,否则按 assignee 自动匹配。
-  // 全程 .catch 降级 —— 拉不到历史绝不阻塞派单。
+  // 历史注入(替代 SDK resume 黑盒)
   const reuseSubtaskId = context?.resumeSubtaskId
     ?? await findLastSubtaskForReuse(userId, recipeId, domain, taskDescription).catch(() => undefined)
   if (reuseSubtaskId && reuseSubtaskId !== subtaskId) {
@@ -163,36 +225,14 @@ message_peer 发出去后你不用等,继续干活即可;等对方回复到了,�
 
   debug('dispatch start:', recipeId, 'task:', taskDescription.slice(0, 50), reuseSubtaskId ? `(reuse: ${reuseSubtaskId.slice(0, 8)})` : '(new)')
 
-  const userMcpServers = await buildUserMcpServers(userId)
-  const agentCommsMcp = createAgentCommsMcp(subtaskId, taskId, userId, agentName)
-  // 把 MCP servers 的工具通配符加进 allowedTools（bypassPermissions 模式下这是白名单）。
-  // 除了显式枚举每个 MCP,还统一追加 'mcp__*' 通配 —— 兼容内置 recipe / adhoc / 晋升 recipe 的 tools
-  // 白名单里没写 mcp__* 的情况(方案 1:改调用处,不迁移 DB 数据)。
-  const mcpToolNames = Object.keys(userMcpServers).map(name => `mcp__${name}__*`)
-  const allowedTools = [...tools, ...mcpToolNames, 'mcp__agent-comms__*', 'mcp__*']
+  const userMcpTools = await buildUserMcpServers(userId)
+  const agentCommsTools = createAgentCommsTools(subtaskId, taskId, userId, agentName)
+  const customTools: ToolDefinition[] = [...userMcpTools, ...agentCommsTools]
 
   const disabledSkills = await getDisabledSkills(userId)
   const explicit = [...new Set([...(recipe?.skills || []), ...(context?.skills || [])])]
     .filter(name => !disabledSkills.has(name))
-  // Jarvis 显式挂了 skill 就用它(已过滤禁用);没挂则退回"全部启用的 hub skill"——
-  // 与 SDK 省略时的默认(全部)语义一致,但去掉了用户禁用的。恒传显式数组,
-  // 因为 SDK 里 skills 省略 ≠ 关闭(sdk.d.ts:1841)。
   const agentSkills = explicit.length ? explicit : await getEnabledHubSkills(userId)
-
-  const queryOptions: Record<string, any> = {
-    systemPrompt,
-    pathToClaudeCodeExecutable: CLAUDE_PATH,
-    allowedTools,
-    cwd: workDir,
-    permissionMode: 'bypassPermissions',
-    allowDangerouslySkipPermissions: true,
-    settingSources: [],
-    plugins: [{ type: 'local', path: JARVIS_PLUGIN_DIR }, { type: 'local', path: SKILLS_HUB_DIR }],
-    skills: agentSkills,
-    env: await buildUserEnv(userId),
-    maxTurns: 99999,
-    mcpServers: { ...userMcpServers, 'agent-comms': agentCommsMcp },
-  }
 
   const MAX_RETRIES = 2
   const RETRY_DELAYS = [3000, 8000]
@@ -201,7 +241,6 @@ message_peer 发出去后你不用等,继续干活即可;等对方回复到了,�
   let result = ''
   let sessionId = ''
 
-  // 开工时刻(排队等待不计入执行耗时)——只在首次真正开跑时记一次
   await setSubtaskStarted(subtaskId, new Date().toISOString()).catch(() => {})
   let totalTurns = 0
   let tokensInput = 0
@@ -229,142 +268,197 @@ message_peer 发出去后你不用等,继续干活即可;等对方回复到了,�
     const progressLog: string[] = []
     let apiError = false
     writtenFiles = []
-    // 工具调用采集:tool_use 时暂存,tool_result 到达时配对入库
-    const pendingCalls = new Map<string, PendingToolCall>()
+    let sawSuccessResult = false
+    let postDoneRefeeds = 0
+    const MAX_POST_DONE_REFEEDS = 3
+    const pendingCalls = new Map<string, { toolName: string; args: unknown; callIndex: number; startedAt: string }>()
+    let callIdxInTurn = 0
 
     // 注册到 bus — handler 处理 Jarvis/其他 agent 发来的消息
     bus.register(subtaskId, `${agentName}#${subtaskId.slice(0, 6)}`, async (msg) => {
       const text = msg.parts.find(p => p.kind === 'text')?.text || ''
+      if (!text) return null
       const sent = await sendToAgent(subtaskId, text)
-      if (sent) {
-        debug('bus → agent injected:', text.slice(0, 40))
-      }
+      if (!sent) return null
+      debug('bus → agent injected:', text.slice(0, 40))
       return null
     })
 
-    const q = query({ prompt: enrichedDescription, options: queryOptions })
-    activeQueries.set(subtaskId, q)
+    const modelRuntime = await getModelRuntime()
+    const model = await getJarvisModel(recipe?.model || 'sonnet')
+    if (!model) throw new Error('未找到可用的 LLM 模型(桥接 provider 与 Pi 默认均未配置)')
+    const loader = new DefaultResourceLoader({
+      cwd: workDir,
+      agentDir: getAgentDir(),
+      systemPromptOverride: () => systemPrompt,
+    })
+    await loader.reload()
 
-    try {
-      for await (const message of q) {
-        if (context?.signal?.aborted) {
-          q.close()
-          throw new Error('任务已取消')
-        }
+    const { session } = await createAgentSession({
+      cwd: workDir,
+      model,
+      modelRuntime,
+      customTools,
+      resourceLoader: loader,
+      sessionManager: SessionManager.inMemory(workDir),
+      settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
+      // 只启用 recipe 指定的内置工具 + customTools(默认全部启用)
+      // 注意:Pi 的 tools 是 allowlist,传了就只启用列出的;不传则默认 read/bash/edit/write + customTools
+      // 小弟通常需要全套内置能力,这里不传 tools 让默认生效。
+    })
 
-        // 检查 inbox（Jarvis 或其他 agent 发来的消息）
-        const inboxMessages = bus.drainInbox(subtaskId)
-        for (const inMsg of inboxMessages) {
-          const text = inMsg.parts.find(p => p.kind === 'text')?.text || ''
-          if (text) await sendToAgent(subtaskId, text)
-        }
-
-        debug('agent msg:', message.type, (message as any).subtype || '')
-
-        if (message.type === 'assistant' && message.message?.content) {
-          const turnStart = new Date().toISOString()
-          turnCount++
-          totalTurns++
-          let turnText = ''
-          let callIdxInTurn = 0  // 同一回合内 tool_use 的顺序
-
-          for (const block of message.message.content) {
-            if ('text' in block && block.text) {
-              result += block.text
-              turnText += block.text
-              const snippet = block.text.slice(0, 60).replace(/\n/g, ' ')
-              progressLog.push(`[${turnCount}] ${snippet}`)
-            }
-            if (isToolUseBlock(block)) {
-              const toolName = block.name
-              // 抓写文件动作,供任务完成时确定性挑成品预览
-              const fp = (block.input as any)?.file_path
-              if (typeof fp === 'string' && ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(toolName)) {
-                writtenFiles.push(fp)
-              }
-              turnText += `\n🔧 ${toolName}`
-              progressLog.push(`[${turnCount}] 🔧 ${toolName}`)
-              // 暂存,等 tool_result 到达时配对
-              pendingCalls.set(block.id, {
-                toolCallId: block.id,
-                toolName,
-                args: block.input,
-                callIndex: callIdxInTurn++,
-                startedAt: turnStart,
-              })
-            }
-          }
-
-          // 落一条回合轨迹(text 空则记占位,避免 NOT NULL 违规)
-          recordTurn(subtaskId, totalTurns, turnText || '(无文本输出)', turnStart, new Date().toISOString()).catch(() => {})
-
-          if (context?.onProgress) {
-            const recent = progressLog.slice(-5).join('\n')
-            const text = `回合 ${turnCount} | 已执行 ${progressLog.length} 步\n${recent}`
-            // 从最新 progressLog 里抓最后一条工具/文本作 currentAction/currentTool
-            const lastLog = progressLog[progressLog.length - 1] || ''
-            const toolMatch = lastLog.match(/🔧 (\S+)/)
-            context.onProgress({
-              text,
-              turnCount,
-              currentTool: toolMatch ? toolMatch[1] : undefined,
-              currentAction: lastLog.replace(/^\[\d+\] /, '').slice(0, 80),
-            })
-          }
-        }
-
-        // SDK 用 type='user' 消息把 tool_result 送回来(下一轮 LLM 调用的输入)。
-        // 每个 tool_result block 通过 tool_use_id 配对之前 pending 的 tool_use。
-        if (message.type === 'user' && (message as any).message?.content) {
-          const endedAt = new Date().toISOString()
-          const results = extractToolResults(message)
-          for (const tr of results) {
-            const pending = pendingCalls.get(tr.toolUseId)
-            if (!pending) continue  // 找不到配对(不太可能,但兜底)
-            pendingCalls.delete(tr.toolUseId)
-            const resultText = flattenResultText(tr.content)
-            recordToolTrace(userId, {
-              scope: 'subtask',
-              subtaskId,
-              turnIndex: totalTurns,
-              callIndex: pending.callIndex,
-              toolCallId: pending.toolCallId,
-              toolName: pending.toolName,
-              args: pending.args,
-              result: tr.content,
-              resultText,
-              isError: tr.isError,
-              startedAt: pending.startedAt,
-              endedAt,
-            })
-          }
-        }
-
-        if (message.type === 'result') {
-          sessionId = (message as any).session_id || (message as any).sessionId || ''
-          const usage = (message as any).usage
-          if (usage) {
-            tokensInput += usage.input_tokens || 0
-            tokensOutput += usage.output_tokens || 0
-          }
-          if (message.subtype === 'success') {
-            if (!result) result = message.result
-            debug('agent done, session:', sessionId, 'result length:', result.length)
-          } else {
-            const err = (message as any).errors?.join('; ') || (message as any).subtype
-            debug('agent ERROR:', err)
-            lastError = err
-            if (isRetryableError(err) && attempt < MAX_RETRIES) {
-              apiError = true
-            } else {
-              if (!result) result = `[执行错误] ${err}`
-            }
-          }
+    // 事件订阅:翻译 Pi 事件 → progress / tool trace
+    const unsubscribe = session.subscribe((event) => {
+      if (event.type === 'message_update') {
+        const ae = event.assistantMessageEvent
+        // 文本流式不直接累积(从 turn_end / agent_end 取完整结果),但可记 progress
+        if (ae.type === 'text_delta' && ae.delta) {
+          const snippet = ae.delta.slice(0, 60).replace(/\n/g, ' ')
+          // 不每 token 推 progress(太频繁),只兜底记一条
         }
       }
+      if (event.type === 'turn_start') {
+        turnCount++
+        totalTurns++
+        callIdxInTurn = 0
+      }
+      if (event.type === 'tool_execution_start') {
+        const toolName = event.toolName
+        // 抓写文件动作
+        const fp = (event.args as any)?.file_path || (event.args as any)?.path
+        if (typeof fp === 'string' && ['write', 'edit'].includes(toolName)) {
+          writtenFiles.push(fp)
+        }
+        progressLog.push(`[${turnCount}] 🔧 ${toolName}`)
+        pendingCalls.set(event.toolCallId, {
+          toolName,
+          args: event.args,
+          callIndex: callIdxInTurn++,
+          startedAt: new Date().toISOString(),
+        })
+        if (context?.onProgress) {
+          const recent = progressLog.slice(-5).join('\n')
+          context.onProgress({
+            text: `回合 ${turnCount} | 已执行 ${progressLog.length} 步\n${recent}`,
+            turnCount,
+            currentTool: toolName,
+            currentAction: toolName,
+          })
+        }
+      }
+      if (event.type === 'tool_execution_end') {
+        const pending = pendingCalls.get(event.toolCallId)
+        if (pending) {
+          pendingCalls.delete(event.toolCallId)
+          const resultContent = event.result?.content
+          const resultText = flattenResultText(resultContent)
+          recordToolTrace(userId, {
+            scope: 'subtask',
+            subtaskId,
+            turnIndex: totalTurns,
+            callIndex: pending.callIndex,
+            toolCallId: event.toolCallId,
+            toolName: pending.toolName,
+            args: pending.args,
+            result: resultContent,
+            resultText,
+            isError: event.isError,
+            startedAt: pending.startedAt,
+            endedAt: new Date().toISOString(),
+          }).catch(() => {})
+        }
+      }
+      if (event.type === 'turn_end') {
+        // 每个 turn 的 assistant 文本落一条回合轨迹
+        const turnText = (event.message as any)?.content
+          ?.filter((b: any) => b.type === 'text')
+          ?.map((b: any) => b.text)
+          ?.join('') || '(无文本输出)'
+        recordTurn(subtaskId, totalTurns, turnText, new Date().toISOString(), new Date().toISOString()).catch(() => {})
+        // 累积 result(取所有 turn 文本拼接)
+        if (turnText && turnText !== '(无文本输出)') result += turnText
+      }
+      if (event.type === 'agent_end') {
+        // 从最后一条 assistant 消息提取最终 result(若 turn_end 没攒全)
+        const messages = event.messages
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const m = messages[i] as any
+          if (m.role === 'assistant' && Array.isArray(m.content)) {
+            const texts = m.content
+              .filter((b: any) => b.type === 'text' && typeof b.text === 'string')
+              .map((b: any) => b.text)
+            if (texts.length > 0) {
+              result = result || texts.join('')
+              break
+            }
+          }
+        }
+        // usage 提取
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const m = messages[i] as any
+          if (m.role === 'assistant') {
+            if (m.usage) {
+              tokensInput += m.usage.input || 0
+              tokensOutput += m.usage.output || 0
+            }
+            break
+          }
+        }
+        debug('agent_end, result length:', result.length)
+      }
+    })
+
+    const activeAgent: ActiveAgent = { session, unsubscribe }
+    activeAgents.set(subtaskId, activeAgent)
+
+    try {
+      // abort 支持
+      let onAbort: (() => void) | undefined
+      if (context?.signal) {
+        if (context.signal.aborted) {
+          await session.abort()
+          throw new Error('任务已取消')
+        }
+        onAbort = () => session.abort().catch(() => {})
+        context.signal.addEventListener('abort', onAbort)
+      }
+
+      await session.prompt(enrichedDescription)
+
+      if (onAbort) context!.signal!.removeEventListener('abort', onAbort)
+
+      // prompt 完成后,检查收件箱:有消息就再 prompt一轮(最多 MAX_POST_DONE_REFEEDS 次)
+      while (sawSuccessResult ? postDoneRefeeds < MAX_POST_DONE_REFEEDS : true) {
+        const late = bus.drainInbox(subtaskId)
+        if (late.length === 0) break
+        if (sawSuccessResult) postDoneRefeeds++
+        for (const m of late) {
+          const t = m.parts.find(p => p.kind === 'text')?.text || ''
+          if (t) await session.prompt(t)
+        }
+      }
+      if (sawSuccessResult && postDoneRefeeds >= MAX_POST_DONE_REFEEDS) {
+        const late = bus.drainInbox(subtaskId)
+        if (late.length > 0) debug(`post-done refeed cap hit, dropping ${late.length} late msgs`)
+      }
+
+      sawSuccessResult = true
+      sessionId = session.sessionId || ''
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      debug('agent ERROR:', errMsg)
+      lastError = errMsg
+      if (isRetryableError(errMsg) && attempt < MAX_RETRIES) {
+        apiError = true
+      } else {
+        if (!result) result = `[执行错误] ${errMsg}`
+      }
     } finally {
-      activeQueries.delete(subtaskId)
+      unsubscribe()
+      activeAgents.delete(subtaskId)
+      interruptedSubtasks.delete(subtaskId)
       bus.unregister(subtaskId)
+      session.dispose()
     }
 
     if (!apiError) break
@@ -379,21 +473,18 @@ message_peer 发出去后你不用等,继续干活即可;等对方回复到了,�
     tokensOutput,
   }).catch(() => {})
 
-  // 记下小弟写过的文件,供任务完成时确定性挑成品预览
   if (writtenFiles.length) writtenFilesMap.set(subtaskId, writtenFiles)
 
   const finalSessionId = sessionId || `auto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  // 聚类主键是 domain（语义领域），cwd 仅作开发类任务的门牌号辅料（纯调研为空）
   await recordAgentSession(userId, finalSessionId, recipeId, taskDescription, domain, recordedCwd)
   debug('recorded agent session:', finalSessionId, 'domain:', domain)
 
-  // 临时工(无 recipe)才聚合到 adhoc 表;正式小弟不写
   if (!recipe && domain) {
     await upsertAdhocAgent(userId, {
       domain,
       taskDescription,
       cwd: recordedCwd || undefined,
-      sessionId,  // 原始 sessionId(可能空),adhoc.ts 内部过滤 auto-;此处不传 finalSessionId
+      sessionId,
       topics: extractKeywords(taskDescription),
     }).catch(() => {})
   }

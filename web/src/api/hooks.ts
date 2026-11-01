@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { fetchJSON, streamChat, type ChatImagePayload } from './client'
+import { fetchJSON, postJSON, streamChat, type ChatImagePayload } from './client'
 
 export interface MessageArtifact {
   id?: string
@@ -183,6 +183,19 @@ export function useChat() {
       if (abortRef.current === controller) {
         abortRef.current = null
         setIsLoading(false)
+        // 兜底:SSE 流若正常结束却没等到 response(如后端重启/网络抖动导致连接 EOF),
+        // 最后一条 jarvis 气泡会永久卡在 thinking/streaming。收尾时强制落地,避免残留 ——
+        // 已有内容(streaming)保留为最终态,无内容(thinking)标一句中断提示。
+        // 但打字机仍在跑时(typingRef 非空)不能动:那是正常 response 的逐字动画,会自己转 done。
+        if (!typingRef.current) {
+          setMessages(prev => {
+            const last = prev[prev.length - 1]
+            if (!last || last.role !== 'jarvis' || (last.status !== 'thinking' && last.status !== 'streaming')) return prev
+            return prev.map((m, i) => i === prev.length - 1
+              ? { ...m, status: 'done' as const, content: m.content || '[响应中断,请重试]' }
+              : m)
+          })
+        }
       }
     }
   }, [typewriterEffect])
@@ -254,8 +267,21 @@ export function useChat() {
     setIsLoading(false)
   }, [])
 
-  const clear = useCallback(() => {
-    // 中断进行中的流式,清空 UI 侧消息。注意:后端持久化不受影响(历史仍在库里)。
+  const clear = useCallback(async () => {
+    // 真清:删后端对话 + 执行痕迹(团队小弟、制品库、配置保留),不可逆,先二次确认。
+    if (!confirm('确定清空 Jarvis 的所有记忆?对话、任务、执行记录将永久删除,不可恢复。团队成员和制品库会保留。')) return
+    try {
+      const res = await postJSON<{ ok: boolean; error?: string }>('/api/memory/reset', {})
+      if (!res.ok) {
+        // 运行中拦截(409)等:后端拒绝就不清屏,提示用户。
+        alert(res.error || '清空失败,请稍后再试')
+        return
+      }
+    } catch {
+      alert('清空失败,请检查网络后重试')
+      return
+    }
+    // 后端删成功后再清 UI:中断进行中的流式、清空消息、复位状态。
     abortRef.current?.abort()
     setMessages([])
     setIsLoading(false)

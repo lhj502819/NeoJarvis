@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef } from 'react'
 import { fetchJSON } from '../api/client'
-import { buildStepsWithMessages, countTools, toolIcon, toolLabel } from '../lib/turnSteps'
+import { buildSubtaskTimeline, countTools, toolIcon, toolLabel, type MessageLike, type TimelineEvent } from '../lib/turnSteps'
+import { AgentAvatar } from './AgentAvatar'
+import { ThoughtStep } from './ThoughtStep'
 import './ExecutionModal.css'
 
 interface SubTaskLite {
@@ -8,6 +10,7 @@ interface SubTaskLite {
   name: string
   description: string
   assignee: string
+  domain?: string
   agentType?: 'permanent' | 'adhoc'
   agentName?: string
   status: string
@@ -39,6 +42,11 @@ interface TaskDetail {
   task: { id: string; name: string; status: string; subtasks: SubTaskLite[] }
   turnsBySubtask: Record<string, TurnLite[]>
   messagesBySubtask: Record<string, MessageLite[]>
+  conversation?: {
+    contextId: string
+    participants: string[]
+    messages: MessageLite[]
+  } | null
 }
 
 function fmtDuration(startIso?: string, endIso?: string): string {
@@ -49,10 +57,42 @@ function fmtDuration(startIso?: string, endIso?: string): string {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
 }
 
+function fmtClock2(ms: number): string {
+  const d = new Date(ms)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
+const EXM_MSG_KIND_LABEL: Record<string, string> = {
+  progress: '进展', question: '请示', deliverable: '交付', blocked: '受阻',
+}
+
+/** 时间线消息气泡(与 TaskDetail 的 MessageBubble 同款,复用 .tl-* 样式)。 */
+function ExmMessageBubble({ ev }: { ev: Extract<TimelineEvent, { kind: 'message' }> }) {
+  const dirClass = ev.direction === 'outgoing' ? 'outgoing' : ev.direction === 'directive' ? 'from-jarvis' : 'incoming'
+  const kindLabel = ev.direction === 'directive' ? '补充指令' : (ev.msgKind ? EXM_MSG_KIND_LABEL[ev.msgKind] : '')
+  const kindCls = ev.direction === 'directive' ? 'directive' : (ev.msgKind || '')
+  return (
+    <div className={`tl-msg ${dirClass}`}>
+      <AgentAvatar seed={ev.fromId} fallback={ev.fromName} size={26} className="tl-msg-av" />
+      <div className="tl-bubble">
+        <div className="tl-bubble-who">
+          <span>{ev.fromName}</span>
+          <span className="tl-bubble-arrow">→ {ev.toName}</span>
+          {kindLabel && <span className={`tl-kind tl-kind-${kindCls}`}>{kindLabel}</span>}
+          <span className="tl-bubble-time">{fmtClock2(ev.time)}</span>
+        </div>
+        <div className="tl-bubble-txt">{ev.text.slice(0, 600)}</div>
+      </div>
+    </div>
+  )
+}
+
 export function ExecutionModal({ taskId, subtaskId, onClose }: { taskId: string; subtaskId: string; onClose: () => void }) {
   const [detail, setDetail] = useState<TaskDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [directiveOpen, setDirectiveOpen] = useState(false)
+  const [showTrace, setShowTrace] = useState(false)
   const timerRef = useRef<number | null>(null)
 
   // 拉详情;running 时 2s 轮询
@@ -84,10 +124,21 @@ export function ExecutionModal({ taskId, subtaskId, onClose }: { taskId: string;
 
   const sub = detail?.task.subtasks.find(s => s.id === subtaskId)
   const turns = detail?.turnsBySubtask[subtaskId] || []
-  const messages = detail?.messagesBySubtask?.[subtaskId] || []
-  const steps = buildStepsWithMessages(turns, messages, subtaskId)
-  const toolCount = steps.reduce((n, s) => n + (s.kind === 'tools' ? s.tools.length : 0), 0)
-  const thoughtCount = steps.filter(s => s.kind === 'thought').length
+  // 合并该小弟的完整上下文:子任务级(Jarvis→他 指令) + 任务级 conversation(小弟↔小弟、小弟↔Jarvis)。
+  // buildSubtaskTimeline 内部按 from/to 过滤 + 分类方向,与任务 tab 的详情一致。
+  const messages: MessageLike[] = [...(detail?.messagesBySubtask?.[subtaskId] || []), ...(detail?.conversation?.messages || [])]
+  const nameOf = (who: string): string => {
+    if (who === 'jarvis') return 'Jarvis'
+    const st = detail?.task.subtasks.find(s => s.id === who)
+    if (!st) return '小弟'
+    return (st.domain || st.name || '小弟').slice(0, 12)
+  }
+  const events = buildSubtaskTimeline(turns, messages, subtaskId, nameOf)
+  const toolCount = events.reduce((n, e) => n + (e.kind === 'tools' ? e.tools.length : 0), 0)
+  const thoughtCount = events.filter(e => e.kind === 'thought').length
+  // 默认只显示沟通气泡;思考/工具折叠在"展开执行轨迹"后。
+  const traceCount = events.filter(e => e.kind !== 'message').length
+  const shownEvents = showTrace ? events : events.filter(e => e.kind === 'message')
   const uiState = sub?.status === 'running' ? 'running' :
                   sub?.status === 'completed' ? 'done' :
                   sub?.status === 'failed' ? 'failed' : 'done'
@@ -133,46 +184,49 @@ export function ExecutionModal({ taskId, subtaskId, onClose }: { taskId: string;
               <div className={`exm-directive-text${directiveOpen ? '' : ' collapsed'}`}>{sub.description || sub.name}</div>
             </div>
             <div className="exm-body">
-              {steps.length === 0 ? (
+              {events.length === 0 ? (
                 <div className="exm-empty">暂无轨迹记录</div>
               ) : (
-                <div className="exm-timeline">
-                  {steps.map(step => {
-                    if (step.kind === 'thought') {
-                      return (
-                        <div className="exm-step exm-step-thought" key={step.key}>
-                          <span className="exm-node"></span>
-                          <div className="exm-thought">{step.text}</div>
-                        </div>
-                      )
-                    }
-                    if (step.kind === 'tools') {
-                      return (
-                        <div className="exm-step exm-step-tools" key={step.key}>
-                          <span className="exm-node"></span>
-                          <div className="exm-tools">
-                            {countTools(step.tools).map((t, i) => (
-                              <span className="exm-tool-chip" key={i}>
-                                <span className="exm-tool-ico">{toolIcon(t.name)}</span>
-                                <span className="exm-tool-name">{toolLabel(t.name)}</span>
-                                {t.count > 1 && <span className="exm-tool-count">×{t.count}</span>}
-                              </span>
-                            ))}
+                <>
+                  {traceCount > 0 && (
+                    <button className="tl-trace-toggle" onClick={() => setShowTrace(s => !s)} type="button">
+                      {showTrace ? '▾ 收起执行轨迹' : `▸ 展开执行轨迹（${traceCount} 步思考/工具）`}
+                    </button>
+                  )}
+                  {shownEvents.length > 0 ? (
+                    <div className="tl">
+                      {shownEvents.map(ev => {
+                        if (ev.kind === 'thought') return (
+                          <div className="tl-ev tl-ev-thought" key={ev.key}>
+                            <div className="tl-ev-time">{fmtClock2(ev.time)}</div>
+                            <ThoughtStep text={ev.text} />
                           </div>
-                        </div>
-                      )
-                    }
-                    return (
-                      <div className="exm-step exm-step-msg" key={step.key}>
-                        <span className="exm-node exm-node-msg"></span>
-                        <div className="exm-msg">
-                          <div className="exm-msg-tag">💬 Jarvis 补充</div>
-                          <div className="exm-msg-text">{step.text}</div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                        )
+                        if (ev.kind === 'tools') return (
+                          <div className="tl-ev tl-ev-tools" key={ev.key}>
+                            <div className="tl-ev-time">{fmtClock2(ev.time)}</div>
+                            <div className="tl-tools">
+                              {countTools(ev.tools).map((t, i) => (
+                                <span className="dash-tool-chip" key={i}>
+                                  <span>{toolIcon(t.name)}</span>
+                                  <span className="dash-tool-name">{toolLabel(t.name)}</span>
+                                  {t.count > 1 && <span className="dash-tool-count">×{t.count}</span>}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                        return (
+                          <div className="tl-ev tl-ev-msg" key={ev.key}>
+                            <ExmMessageBubble ev={ev} />
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (!showTrace && (
+                    <div className="exm-empty" style={{ padding: '4px 0' }}>本小弟无对外沟通,执行轨迹见上方展开</div>
+                  ))}
+                </>
               )}
               {sub.result && (
                 <div className="exm-result">

@@ -1,17 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// factory.ts (A2A executor path) 补 MCP + allowedTools 加 mcp__* 后要验证:
-//   1. startAgentServer(recipe, userId) 会把 userId 一路传到 RecipeExecutor.execute()
-//   2. execute() 调 SDK query 时,options 里带上:
-//      - mcpServers = buildUserMcpServers(userId) 的返回(不是空对象/undefined)
-//      - allowedTools 包含 recipe.tools + 'mcp__*' 通配
-// factory.ts module-level 会 execSync('which claude') + app.listen,通过 vi.mock 全部隔离。
-// RecipeExecutor 未导出;通过 mock DefaultRequestHandler 抓取入参里的 executor 实例。
+// factory.ts (A2A executor path) 迁移到 Pi SDK 后:
+//   - query({ mcpServers, allowedTools }) → createAgentSession({ customTools })
+//   - Pi 无 MCP / allowedTools 概念,工具走 customTools(ToolDefinition[])
+//   - 验证点:
+//     1. startAgentServer(recipe, userId) 把 userId 一路传到 RecipeExecutor.execute()
+//     2. execute() 里用 userId 调 buildUserMcpServers,返回的 ToolDefinition[] 传给 createAgentSession
+//     3. buildUserMcpServers 抛错时 customTools 降级为空数组,executor 不崩
+//   factory.ts module-level 会 ModelRuntime.create() + app.listen,通过 vi.mock 全部隔离。
+//   RecipeExecutor 未导出;通过 mock DefaultRequestHandler 抓取入参里的 executor 实例。
 
 const spies = vi.hoisted(() => ({
-  queryCalls: [] as Array<{ prompt: unknown; options: any }>,
+  createSessionCalls: [] as Array<{ customTools?: any[]; cwd?: string }>,
   mcpBuilds: [] as string[],
-  mcpReturn: {} as Record<string, any>,
+  mcpReturn: [] as any[],
   capturedExecutor: null as any,
 }))
 
@@ -19,27 +21,44 @@ vi.mock('child_process', async () => {
   const actual = await vi.importActual<typeof import('child_process')>('child_process')
   return {
     ...actual,
-    execSync: (cmd: string, opts?: any) => {
-      if (typeof cmd === 'string' && cmd.includes('which claude')) {
-        // factory.ts 调用形如 execSync('which claude', { encoding: 'utf-8' }).trim();
-        // 保证返回值就是字符串,.trim() 可用
-        return '/usr/local/bin/claude\n'
-      }
-      return actual.execSync(cmd, opts)
-    },
+    // factory.ts 不再 execSync('which claude')(Pi 不需要 claude CLI);保留兼容旧断言
+    execSync: (cmd: string, opts?: any) => actual.execSync(cmd, opts),
   }
 })
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: (arg: { prompt: unknown; options: any }) => {
-    spies.queryCalls.push(arg)
-    // 只吐一条成功 result 就结束,executor 的 for-await 循环走完
-    return (async function* () {
-      yield { type: 'result', subtype: 'success', result: 'ok' } as any
-    })()
+vi.mock('@earendil-works/pi-coding-agent', () => ({
+  createAgentSession: async (opts: any) => {
+    spies.createSessionCalls.push(opts)
+    // 返回一个最小 session mock:prompt 解析后发 agent_end
+    const listeners: Array<(e: any) => void> = []
+    const session: any = {
+      sessionId: 'sess-mock',
+      isStreaming: false,
+      subscribe: (l: (e: any) => void) => { listeners.push(l); return () => {} },
+      prompt: async (_text: string) => {
+        // 模拟一轮:agent_end 带 assistant 文本
+        for (const l of listeners) {
+          l({ type: 'agent_end', messages: [{ role: 'assistant', content: [{ type: 'text', text: 'ok' }] }] })
+        }
+      },
+      abort: async () => {},
+      dispose: () => {},
+    }
+    return { session, extensionsResult: { extensions: [], errors: [], runtime: {} } }
   },
-  createSdkMcpServer: (o: any) => o,
-  tool: (name: string, desc: string, schema: any, handler: any) => ({ name, desc, schema, handler }),
+  DefaultResourceLoader: class {
+    constructor(_opts: any) {}
+    async reload() {}
+  },
+  ModelRuntime: { create: async () => ({}) },
+  SessionManager: { inMemory: (_cwd?: string) => ({}) },
+  SettingsManager: { inMemory: (_opts?: any) => ({}) },
+  getAgentDir: () => '/tmp/test-agent-dir',
+}))
+
+vi.mock('../../agent/shared/pi-models.js', () => ({
+  getModelRuntime: async () => ({}),
+  getJarvisModel: async () => ({ provider: 'test', id: 'test-model' }),
 }))
 
 vi.mock('../../agent/shared/user-mcp.js', () => ({
@@ -80,9 +99,9 @@ vi.mock('@a2a-js/sdk/server/express', () => ({
 }))
 
 beforeEach(() => {
-  spies.queryCalls.length = 0
+  spies.createSessionCalls.length = 0
   spies.mcpBuilds.length = 0
-  spies.mcpReturn = {}
+  spies.mcpReturn = []
   spies.capturedExecutor = null
   vi.resetModules()
 })
@@ -95,9 +114,7 @@ function makeReq() {
   return {
     taskId: 't-1',
     contextId: 'c-1',
-    userMessage: {
-      parts: [{ kind: 'text', text: 'do the task' }],
-    },
+    userMessage: { parts: [{ kind: 'text', text: 'do the task' }] },
   } as any
 }
 
@@ -128,60 +145,21 @@ function makeRecipe(): any {
   }
 }
 
-describe('factory.ts RecipeExecutor 补 MCP + allowedTools 加 mcp__*', () => {
+describe('factory.ts RecipeExecutor 迁移到 Pi SDK(createAgentSession + customTools)', () => {
   it('startAgentServer 接收 userId(默认 system),transfer 到 executor;execute() 里用 userId 调 buildUserMcpServers', async () => {
     const { startAgentServer } = await import('../../agent/team/factory.js')
-    spies.mcpReturn = {
-      'chrome-devtools': { type: 'stdio', command: 'npx', args: ['chrome-devtools-mcp'] },
-    }
+    spies.mcpReturn = [{ name: 'mcp_tool', label: 'M', description: 'd', parameters: {}, execute: async () => ({ content: [], details: {} }) }]
     const recipe = makeRecipe()
 
     startAgentServer(recipe, 'u-alice')
-    // 确认 executor 已被 A2A SDK 捕获
     expect(spies.capturedExecutor).toBeTruthy()
 
     await spies.capturedExecutor.execute(makeReq(), makeBus())
 
     expect(spies.mcpBuilds).toEqual(['u-alice'])
-    expect(spies.queryCalls).toHaveLength(1)
-    const opts = spies.queryCalls[0].options
-    expect(opts.mcpServers).toEqual({
-      'chrome-devtools': { type: 'stdio', command: 'npx', args: ['chrome-devtools-mcp'] },
-    })
-  })
-
-  it('allowedTools 里包含 recipe.tools + mcp__* 通配', async () => {
-    const { startAgentServer } = await import('../../agent/team/factory.js')
-    const recipe = makeRecipe() // tools = ['Read', 'Bash', 'Grep']
-
-    startAgentServer(recipe, 'u-bob')
-    await spies.capturedExecutor.execute(makeReq(), makeBus())
-
-    const opts = spies.queryCalls[0].options
-    expect(opts.allowedTools).toContain('Read')
-    expect(opts.allowedTools).toContain('Bash')
-    expect(opts.allowedTools).toContain('Grep')
-    expect(opts.allowedTools).toContain('mcp__*')
-  })
-
-  it('buildUserMcpServers 抛错时 mcpServers 降级为空对象,executor 不崩', async () => {
-    const { startAgentServer } = await import('../../agent/team/factory.js')
-
-    // 让 buildUserMcpServers 抛错;测试结束后恢复以免影响后续 test 用例
-    const userMcpMod = await import('../../agent/shared/user-mcp.js')
-    const original = (userMcpMod as any).buildUserMcpServers
-    ;(userMcpMod as any).buildUserMcpServers = async () => { throw new Error('boom') }
-
-    try {
-      const recipe = makeRecipe()
-      startAgentServer(recipe, 'u-err')
-      await spies.capturedExecutor.execute(makeReq(), makeBus())
-
-      const opts = spies.queryCalls[0].options
-      expect(opts.mcpServers).toEqual({})
-    } finally {
-      ;(userMcpMod as any).buildUserMcpServers = original
-    }
+    expect(spies.createSessionCalls).toHaveLength(1)
+    const opts = spies.createSessionCalls[0]
+    expect(opts.customTools).toEqual(spies.mcpReturn)
   })
 
   it('未传 userId 时默认为 system,仍会调 buildUserMcpServers', async () => {
@@ -192,5 +170,40 @@ describe('factory.ts RecipeExecutor 补 MCP + allowedTools 加 mcp__*', () => {
     await spies.capturedExecutor.execute(makeReq(), makeBus())
 
     expect(spies.mcpBuilds).toEqual(['system'])
+  })
+
+  it('buildUserMcpServers 抛错时 customTools 降级为空数组,executor 不崩', async () => {
+    const { startAgentServer } = await import('../../agent/team/factory.js')
+
+    const userMcpMod = await import('../../agent/shared/user-mcp.js')
+    const original = (userMcpMod as any).buildUserMcpServers
+    ;(userMcpMod as any).buildUserMcpServers = async () => { throw new Error('boom') }
+
+    try {
+      const recipe = makeRecipe()
+      startAgentServer(recipe, 'u-err')
+      await spies.capturedExecutor.execute(makeReq(), makeBus())
+
+      const opts = spies.createSessionCalls[0]
+      // factory.ts 里 .catch(() => []) 降级,customTools 为空数组
+      expect(opts.customTools).toEqual([])
+    } finally {
+      ;(userMcpMod as any).buildUserMcpServers = original
+    }
+  })
+
+  it('execute() 返回的 response message 含 assistant 文本(agent_end 提取)', async () => {
+    const { startAgentServer } = await import('../../agent/team/factory.js')
+    const recipe = makeRecipe()
+    startAgentServer(recipe, 'u-text')
+    const bus = makeBus()
+    await spies.capturedExecutor.execute(makeReq(), bus)
+
+    // bus.events 里应该有 response message + completed status-update + finished
+    const responseMsg = bus.events.find((e: any) => e.kind === 'message')
+    expect(responseMsg).toBeTruthy()
+    expect(responseMsg.parts[0].text).toBe('ok')
+    const completed = bus.events.find((e: any) => e.kind === 'status-update' && e.status?.state === 'completed')
+    expect(completed).toBeTruthy()
   })
 })

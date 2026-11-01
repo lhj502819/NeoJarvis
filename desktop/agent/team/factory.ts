@@ -1,7 +1,14 @@
 import express from 'express'
 import { randomUUID } from 'crypto'
-import { query } from '@anthropic-ai/claude-agent-sdk'
-import { execSync } from 'child_process'
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+  SessionManager,
+  SettingsManager,
+  getAgentDir,
+  type ToolDefinition,
+} from '@earendil-works/pi-coding-agent'
+import { getModelRuntime, getJarvisModel } from '../shared/pi-models.js'
 import type { AgentCard, Message, TaskStatusUpdateEvent } from '@a2a-js/sdk'
 import {
   AgentExecutor,
@@ -17,21 +24,8 @@ import { buildUserMcpServers } from '../shared/user-mcp.js'
 
 import { homedir } from 'os'
 
-function findClaudePath(): string {
-  try {
-    return execSync('which claude', { encoding: 'utf-8' }).trim()
-  } catch {
-    console.error('错误: 找不到 claude CLI，请确保已安装并在 PATH 中')
-    process.exit(1)
-  }
-}
-
-const CLAUDE_PATH = findClaudePath()
-const HOME_DIR = homedir()
 
 class RecipeExecutor implements AgentExecutor {
-  // userId 由 startAgentServer 注入(默认 'system');A2A executor 内没有请求上下文携带用户,
-  // 用来给 buildUserMcpServers 拿本机 hub + DB user + 黑名单合并出的 MCP 池。
   constructor(private recipe: AgentRecipe, private userId: string) {}
 
   async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
@@ -51,40 +45,65 @@ class RecipeExecutor implements AgentExecutor {
     let result = ''
 
     try {
-      const workDir = (this.recipe.context.cwd as string) || HOME_DIR
+      const workDir = (this.recipe.context.cwd as string) || homedir()
 
-      // 与 client.ts 主路径对齐:MCP 通过 buildUserMcpServers 拿(hub + DB user + 黑名单)。
-      // A2A executor 里 userId 由 startAgentServer 注入;失败则降级为空对象(不阻塞派单)。
-      const mcpServers = await buildUserMcpServers(this.userId).catch(() => ({}))
+      // MCP 工具(降级:返回空数组,见 user-mcp.ts 迁移说明)
+      const userMcpTools: ToolDefinition[] = await buildUserMcpServers(this.userId).catch(() => [])
 
-      // 允许 recipe.tools 之外调用任意 MCP 工具(方案 1:在调 SDK 处统一追加 'mcp__*' 通配)。
-      // 如果 recipe 里的 tools 白名单没写 mcp__*,SDK 在 bypassPermissions 模式下也会拒调 —— 补一条。
-      const allowedTools = [...this.recipe.tools, 'mcp__*']
+      const modelRuntime = await getModelRuntime()
+      const model = await getJarvisModel(this.recipe.model || 'sonnet')
+      if (!model) throw new Error('未找到可用的 LLM 模型(桥接 provider 与 Pi 默认均未配置)')
+      const loader = new DefaultResourceLoader({
+        cwd: workDir,
+        agentDir: getAgentDir(),
+        systemPromptOverride: () => this.recipe.systemPrompt,
+      })
+      await loader.reload()
 
-      for await (const message of query({
-        prompt: taskDescription,
-        options: {
-          systemPrompt: this.recipe.systemPrompt,
-          pathToClaudeCodeExecutable: CLAUDE_PATH,
-          allowedTools,
-          cwd: workDir,
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
-          maxTurns: 20,
-          mcpServers,
-        },
-      })) {
-        if (message.type === 'assistant' && message.message?.content) {
-          for (const block of message.message.content) {
-            if ('text' in block && block.text) {
-              result += block.text
+      const { session } = await createAgentSession({
+        cwd: workDir,
+        model,
+        modelRuntime,
+        customTools: userMcpTools,
+        resourceLoader: loader,
+        sessionManager: SessionManager.inMemory(workDir),
+        settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
+      })
+
+      // 订阅:把最终 assistant 文本累积成 result
+      const textAccumulator = { value: '' }
+      try {
+        const unsubscribe = session.subscribe((event) => {
+          if (event.type === 'message_update') {
+            const ae = event.assistantMessageEvent
+            if (ae.type === 'text_delta' && ae.delta) {
+              textAccumulator.value += ae.delta
             }
           }
-        }
-        if (message.type === 'result' && message.subtype === 'success') {
-          if (!result) result = message.result
-        }
+          if (event.type === 'agent_end') {
+            const messages = event.messages
+            for (let i = messages.length - 1; i >= 0; i--) {
+              const m = messages[i] as any
+              if (m.role === 'assistant' && Array.isArray(m.content)) {
+                const texts = m.content
+                  .filter((b: any) => b.type === 'text' && typeof b.text === 'string')
+                  .map((b: any) => b.text)
+                if (texts.length > 0) {
+                  result = texts.join('')
+                  break
+                }
+              }
+            }
+          }
+        })
+
+        await session.prompt(taskDescription)
+        unsubscribe()
+      } finally {
+        session.dispose()
       }
+
+      if (!result) result = textAccumulator.value || ''
 
       const responseMessage: Message = {
         kind: 'message',

@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-const TS = 'http://localhost:3000'   // 老 TS 全栈(智能层 + CRUD)
+const TS = `http://localhost:${process.env.JARVIS_PORT || 3000}`   // 老 TS 全栈(智能层 + CRUD)
 const JAVA = 'http://localhost:8080' // v0.3 Java 服务端(纯 CRUD)
 
 // VITE_JAVA_BACKEND=1 时:把 Java 已实现的数据类 endpoint 分流到 8080,

@@ -10,6 +10,7 @@ import com.jarvis.domain.SaveChatImagesRequest;
 import com.jarvis.domain.SaveConversationRequest;
 import com.jarvis.domain.SaveMessageRequest;
 import com.jarvis.service.ConversationService;
+import com.jarvis.service.MemoryResetService;
 import com.jarvis.util.ChatImageStore;
 import jakarta.validation.Valid;
 import java.util.Base64;
@@ -29,15 +30,27 @@ import org.springframework.web.bind.annotation.RestController;
 class ConversationController {
 
     private final ConversationService conversationService;
+    private final MemoryResetService memoryResetService;
 
-    ConversationController(ConversationService conversationService) {
+    ConversationController(ConversationService conversationService, MemoryResetService memoryResetService) {
         this.conversationService = conversationService;
+        this.memoryResetService = memoryResetService;
     }
 
     /** GET /api/conversation — latest session's messages, oldest first ([] when none). */
     @GetMapping("/conversation")
     List<ConversationMessage> conversation() {
         return conversationService.getConversation(UserContext.currentUserId());
+    }
+
+    /**
+     * POST /api/conversation/reset — 清空当前用户的记忆(对话 + 执行痕迹),保留团队小弟、
+     * 制品库、凭证、配置。破坏性且不可逆;运行中任务的拦截在 TS agent 侧(3000)完成。
+     */
+    @PostMapping("/conversation/reset")
+    OkResponse resetMemory() {
+        memoryResetService.clearMemory(UserContext.currentUserId());
+        return new OkResponse(true);
     }
 
     /**

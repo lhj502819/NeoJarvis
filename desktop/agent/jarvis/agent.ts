@@ -103,21 +103,28 @@ export function startJarvisServer(): express.Express {
   app.use('/a2a/jsonrpc', jsonRpcHandler({ requestHandler, userBuilder: UserBuilder.noAuthentication }))
   app.use('/a2a/rest', restHandler({ requestHandler, userBuilder: UserBuilder.noAuthentication }))
 
+  // 前端资源必须在 authMiddleware 之前 —— HTML/JS/CSS 是公开的,登录在 SPA 内部完成。
+  // 否则未带 cookie 取 / 会被 auth 拦成 401,Electron 渲染出黑屏(prod 从 3000 取前端)。
+  // 本文件在 desktop/agent/jarvis/,退三级到 repo 根再进 web/dist(../../ 只到 desktop,少一级)。
+  const distPath = path.resolve(import.meta.dirname, '../../../web/dist')
+  app.use(express.static(distPath))
+
+  // SPA 回退:也放 auth 之前(前端路由路径无需登录即可拿到壳 HTML,登录在 SPA 内做)。
+  // 关键:后端还有 /tasks /events /chat 这类不带 /api 前缀的路由,绝不能被回退吞掉(否则 prod 下
+  // 这些接口返回 index.html、前端 JSON 解析失败 → 任务/历史/事件全空)。真实资源(带扩展名)也不兜,
+  // 交给 static 的自然 404。只有"无扩展名的 GET 前端路径"才发 index.html。
+  const backendPrefixes = ['/api', '/a2a', '/.well-known', '/auth', '/tasks', '/events', '/chat']
+  app.get('/{*path}', (req, res, next) => {
+    if (/\.[a-zA-Z0-9]+$/.test(req.path)) return next()  // 带扩展名 = 资源,不是前端路由
+    if (backendPrefixes.some(p => req.path === p || req.path.startsWith(p + '/'))) return next()  // 后端路由,放行给下方
+    res.sendFile(path.join(distPath, 'index.html'))
+  })
+
   // All routes below require auth
   app.use(authMiddleware)
   app.use(chatRoutes())
   app.use(dashboardRoutes())
   app.use(agentRoutes())
-
-  // Serve frontend static files in production
-  const distPath = path.resolve(import.meta.dirname, '../../web/dist')
-  app.use(express.static(distPath))
-  app.get('/{*path}', (req, res, next) => {
-    if (req.path.startsWith('/api') || req.path.startsWith('/a2a') || req.path.startsWith('/.well-known') || req.path.startsWith('/auth')) {
-      return next()
-    }
-    res.sendFile(path.join(distPath, 'index.html'))
-  })
 
   app.listen(config.jarvisPort, () => {
     console.log(`  Jarvis A2A Server: http://localhost:${config.jarvisPort}`)

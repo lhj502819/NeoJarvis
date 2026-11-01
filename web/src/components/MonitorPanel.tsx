@@ -123,7 +123,7 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
   })
   const runningCount = list.filter(x => x.status === 'running').length
 
-  if (items.size === 0) return null
+  // 空态也渲染(抽屉模式:用户点了开关就要看到面板,显示「暂无执行中任务」)
 
   return (
     <aside className="monitor">

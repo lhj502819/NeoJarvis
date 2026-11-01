@@ -43,6 +43,7 @@ export function ArtifactsPage() {
   const [typeFilter, setTypeFilter] = useState('')
   const [selected, setSelected] = useState<ArtifactListItem | null>(null)
   const [preview, setPreview] = useState<Artifact | null>(null)
+  const [fullscreen, setFullscreen] = useState(false)
 
   const load = async () => {
     const params = new URLSearchParams()
@@ -71,7 +72,8 @@ export function ArtifactsPage() {
 
   return (
     <div className="dash-artifacts-layout">
-      {/* 左列表 */}
+      {/* 左列表 — 全屏时隐藏 */}
+      {!fullscreen && (
       <div className="dash-artifacts-list-col">
         <div className="dash-artifacts-head">
           <div className="dash-section-title">制品库 <span className="dash-artifacts-count">{total}</span></div>
@@ -115,11 +117,20 @@ export function ArtifactsPage() {
           )) : <div className="dash-empty-hint">暂无制品</div>}
         </div>
       </div>
+      )}
 
-      {/* 右预览 — 仅在选中制品时渲染 */}
+      {/* 右预览 — 仅在选中制品时渲染;全屏时铺满 */}
       {preview && (
-        <div className="dash-artifacts-preview-col">
-          <ArtifactPanel artifact={preview} onClose={() => { setPreview(null); setSelected(null) }} />
+        <div
+          className="dash-artifacts-preview-col"
+          style={fullscreen ? { width: '100%', flex: 1 } : undefined}
+        >
+          <ArtifactPanel
+            artifact={preview}
+            fullscreen={fullscreen}
+            onToggleFullscreen={() => setFullscreen(f => !f)}
+            onClose={() => { setPreview(null); setSelected(null); setFullscreen(false) }}
+          />
         </div>
       )}
     </div>

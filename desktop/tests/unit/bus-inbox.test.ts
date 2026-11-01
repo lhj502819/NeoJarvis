@@ -20,17 +20,17 @@ function lastText(msgs: A2AMessage[]): string {
 
 describe('MessageBus inbox/drain 语义（Jarvis → 小弟 中途注入）', () => {
   const AGENT = 'subtask-abc123'
+  const U = 'test-user'
 
   beforeEach(() => {
     posted.length = 0
     bus.unregister(AGENT)
-    bus.setOwner('test-user')
   })
 
   it('notify 把消息放进已注册 agent 的 inbox（进得去，不丢）', async () => {
     bus.register(AGENT, 'TestAgent', async () => null)
 
-    await bus.notify('jarvis', AGENT, AGENT, '补充需求：加上代理IP')
+    await bus.notify(U, 'jarvis', AGENT, AGENT, '补充需求：加上代理IP')
 
     // 消息躺在 inbox 里等待 drain（模拟小弟还没转到下一个 message 迭代）
     const pending = bus.peekInbox(AGENT)
@@ -44,8 +44,8 @@ describe('MessageBus inbox/drain 语义（Jarvis → 小弟 中途注入）', ()
 
   it('drainInbox 取出后清空（模拟小弟回合迭代时读取并注入）', async () => {
     bus.register(AGENT, 'TestAgent', async () => null)
-    await bus.notify('jarvis', AGENT, AGENT, '消息A')
-    await bus.notify('jarvis', AGENT, AGENT, '消息B')
+    await bus.notify(U, 'jarvis', AGENT, AGENT, '消息A')
+    await bus.notify(U, 'jarvis', AGENT, AGENT, '消息B')
 
     // 小弟转到下一圈 for-await 时 drain
     const drained = bus.drainInbox(AGENT)
@@ -61,9 +61,9 @@ describe('MessageBus inbox/drain 语义（Jarvis → 小弟 中途注入）', ()
     bus.register(AGENT, 'TestAgent', async () => null)
 
     // 小弟卡在生成长 HTML 的一个 turn 里，期间 Jarvis 连发 3 条
-    await bus.notify('jarvis', AGENT, AGENT, '第1条')
-    await bus.notify('jarvis', AGENT, AGENT, '第2条')
-    await bus.notify('jarvis', AGENT, AGENT, '第3条')
+    await bus.notify(U, 'jarvis', AGENT, AGENT, '第1条')
+    await bus.notify(U, 'jarvis', AGENT, AGENT, '第2条')
+    await bus.notify(U, 'jarvis', AGENT, AGENT, '第3条')
 
     // 都还在 inbox，一条没丢
     expect(bus.peekInbox(AGENT).length).toBe(3)
@@ -77,7 +77,7 @@ describe('MessageBus inbox/drain 语义（Jarvis → 小弟 中途注入）', ()
     // 不 register —— 模拟小弟已完成被 unregister
     expect(bus.isRegistered(AGENT)).toBe(false)
 
-    await bus.notify('jarvis', AGENT, AGENT, '发给已完成的小弟')
+    await bus.notify(U, 'jarvis', AGENT, AGENT, '发给已完成的小弟')
 
     // 没有 AgentNode，消息无处可放（send_message 分支会因 isRegistered=false 直接报"发送失败"）
     expect(bus.peekInbox(AGENT).length).toBe(0)
@@ -95,7 +95,7 @@ describe('MessageBus inbox/drain 语义（Jarvis → 小弟 中途注入）', ()
       timestamp: new Date().toISOString(),
     }))
 
-    const reply = await bus.send(AGENT, 'jarvis', 'task-1', '[question] 要不要加代理?')
+    const reply = await bus.send(U, AGENT, 'jarvis', 'task-1', '[question] 要不要加代理?')
     expect(lastText(reply ? [reply] : [])).toBe('批准，继续')
 
     bus.unregister('jarvis')

@@ -15,7 +15,7 @@ export function agentRoutes(): Router {
       res.json({ success: false, error: 'agent not running' })
       return
     }
-    bus.notify('jarvis', subtaskId, subtaskId, message)
+    bus.notify(req.userId!, 'jarvis', subtaskId, subtaskId, message)
     res.json({ success: true })
   })
 

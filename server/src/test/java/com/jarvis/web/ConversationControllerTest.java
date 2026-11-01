@@ -17,6 +17,7 @@ import com.jarvis.domain.ArtifactRef;
 import com.jarvis.domain.ChatImage;
 import com.jarvis.domain.ConversationMessage;
 import com.jarvis.service.ConversationService;
+import com.jarvis.service.MemoryResetService;
 import com.jarvis.util.ChatImageStore;
 import java.util.List;
 import java.util.Optional;
@@ -37,6 +38,8 @@ class ConversationControllerTest {
     private MockMvc mockMvc;
     @MockBean
     private ConversationService conversationService;
+    @MockBean
+    private MemoryResetService memoryResetService;
 
     @Test
     void conversationOmitsNullArtifactAndImageIds() throws Exception {
@@ -134,6 +137,15 @@ class ConversationControllerTest {
                 .andExpect(jsonPath("$.ok").value(true));
 
         verify(conversationService).saveConversation("local", "q", "a");
+    }
+
+    @Test
+    void resetMemoryDelegatesToServiceAndReturnsOk() throws Exception {
+        mockMvc.perform(post("/api/conversation/reset"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ok").value(true));
+
+        verify(memoryResetService).clearMemory("local");
     }
 
     @Test

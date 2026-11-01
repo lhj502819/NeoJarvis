@@ -8,6 +8,14 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700;800&family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,500;6..72,600&family=Noto+Sans+SC:wght@300;400;500;600&display=swap" rel="stylesheet" />
     <title>Jarvis · 你的私人 AI 管家</title>
+    <script>
+      // 主题恢复:在 React 渲染前套用上次选择,避免刷新闪一下。
+      // 默认浅色(Codex 风);只有显式存过 'dark' 才回深色。与 Layout 的开关同源。
+      try {
+        if (localStorage.getItem('jarvis-theme') !== 'dark')
+          document.documentElement.setAttribute('data-theme', 'light');
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

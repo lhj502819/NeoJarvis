@@ -8,6 +8,9 @@ import { registerRunningTask, unregisterRunningTask, listAllRunningTasks } from 
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
+// bus 写入需要 owner userId(落 thread.user_id);冒烟脚本用固定占位。
+const TEST_USER = 'test-user'
+
 let passed = 0
 let failed = 0
 
@@ -59,7 +62,7 @@ async function testSyncSend() {
     }
   })
 
-  const reply = await bus.send('test-agent-1', 'mock-jarvis', 'task-001', '这个 API 应该用 GET 还是 POST?')
+  const reply = await bus.send(TEST_USER, 'test-agent-1', 'mock-jarvis', 'task-001', '这个 API 应该用 GET 还是 POST?')
   assert(reply !== null, 'send 收到回复')
   assert(reply!.parts[0]?.text?.includes('继续执行方案A') ?? false, '回复内容正确')
   assert(reply!.from === 'mock-jarvis', '回复来源正确')
@@ -74,7 +77,7 @@ async function testSyncSend() {
 async function testNotify() {
   console.log('\n═══ 测试 3: 异步通知（notify）— 模拟 Jarvis 补充指令 ═══')
 
-  bus.notify('mock-jarvis', 'test-agent-1', 'task-001', '补充要求：注意性能优化')
+  bus.notify(TEST_USER, 'mock-jarvis', 'test-agent-1', 'task-001', '补充要求：注意性能优化')
 
   const inbox = bus.drainInbox('test-agent-1')
   assert(inbox.length === 1, 'notify 消息进入 inbox')
@@ -89,7 +92,7 @@ async function testBroadcast() {
 
   bus.register('test-agent-2', 'TestAgent2', async () => null)
 
-  bus.broadcast('mock-jarvis', 'task-001', '紧急通知：优先级提升')
+  bus.broadcast(TEST_USER, 'mock-jarvis', 'task-001', '紧急通知：优先级提升')
 
   const inbox1 = bus.drainInbox('test-agent-1')
   const inbox2 = bus.drainInbox('test-agent-2')
@@ -103,8 +106,8 @@ async function testBroadcast() {
 async function testConversationHistory() {
   console.log('\n═══ 测试 5: 对话历史持久化 ═══')
 
-  await bus.send('test-agent-1', 'mock-jarvis', 'task-002', '第二个任务的问题')
-  bus.notify('mock-jarvis', 'test-agent-1', 'task-002', '好的，明白了')
+  await bus.send(TEST_USER, 'test-agent-1', 'mock-jarvis', 'task-002', '第二个任务的问题')
+  bus.notify(TEST_USER, 'mock-jarvis', 'test-agent-1', 'task-002', '好的，明白了')
 
   const conv = await bus.getConversation('task-002')
   assert(conv !== undefined, 'task-002 对话存在')
@@ -164,7 +167,7 @@ async function testUnregister() {
   assert(!bus.isRegistered('test-agent-1'), 'agent-1 已注销')
   assert(!bus.isRegistered('mock-jarvis'), 'mock-jarvis 已注销')
 
-  const reply = await bus.send('someone', 'test-agent-1', 'ctx', 'hello')
+  const reply = await bus.send(TEST_USER, 'someone', 'test-agent-1', 'ctx', 'hello')
   assert(reply === null, '发送给已注销 agent 返回 null')
 }
 

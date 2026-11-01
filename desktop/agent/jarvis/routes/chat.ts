@@ -2,7 +2,8 @@ import { Router } from 'express'
 import * as orchestrator from '../orchestrator.js'
 import { addSSEClient } from '../sse.js'
 import { getChatImage } from '../conversation.js'
-import { serverGet } from '../../shared/server-client.js'
+import { serverGet, serverPost } from '../../shared/server-client.js'
+import { listAllRunningTasks } from '../../a2a/registry.js'
 
 /** Java 404 (NotFoundException) — server-client throws with the status in the message. */
 function isNotFound(err: unknown): boolean {
@@ -81,6 +82,19 @@ export function chatRoutes(): Router {
     // shaped as { role, content, timestamp, artifact?, imageIds? } — the exact response the
     // old inline PG query produced, so this is a straight pass-through.
     res.json(await serverGet(req.userId!, '/api/conversation'))
+  })
+
+  // 清空记忆:真删后端对话 + 执行痕迹(保留团队小弟/制品/凭证/配置)。破坏性、不可逆。
+  // 运行中拦截:in-memory registry 是"当前在跑什么"的权威源(bus 活在本进程),有任务在跑
+  // 就 409 拒绝,避免边删边写出脏数据。否则代理到 Java 事务清库。
+  router.post('/api/memory/reset', async (req, res) => {
+    const running = listAllRunningTasks(req.userId!)
+    if (running.length > 0) {
+      res.status(409).json({ ok: false, error: '有任务正在执行,请先等待完成或取消后再清空记忆' })
+      return
+    }
+    await serverPost(req.userId!, '/api/conversation/reset')
+    res.json({ ok: true })
   })
 
   router.get('/api/artifact/:id', async (req, res) => {

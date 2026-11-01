@@ -6,10 +6,10 @@ import { serverGet, serverPost } from '../shared/server-client.js'
  * REST API (see AgentBusController). The in-memory agent registry / inbox / drain machinery
  * stays here (it wraps live handlers), but recordMessage and every history read go over HTTP.
  *
- * The bus has no per-call userId (it is agent↔agent traffic), so writes forward the owner as
- * X-Internal-User (`this.ownerUserId || 'system'`, matching the old thread.user_id default) and
- * the global reads pass a 'local' placeholder purely to satisfy the dev-bypass auth filter —
- * the server never scopes conversations by user, so the value does not affect results.
+ * Writes carry the owner userId explicitly (每个 write 站点都有真实 userId 在手),作为
+ * X-Internal-User 落到 thread.user_id —— 前端按登录用户查 thread,写错 owner(旧代码恒为
+ * 'system')会让沟通记录查不到。全局读传 'local' 占位仅为过 dev-bypass 鉴权,server 不按
+ * user 过滤会话,值不影响结果。
  */
 
 /** Java 404 (NotFoundException) — server-client throws with the status in the message. */
@@ -59,16 +59,6 @@ interface AgentNode {
 
 class MessageBus {
   private agents = new Map<string, AgentNode>()
-  private ownerUserId: string = ''
-
-  setOwner(userId: string): void {
-    this.ownerUserId = userId
-  }
-
-  /** Owner id for writes (thread.user_id), defaulting to 'system' like the old TS. */
-  private writeUser(): string {
-    return this.ownerUserId || 'system'
-  }
 
   register(id: string, name: string, handler: MessageHandler): void {
     this.agents.set(id, { id, name, handler, inbox: [] })
@@ -86,23 +76,23 @@ class MessageBus {
     return [...this.agents.values()].map(a => ({ id: a.id, name: a.name }))
   }
 
-  async send(from: string, to: string, contextId: string, content: string, metadata?: Record<string, unknown>): Promise<A2AMessage | null> {
+  async send(userId: string, from: string, to: string, contextId: string, content: string, metadata?: Record<string, unknown>): Promise<A2AMessage | null> {
     const msg = this.buildMessage(from, to, contextId, content, metadata)
-    await this.recordMessage(msg)
+    await this.recordMessage(userId, msg)
 
     const target = this.agents.get(to)
     if (!target) return null
 
     const reply = await target.handler(msg)
     if (reply) {
-      await this.recordMessage(reply)
+      await this.recordMessage(userId, reply)
     }
     return reply
   }
 
-  async notify(from: string, to: string, contextId: string, content: string, metadata?: Record<string, unknown>): Promise<void> {
+  async notify(userId: string, from: string, to: string, contextId: string, content: string, metadata?: Record<string, unknown>): Promise<void> {
     const msg = this.buildMessage(from, to, contextId, content, metadata)
-    await this.recordMessage(msg)
+    await this.recordMessage(userId, msg)
 
     const target = this.agents.get(to)
     if (target) {
@@ -110,9 +100,9 @@ class MessageBus {
     }
   }
 
-  async broadcast(from: string, contextId: string, content: string): Promise<void> {
+  async broadcast(userId: string, from: string, contextId: string, content: string): Promise<void> {
     const msg = this.buildMessage(from, '*', contextId, content)
-    await this.recordMessage(msg)
+    await this.recordMessage(userId, msg)
 
     for (const [id, node] of this.agents) {
       if (id !== from) {
@@ -171,9 +161,10 @@ class MessageBus {
     }
   }
 
-  private async recordMessage(msg: A2AMessage): Promise<void> {
+  private async recordMessage(userId: string, msg: A2AMessage): Promise<void> {
     // Upsert thread + insert message + trim happen server-side (ports the old pool.query block).
-    await serverPost(this.writeUser(), '/api/agent-messages', msg)
+    // userId 落到 thread.user_id —— 必须是消息所属任务的真实 owner,前端按登录用户查沟通记录。
+    await serverPost(userId, '/api/agent-messages', msg)
   }
 }
 

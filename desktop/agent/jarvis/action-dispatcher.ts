@@ -1,4 +1,4 @@
-import { createTask, updateTask, addSubTask, getTask, getTaskSummary, listTasks, updateSubTask } from '../task/manager.js'
+import { createTask, updateTask, addSubTask, getTask, getTaskSummary, listTasks, updateSubTask, getActiveTasks, cleanupStaleTasks } from '../task/manager.js'
 import { scheduleAllRunnable, handleSubTaskComplete, handleSubTaskFailed, checkTaskCompletion } from '../task/scheduler.js'
 import { listRecipes, getRecipe, incrementUsage } from '../team/registry.js'
 import { dispatchToAgent, interruptAgent, takeWrittenFiles } from '../a2a/client.js'
@@ -94,6 +94,10 @@ export function abortTask(taskId: string) {
     })), st.userId)
     // fire-and-forget:不阻塞取消,更新失败也不影响 abort(DB 偶发失败可容忍)
     updateSubTask(st.userId, taskId, st.subtaskId, { status: 'cancelled', error: '已取消' }).catch(() => {})
+    // ③ 立即从内存 registry 摘除 —— 否则会滞留到 executeSubTask 的 finally(要等 SDK abort
+    //    冒泡返回,有延迟)。窗口期内切 tab / 重挂 MonitorPanel 会 fetch /api/agents 读到这条
+    //    残影,把已取消的任务又渲染成"执行中"。finally 里的 unregister 幂等,留作兜底。
+    unregisterRunningTask(st.subtaskId)
   }
   const controller = taskAbortControllers.get(taskId)
   if (controller) {
@@ -148,6 +152,19 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
 
   registerRunningTask(userId, taskId, subtaskId, agentId, description, recipe ? 'permanent' : 'adhoc', recipe?.name || assignee)
   const startedAtMs = Date.now()
+  // 启动即广播一条 running 事件,让前端监控卡立刻出现 —— 否则第一条 subtask 事件要等
+  // onProgress(小弟首个 assistant 消息)才发,而 extended thinking 的首 token 常要几十秒到
+  // 几分钟,导致卡片迟迟不弹、非刷新不可见。MonitorPanel 按 subtaskId 合并,后续 onProgress
+  // 只更新同一张卡的回合数/工具,不会重复。
+  broadcast('subtask', JSON.stringify(buildSubtaskEvent({
+    subtaskId, taskId,
+    agentName: recipe?.name || assignee,
+    agentType: recipe ? 'permanent' : 'adhoc',
+    taskName: description.slice(0, 60),
+    status: 'running',
+    turnCount: 0,
+    startedAt: startedAtMs,
+  })), userId)
   try {
     const result = await dispatchToAgent(assignee, description, {
       userId,
@@ -183,6 +200,142 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
     return `执行失败: ${msg}`
   } finally {
     unregisterRunningTask(subtaskId)
+  }
+}
+
+// 任务结算后,让 Jarvis 生成一段汇报推给 Sir。completed / failed 都要汇报 —— 全军覆没也得
+// 明确告诉用户"这活儿没成、卡在哪",别静默。抽成独立函数供两处复用:正常后台跑完(executeTaskInBackground)、
+// 进程重启恢复(recoverInterruptedTasks)。幂等由调用方保证(只在刚结算的任务上调一次)。
+// 导出仅为单测直接覆盖其"必定落库/兜底"契约。
+export async function finalizeAndReport(userId: string, taskId: string): Promise<void> {
+  const finalTask = await getTask(userId, taskId)
+  if (!finalTask) return
+  // 只汇报已结算(completed/failed)且有内容的任务;仍在跑 / 已取消的不在这里报。
+  if (finalTask.status !== 'completed' && finalTask.status !== 'failed') return
+  if (!finalTask.result) return
+
+  const failed = finalTask.status === 'failed'
+  broadcast('progress', failed ? `任务未能完成,正在为您说明情况...` : `正在为您整理汇报...`, userId)
+
+  // 确定性挑成品预览:汇总本任务所有子任务写过的文件,代码层面挑主成品,
+  // 不靠 LLM 主动调 render_preview(它会偷懒/幻觉"已推送预览"却没真调)
+  const producedFiles = finalTask.subtasks.flatMap(st => takeWrittenFiles(st.id))
+  const autoArtifact = buildPreviewFromFiles(producedFiles)
+
+  const previewNote = autoArtifact
+    ? `\n\n【已自动预览】团队产出的成品「${autoArtifact.title}」已推送到右侧预览面板,汇报时可以自然提一句"已在右侧预览"。`
+    : ''
+
+  // 主动推荐转正:本次任务涉及的领域里,若有临时工累计达线(≥3 次且未转正),
+  // 把推荐指令拼进汇报 prompt —— Jarvis 汇报完顺口提一句,不用 Sir 开口问。
+  // 只看本任务干过的 domain(刚干完活、顺势推荐的自然时机),不翻无关历史候选。
+  // 全军覆没(failed)时不推荐转正 —— 没干成就别顺带请功。
+  const promoteNote = failed ? '' : await buildPromoteNote(userId, finalTask.subtasks).catch(() => '')
+
+  const intro = failed
+    ? `你刚安排的任务「${finalTask.name}」没能顺利完成 —— 团队部分或全部环节失败/中断了。以下是各环节的原始情况(含失败原因):`
+    : `你刚刚完成了任务「${finalTask.name}」。以下是团队交回的原始结果:`
+  const extraReq = failed
+    ? `- 如实说明哪些环节没成、卡在哪,别粉饰;能补救就给下一步建议\n`
+    : ''
+
+  const reportPrompt = `你是 Jarvis，一个有幽默感的私人管家。称呼用户为 Sir。\n` +
+    `${intro}\n\n${finalTask.result}\n\n` +
+    `请向 Sir 汇报结果。要求：\n` +
+    `- 直接输出汇报内容，不要输出 JSON\n` +
+    `- 保留关键信息，去掉冗余\n` +
+    extraReq +
+    `- 用清晰的结构（列表、表格都行）\n` +
+    `- 语气像管家汇报，不是写文档\n` +
+    `- 太长就给精华摘要，说一句"详细版随时可以展开"${previewNote}${promoteNote}`
+
+  // 汇报的 LLM 调用套超时 + 可中断。背景:任务结算瞬间常有多个 claude 并发 spawn(小弟结尾的
+  // message_jarvis 回复 + 这条汇报),实测出现过汇报 rawLlmCall 起了头就永不返回、日志冻结数小时。
+  // 若不设超时:① withBrainLock 的 .finally(resolve) 永不执行 → 该 user 的脑锁被永久占死 → 之后
+  // 所有汇报(含重启恢复那条路)全部死锁;② 用户永远等不到汇报。超时 abort 让 SDK 的 for-await 结束
+  // → rawLlmCall 返回/抛 → 锁一定释放。REPORT 独立日志,方便下次定位(这次就是因无独立日志靠通用 perf 行反推)。
+  const REPORT_TIMEOUT_MS = 120_000
+  console.log(`[perf] report start, task=${taskId} status=${finalTask.status}`)
+  let summary = ''
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), REPORT_TIMEOUT_MS)
+  try {
+    summary = await withBrainLock(userId, () => rawLlmCall(userId, reportPrompt, '请汇报', undefined, undefined, ac))
+  } catch (err) {
+    // 超时/spawn 失败/流早结束都吞掉走兜底 —— 绝不让汇报这一步把整个任务收尾流程带崩(否则会冒泡到
+    // executeTaskInBackground 的外层 catch,那里只 broadcast SSE-only 的 task-error、不落库 → 静默)。
+    console.log(`[perf] report LLM failed/timeout, fallback to raw result: ${err instanceof Error ? err.message : String(err)}`)
+  } finally {
+    clearTimeout(timer)
+  }
+
+  // 兜底:LLM 空/失败也必定有内容发出。退回 finalTask.result(已聚合各子任务产出,Fix A 保证非空),
+  // 并点明"自动汇报生成失败" —— 宁可给原始结果,也绝不静默。
+  const report = summary.trim()
+    || `Sir，任务「${finalTask.name}」已${failed ? '结束（部分环节未成）' : '完成'}。自动汇报这步没生成出来，先把团队交回的原始结果原样给您：\n\n${finalTask.result}`
+  console.log(`[perf] report done, task=${taskId} llm=${summary.trim() ? 'ok' : 'fallback'} len=${report.length}`)
+
+  // 落库是唯一持久化路径(broadcast 仅 SSE、页面不在就丢)。整段保护:任一步抛也要保证 addToBuffer 执行到,
+  // 只要走进 finalizeAndReport,聊天里必有一条 jarvis 汇报。
+  try {
+    // 优先用确定性挑出的成品;若无,兜底看 LLM 是否手动 render_preview 过
+    const artifact = autoArtifact || consumeArtifact(userId)
+    const artifactId = artifact ? await saveArtifact(userId, artifact, taskId).catch(() => undefined) : undefined
+    broadcast('response', report, userId, 'task-report')
+    if (artifact) broadcast('artifact', JSON.stringify(artifact), userId, 'task-report')
+    await addToBuffer(userId, 'jarvis', report, artifactId)
+  } catch (err) {
+    // 连 artifact/broadcast 都抛了也别放弃落库 —— 最后再兜一次纯文本汇报进库。
+    console.log(`[perf] report persist failed, retry addToBuffer text-only: ${err instanceof Error ? err.message : String(err)}`)
+    await addToBuffer(userId, 'jarvis', report).catch(() => {})
+  }
+}
+
+// ── 进程重启恢复 ──
+// 汇报逻辑整个长在 executeTaskInBackground 的内存循环里,进程一重启(热重载/手动重启)循环直接
+// 死掉:小弟哪怕真干完了,checkTaskCompletion + 汇报也永不执行,任务永远停在 executing。旧行为
+// 是下次请求进来 cleanupStaleTasks 把它盲判 cancelled —— 静默、还把已完成的活儿当取消。
+//
+// 这里在进程启动时先扫一遍该用户"卡在 executing/planning"的任务,分两种收场:
+//   ① 子任务已全终态(小弟真跑完了,只是没人结算)→ checkTaskCompletion 结算 + finalizeAndReport 补汇报。
+//   ② 还有子任务在 running/pending(真被打断)→ cleanupStaleTasks 落 cancelled,并明确告诉 Sir 中断了。
+// 必须跑在 cleanupStaleTasks(auth middleware 首次请求触发)之前,否则任务已被盲改成 cancelled、无从区分。
+const recoveredUsers = new Set<string>()
+const NON_TERMINAL_SUBTASK = ['pending', 'running', 'input-required']
+
+export async function recoverInterruptedTasks(userId: string): Promise<void> {
+  if (recoveredUsers.has(userId)) return
+  recoveredUsers.add(userId)
+  try {
+    const active = await getActiveTasks(userId)  // status NOT IN (completed/failed/cancelled)
+    const stuck = active.filter(t => (t.status === 'executing' || t.status === 'planning') && t.subtasks.length > 0)
+
+    let interrupted = 0
+    for (const t of stuck) {
+      const anyLive = t.subtasks.some(st => NON_TERMINAL_SUBTASK.includes(st.status))
+      if (anyLive) {
+        // 真被打断:小弟进程已随主进程一起没了,活儿续不上。计数,稍后由 cleanupStaleTasks 统一落 cancelled。
+        interrupted++
+        continue
+      }
+      // 小弟已全部跑完(completed/failed/cancelled),只是上次没人结算 → 现在补上 + 补汇报。
+      const settled = await checkTaskCompletion(userId, t.id).catch(() => false)
+      if (settled) await finalizeAndReport(userId, t.id).catch(() => {})
+    }
+
+    // 兜底清理:落下的被打断任务(executing/planning→cancelled、running/pending 子任务→cancelled)统一由它收拾。
+    // 恒调 —— 保持旧 cleanupStaleTasks 的全部安全网语义(如"planning 且无子任务"的半截任务);已被上面
+    // 结算成 completed/failed 的任务是终态,cleanupStaleTasks 只碰非终态,不会误伤。
+    await cleanupStaleTasks(userId).catch(() => {})
+
+    if (interrupted > 0) {
+      broadcast('response',
+        `Sir，服务刚重启过，有 ${interrupted} 个正在执行的任务被中断了,已标记取消。需要的话我可以重新安排。`,
+        userId, 'task-error')
+    }
+  } catch {
+    // 恢复是尽力而为,拉不到任务 / DB 抖动都不该阻塞启动。兜底退回旧行为。
+    await cleanupStaleTasks(userId).catch(() => {})
   }
 }
 
@@ -275,43 +428,7 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
 
     if (!signal.aborted) {
       await checkTaskCompletion(userId, taskId)
-      const finalTask = await getTask(userId, taskId)
-      if (finalTask?.status === 'completed' && finalTask.result) {
-        broadcast('progress', `正在为您整理汇报...`, userId)
-
-        // 确定性挑成品预览:汇总本任务所有子任务写过的文件,代码层面挑主成品,
-        // 不靠 LLM 主动调 render_preview(它会偷懒/幻觉"已推送预览"却没真调)
-        const producedFiles = finalTask.subtasks.flatMap(st => takeWrittenFiles(st.id))
-        const autoArtifact = buildPreviewFromFiles(producedFiles)
-
-        const previewNote = autoArtifact
-          ? `\n\n【已自动预览】团队产出的成品「${autoArtifact.title}」已推送到右侧预览面板,汇报时可以自然提一句"已在右侧预览"。`
-          : ''
-
-        // 主动推荐转正:本次任务涉及的领域里,若有临时工累计达线(≥3 次且未转正),
-        // 把推荐指令拼进汇报 prompt —— Jarvis 汇报完顺口提一句,不用 Sir 开口问。
-        // 只看本任务干过的 domain(刚干完活、顺势推荐的自然时机),不翻无关历史候选。
-        const promoteNote = await buildPromoteNote(userId, finalTask.subtasks).catch(() => '')
-
-        const reportPrompt = `你是 Jarvis，一个有幽默感的私人管家。称呼用户为 Sir。\n` +
-          `你刚刚完成了任务「${finalTask.name}」。以下是团队交回的原始结果：\n\n${finalTask.result}\n\n` +
-          `请向 Sir 汇报结果。要求：\n` +
-          `- 直接输出汇报内容，不要输出 JSON\n` +
-          `- 保留关键信息，去掉冗余\n` +
-          `- 用清晰的结构（列表、表格都行）\n` +
-          `- 语气像管家汇报，不是写文档\n` +
-          `- 太长就给精华摘要，说一句"详细版随时可以展开"${previewNote}${promoteNote}`
-
-        const summary = await withBrainLock(userId, () => rawLlmCall(userId, reportPrompt, '请汇报'))
-        const report = summary || finalTask.result
-
-        // 优先用确定性挑出的成品;若无,兜底看 LLM 是否手动 render_preview 过
-        const artifact = autoArtifact || consumeArtifact(userId)
-        const artifactId = artifact ? await saveArtifact(userId, artifact, taskId) : undefined
-        broadcast('response', report, userId, 'task-report')
-        if (artifact) broadcast('artifact', JSON.stringify(artifact), userId, 'task-report')
-        await addToBuffer(userId, 'jarvis', report, artifactId)
-      }
+      await finalizeAndReport(userId, taskId)
     }
   })().catch(err => {
     if (err?.message?.includes('取消')) return
@@ -397,7 +514,7 @@ export async function dispatchAction(
     case 'send_message': {
       const { subtaskId, message: msg } = action.data as { subtaskId: string; message: string }
       // 无论 agent 是否在线,都持久化消息(前端可展示、agent 恢复时可读)
-      bus.notify('jarvis', subtaskId, subtaskId, msg)
+      bus.notify(userId, 'jarvis', subtaskId, subtaskId, msg)
       if (bus.isRegistered(subtaskId)) {
         response = `已把消息发给 agent (${subtaskId.slice(0, 6)})：「${msg.slice(0, 40)}」`
       } else {

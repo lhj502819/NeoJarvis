@@ -19,7 +19,11 @@ const http = require('http')
 const { spawn } = require('child_process')
 
 // dev = 未打包(electron . )或显式 NODE_ENV=development
-const isDev = !app.isPackaged || process.env.NODE_ENV === 'development'
+// JARVIS_PROD=1 显式强制"生产式运行"(加载 3000 自服务的 web/dist 构建产物、不开 DevTools),
+// 用于未打包但想跑压缩版验证性能的场景 —— 优先级最高,压过"未打包=dev"的默认判定。
+const isDev = process.env.JARVIS_PROD === '1'
+  ? false
+  : (!app.isPackaged || process.env.NODE_ENV === 'development')
 
 // 统一应用名,让 macOS 菜单栏/About/dock 提示都显示 J.A.R.V.I.S
 // (dev 时 electron-builder 的 productName 不生效,必须代码里 setName)
@@ -30,7 +34,7 @@ const REPO_ROOT = app.isPackaged
   ? path.join(process.resourcesPath, 'app')
   : path.join(__dirname, '..', '..')
 
-const TS_SERVER_PORT = 3000
+const TS_SERVER_PORT = Number(process.env.JARVIS_PORT) || 3000
 const VITE_DEV_PORT = 5180
 
 let serverProc = null
@@ -42,6 +46,8 @@ function buildServerEnv() {
     ...process.env,
     // 数据层走 Java(server-client.ts 读这个变量,默认也是 8080)
     JARVIS_SERVER_URL: process.env.JARVIS_SERVER_URL || 'http://localhost:8080',
+    // 智能层端口(与主进程 TS_SERVER_PORT 保持一致;config.ts 读这个变量)
+    JARVIS_PORT: String(TS_SERVER_PORT),
     // 单机桌面模式标记(智能层目前未消费,预留;设置无害)
     JARVIS_LOCAL_MODE: '1',
     // 让子进程以脚本模式识别自己(server-entry.ts 的 isMain 判定)
@@ -69,16 +75,29 @@ ipcMain.handle('artifact:read', async (_event, uri) => {
   return await fs.readFile(resolved, 'utf-8')
 })
 
-/** spawn tsx 跑 desktop/agent/server-entry.ts —— 用 Electron 自带 node 执行 tsx CLI,不依赖系统 PATH */
+/** spawn tsx 跑 desktop/agent/server-entry.ts */
 function startTsServer() {
   const tsxCli = path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs')
   const entry = path.join(REPO_ROOT, 'desktop', 'agent', 'server-entry.ts')
 
-  serverProc = spawn(process.execPath, [tsxCli, entry], {
+  // Pi SDK(@earendil-works/pi-coding-agent)用了 Node 22+ 的 fs.globSync,
+  // 而 Electron 33 自带的是 Node 20(ELECTRON_RUN_AS_NODE 模式仍是 Node 20)。
+  // 所以优先用系统 PATH 里的 node(开发机 nvm 装的 v22),拿不到才降级用 Electron 二进制。
+  const { execFileSync } = require('child_process')
+  let nodeBin = null
+  try { nodeBin = execFileSync('which', ['node'], { encoding: 'utf-8' }).trim() } catch { /* which 不可用 */ }
+  if (!nodeBin || !require('fs').existsSync(nodeBin)) {
+    // 兑底:用 Electron 自带 node(打包后没有系统 node)
+    nodeBin = process.execPath
+  }
+
+  const useElectronAsNode = nodeBin === process.execPath
+  serverProc = spawn(nodeBin, [tsxCli, entry], {
     cwd: REPO_ROOT,
     env: {
       ...buildServerEnv(),
-      ELECTRON_RUN_AS_NODE: '1', // 让 Electron 二进制当纯 node 用
+      // 只在用 Electron 二进制时才设这个(让它当纯 node);系统 node 不需要
+      ...(useElectronAsNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -128,7 +147,7 @@ function createWindow() {
     title: 'J.A.R.V.I.S',
     icon: iconPath,
     titleBarStyle: 'hiddenInset',
-    backgroundColor: '#0a0e1a',
+    backgroundColor: '#f7f6f3',
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,
@@ -143,6 +162,34 @@ function createWindow() {
 
   mainWindow.loadURL(url)
   if (isDev) mainWindow.webContents.openDevTools({ mode: 'detach' })
+
+  // ── 白屏自愈 ──
+  // dev 下 vite/HMR 偶发瞬态(编译窗口期加载、React 并发渲染恢复失败)会让 #root 空着,
+  // 窗口没有任何刷新手段就一直是白的。这里两层兜底:
+  //   1. 主框架加载失败(vite 没就绪等)→ 延迟重试
+  //   2. 加载"成功"但 root 是空的(挂载崩了)→ 自动 reload,最多连续 2 次,防循环
+  let blankReloads = 0
+  mainWindow.webContents.on('did-fail-load', (_e, _code, _desc, _url, isMainFrame) => {
+    if (!isMainFrame) return
+    if (blankReloads >= 2) return
+    blankReloads += 1
+    setTimeout(() => mainWindow?.webContents.reload(), 800)
+  })
+  mainWindow.webContents.on('did-finish-load', async () => {
+    try {
+      const blank = await mainWindow.webContents.executeJavaScript(
+        `!document.getElementById('root') || document.getElementById('root').childElementCount === 0`
+      )
+      if (blank) {
+        if (blankReloads >= 2) return
+        blankReloads += 1
+        console.log('[main] 检测到白屏(root 为空),自动 reload')
+        mainWindow.webContents.reload()
+      } else {
+        blankReloads = 0
+      }
+    } catch { /* 页面跳转中 executeJavaScript 可能失败,忽略 */ }
+  })
 
   // 外链走系统浏览器,不在应用内开新窗
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

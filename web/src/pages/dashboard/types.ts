@@ -11,6 +11,8 @@ export interface SubTask {
   retryCount?: number
   tokensInput?: number
   tokensOutput?: number
+  agentType?: 'permanent' | 'adhoc'
+  agentName?: string
 }
 
 export interface Task {
