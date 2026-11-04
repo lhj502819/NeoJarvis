@@ -80,3 +80,12 @@
 .mon-item[data-state="done"] .mon-pulse-bar,
 .mon-item[data-state="failed"] .mon-pulse-bar { display: none; }
 @keyframes mon-slide { 0% { left: -40%; } 100% { left: 100%; } }
+
+/* ── Watchdog 标黄:巡检信号(卡住/超时/僵尸/连环失败) ── */
+.mon-item.warned { border-color: var(--yellow); box-shadow: 0 0 0 1px var(--yellow-bg), var(--shadow-sm); }
+.mon-warn {
+  font-size: 10px; font-weight: 600; color: var(--yellow);
+  background: var(--yellow-bg); padding: 1px 7px;
+  border-radius: var(--radius-sm); flex-shrink: 0;
+  animation: msg-fade-in 0.4s ease-out;
+}

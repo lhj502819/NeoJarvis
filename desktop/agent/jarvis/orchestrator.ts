@@ -106,6 +106,68 @@ export async function enqueueMessage(userId: string, text: string, writer: SSEWr
   }
 }
 
+// ─── 后台事件入队(事件驱动,docs/superagent-design.md §3)───
+// 事件(晨报/京ME 消息)走 Jarvis 的完整 think(),但**绝不打断** Sir 正在进行的对话:
+// idle → 直接开跑;否则排队,等当前思考结束(resetSession)后自动续跑。
+const pendingBackground = new Map<string, Array<{ text: string; writer: SSEWriter }>>()
+
+export function enqueueBackgroundMessage(userId: string, text: string, writer: SSEWriter): void {
+  const session = getSession(userId)
+  if (session.state === 'idle') {
+    console.log(`[orchestrator] background flush(now): "${text.slice(0, 40)}"`)
+    startBackgroundThink(userId, session, text, writer)
+    return
+  }
+  const q = pendingBackground.get(userId) ?? []
+  q.push({ text, writer })
+  pendingBackground.set(userId, q)
+  console.log(`[orchestrator] background queued(${q.length}): "${text.slice(0, 40)}"`)
+}
+
+function startBackgroundThink(userId: string, session: UserSession, text: string, writer: SSEWriter): void {
+  // 借用 thinking 状态机;writer 是事件侧虚拟 writer,无 /chat 连接语义
+  session.state = 'thinking'
+  session.writers.push(writer)
+  session.liveContent = ''
+
+  const emit = (type: string, content: string) => {
+    if (!writer.closed) writer.send(type, content)
+  }
+  emit('thinking', '正在思考...')
+
+  const run = async () => {
+    try {
+      // 落库 user 消息(事件来源文本,带【来源】标签)→ think()
+      await addToBuffer(userId, 'user', text)
+      const result = await think(userId, text, (progress) => emit('progress', progress), (delta) => {
+        session.liveContent += delta
+        emit('delta', delta)
+      })
+      session.liveContent = result.response
+      emit('response', result.response)
+      if (result.artifact) emit('artifact', JSON.stringify(result.artifact))
+    } catch (err) {
+      emit('response', `[错误] ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      writer.end()
+      session.thinkPromise = null
+      session.state = 'idle'
+      session.writers = session.writers.filter(w => w !== writer)
+      // 队列里还有后台事件 → 稍等一拍续跑(给真正的用户消息让路)
+      const q = pendingBackground.get(userId)
+      if (q && q.length > 0) {
+        const next = q.shift()!
+        setTimeout(() => {
+          const s = sessions.get(userId)
+          if (s && s.state === 'idle') startBackgroundThink(userId, s, next.text, next.writer)
+          else enqueueBackgroundMessage(userId, next.text, next.writer)
+        }, 500)
+      }
+    }
+  }
+  session.thinkPromise = run()
+}
+
 export function handleDisconnect(userId: string, writerId: string) {
   const session = sessions.get(userId)
   if (!session) return

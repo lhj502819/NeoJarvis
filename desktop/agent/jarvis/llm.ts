@@ -120,8 +120,10 @@ export async function rawLlmCall(
     resourceLoader: loader,
     sessionManager: SessionManager.inMemory(cwd),
     settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
-    // 不限制 tools allowlist —— customTools 默认全部启用;内置工具(read/bash/edit/write)也保留,
-    // 因为 Jarvis 本体需要能读写文件(如制品、配置)。如需禁用内置工具用 noTools: 'builtin'。
+    // 岗位纪律(系统级委派约束):Jarvis 是管理者,执行类内置工具直接收走——
+    // 不是靠提示词自觉,是工具层面就拿不到。保留 read 只读看一眼;要动手只能 create_task。
+    // 注意:这是共享的调用层,Jarvis 本体与后台补汇报等都走这里,统一受限。
+    excludeTools: ['bash', 'edit', 'write'],
   })
 
   // 事件订阅:把 Pi 的 AgentSessionEvent 翻译成旧的 onDelta / broadcast / toolTraces

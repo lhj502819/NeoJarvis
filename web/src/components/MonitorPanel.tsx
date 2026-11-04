@@ -15,6 +15,10 @@ interface MonitorItem {
   startedAtMs: number
   doneAtMs?: number
   error?: string
+  /** Watchdog 标记:该项触发了巡检信号(卡住/超时/僵尸/连环失败) */
+  warned?: boolean
+  warnReason?: string
+  warnDetail?: string
 }
 
 interface RunningTaskInit {
@@ -71,6 +75,28 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
       const seq = evt._seq ?? 0
       if (seq <= lastSeqRef.current) continue
       lastSeqRef.current = seq
+
+      // Watchdog 巡检信号:标黄对应项;僵尸任务可能不在面板里(会话已不在),补一个合成项
+      if (evt.type === 'watchdog') {
+        try {
+          const p = JSON.parse(evt.content) as { taskId: string; subtaskId: string; agentName: string; taskName: string; reason: string; detail: string }
+          setItems(prev => {
+            const next = new Map(prev)
+            const existing = next.get(p.subtaskId)
+            next.set(p.subtaskId, {
+              subtaskId: p.subtaskId, taskId: p.taskId,
+              agentName: p.agentName, agentType: existing?.agentType ?? 'adhoc',
+              taskName: p.taskName.slice(0, 60),
+              status: 'running', turnCount: existing?.turnCount ?? 0,
+              startedAtMs: existing?.startedAtMs ?? Date.now(),
+              warned: true, warnReason: p.reason, warnDetail: p.detail,
+            })
+            return next
+          })
+        } catch { /* payload 异常忽略 */ }
+        continue
+      }
+
       if (evt.type !== 'subtask') continue
       const p = parseSubtaskEvent(evt.content)
       if (!p) continue
@@ -86,6 +112,8 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
           startedAtMs: existing?.startedAtMs || (Date.now() - (p.elapsedMs || 0)),
           doneAtMs: p.status !== 'running' ? Date.now() : undefined,
           error: p.error,
+          // watchdog 标记跨事件保留(新进展不清除警示,直到任务终态淡出)
+          warned: existing?.warned, warnReason: existing?.warnReason, warnDetail: existing?.warnDetail,
         })
         return next
       })
@@ -140,7 +168,7 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
           return (
             <div
               key={item.subtaskId}
-              className={`mon-item${fading.has(item.subtaskId) ? ' fading' : ''}`}
+              className={`mon-item${fading.has(item.subtaskId) ? ' fading' : ''}${item.warned ? ' warned' : ''}`}
               data-state={item.status}
               onClick={() => onOpen(item.taskId, item.subtaskId)}
             >
@@ -151,6 +179,7 @@ export function MonitorPanel({ onOpen }: { onOpen: (taskId: string, subtaskId: s
                 </span>
                 <span className="mon-name">{item.agentName}</span>
                 <span className="mon-spacer"></span>
+                {item.warned && <span className="mon-warn" title={item.warnDetail}>⚠ {item.warnReason === 'zombie' ? '会话掉线' : item.warnReason === 'idle' ? '没动静' : item.warnReason === 'overtime' ? '跑太久' : '反复失败'}</span>}
                 <span className="mon-status">
                   {item.status === 'running' ? '执行中' : item.status === 'done' ? '已完成' : '执行失败'}
                 </span>
