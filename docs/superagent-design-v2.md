@@ -106,3 +106,23 @@ worker 读边界 redact 补全（跨任务/决策不可见）；`conversation` �
 
 - 每期：实现 → vitest + tsc（不接管道）→ 手工冒烟 → commit+push。P2/P3 动消息链路，回退点必须干净。
 - 每期验收不过不进下一期。
+
+---
+
+## 实施记录(2026-11-08)
+
+| 期 | 提交 | 内容 | 状态 |
+|---|---|---|---|
+| P0 | 52179fa | jarvis_agent_docs 通用文档表 + TS docs 客户端;task-origin/message-origin/jdsme游标/timeline/comms 全部迁 DB | ✅ |
+| P1 | 5a70576 | 读资源表 + read_context 工具(Jarvis 全量/小弟受限) + think() 卡片化(任务/对话/技能目录);prompt 27612→11802 字符(-57%) | ✅ |
+| P2 | 83fb3bf | Thread/Trigger/Subscription + 京ME群订阅直通 + handback 防乒乓 + Trigger 幂等 | ✅ |
+| P3 | 10bf01c | 评估窗口(线程最近消息+omitted计数) + 接单门槛(三事实/反问轮不建任务) | ✅ |
+| P4 | 13e301d | persona 配置迁 DB(写入库读缓存) + Source kind/instance 注册表 + Gate 结构化判定(explicit/candidates/ignore) + ConfigPage 事件源分区 | ✅ |
+| P5 | 745046f | 行云需求源(车道A:卡片=Mandate) + 审批队列(approval/auto)+ Policy 版本 + 卡片关闭自动收尾 | ✅ |
+| P6 | (本次) | skillCatalogLines 预算函数化 + 预算单测;实施记录 | ✅ |
+
+### 遗留与说明
+- **agent-profile(研发分身)仍文件存储**:该模块把配置物化成 skill 目录供 Pi SDK 加载,
+  文件是其运行接口而非单纯存储;迁移=源头入库+物化落盘双写,牵动用户自建模块,待与作者对齐后单独做。
+- watchdog 会话化 / 推测执行(静默复现修复) / 行云卡片评论同步 / Thread 细化聚类:设计文档标注的可选项,未排期。
+- 行云轮询默认关闭(enabled+sprintId 需在配置页→事件源里开启);审批模式默认 approval。

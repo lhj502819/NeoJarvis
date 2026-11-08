@@ -74,6 +74,29 @@ export function messageStub(m: { id: number; role: string; content: string }): s
   return `message/${m.id} ${m.role === 'user' ? 'Sir' : 'Jarvis'}: ${preview(m.content, 50)} (${m.content.length}字)`
 }
 
+/**
+ * 技能目录卡化(P1/P6):每技能一行"名字 + 80 字预览",总预算封顶,
+ * 超预算截断并留 read_context 'skills' 指针 —— 85 个 hub skill 的完整描述
+ * 曾占 ~19k 字符/每次 think。纯函数,预算单测盯它。
+ */
+export const SKILL_LINE_BUDGET = 6000
+
+export function skillCatalogLines(skills: Array<{ name: string; description: string; enabled?: boolean }>, budget = SKILL_LINE_BUDGET): string {
+  const enabled = skills.filter(s => s.enabled !== false)
+  const lines: string[] = []
+  let left = budget
+  for (const s of enabled) {
+    const line = `- ${s.name}: ${(s.description ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)}`
+    if (left - line.length < 0) {
+      lines.push(`(还有 ${enabled.length - lines.length} 个技能未列出,read_context 'skills' 查看完整目录)`)
+      break
+    }
+    left -= line.length
+    lines.push(line)
+  }
+  return lines.join('\n')
+}
+
 const jsonPage = (resource: string, data: unknown, opts: PageOpts) =>
   textPage(resource, JSON.stringify(data, null, 1), opts)
 

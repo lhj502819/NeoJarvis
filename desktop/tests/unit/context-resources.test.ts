@@ -79,3 +79,30 @@ describe('worker 读边界(小弟越权拒绝)', () => {
     await expect(readResource('u', 'nonsense', { offset: 0 }, { role: 'jarvis' })).rejects.toThrow('未知资源')
   })
 })
+
+// ── P6:技能目录预算(纯函数) ──
+import { skillCatalogLines, SKILL_LINE_BUDGET } from '../../agent/jarvis/context-resources.js'
+
+describe('skillCatalogLines 技能目录预算', () => {
+  const mk = (n: number) => Array.from({ length: n }, (_, i) => ({
+    name: `skill-${i}`, description: `描述${i} `.repeat(20), enabled: true,
+  }))
+
+  it('总输出不超过预算,超预算截断并留 read_context 指针', () => {
+    const out = skillCatalogLines(mk(85))
+    expect(out.length).toBeLessThanOrEqual(SKILL_LINE_BUDGET + 120)  // 预算 + 截断提示行
+    expect(out).toContain("read_context 'skills'")
+  })
+
+  it('禁用技能不进目录;全部放得下时不加指针', () => {
+    const few = [{ name: 'a', description: '短', enabled: true }, { name: 'b', description: 'x', enabled: false }]
+    const out = skillCatalogLines(few, 6000)
+    expect(out).toContain('- a: 短')
+    expect(out).not.toContain('- b')
+    expect(out).not.toContain('read_context')
+  })
+
+  it('空目录返回空串', () => {
+    expect(skillCatalogLines([])).toBe('')
+  })
+})

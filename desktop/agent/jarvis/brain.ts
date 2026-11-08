@@ -21,7 +21,7 @@ import { peekCurrentOrigin } from './task-origin.js'
 import { setMessageOrigin } from './message-origin.js'
 import { serverGet } from '../shared/server-client.js'
 import { redactSecrets } from '../shared/redact.js'
-import { taskCard, messageStub } from './context-resources.js'
+import { taskCard, messageStub, skillCatalogLines } from './context-resources.js'
 
 export { parseAction } from './action-dispatcher.js'
 export { addToBuffer } from './conversation.js'
@@ -89,24 +89,9 @@ export async function think(userId: string, userMessage: string, onProgress?: (t
       .join('\n'))
     .catch(() => '')
 
-  // 技能目录卡化(P1):85 个 hub skill 的完整描述曾占 ~19k 字符/每次 think。
-  // 现在只注入"名字 + 80 字预览",总预算 6k,超预算截断并留 read_context 'skills' 指针。
+  // 技能目录卡化(P1/P6):预算逻辑在 context-resources.skillCatalogLines(可测)
   const availableSkills = await listSkillsForUser(userId)
-  const SKILL_LINE_BUDGET = 6000
-  const enabledSkillLines = (() => {
-    const lines: string[] = []
-    let budget = SKILL_LINE_BUDGET
-    for (const s of availableSkills.filter(s => s.enabled)) {
-      const line = `- ${s.name}: ${s.description.replace(/\s+/g, ' ').trim().slice(0, 80)}`
-      if (budget - line.length < 0) {
-        lines.push(`(还有 ${availableSkills.filter(x => x.enabled).length - lines.length} 个技能未列出,read_context 'skills' 查看完整目录)`)
-        break
-      }
-      budget -= line.length
-      lines.push(line)
-    }
-    return lines.join('\n')
-  })()
+  const enabledSkillLines = skillCatalogLines(availableSkills)
 
   // 长期记忆(自托管 EverOS):检索相关记忆注入;失败/为空降级为空段,不阻塞 think。
   const memories = await searchMemory(userId, userMessage, 5).catch(() => '')
