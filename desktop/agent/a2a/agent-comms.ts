@@ -4,6 +4,7 @@ import { bus } from './bus.js'
 import { getPeerAgents } from './registry.js'
 import { broadcast } from '../jarvis/sse.js'
 import { appendComms } from '../jarvis/timeline-store.js'
+import { readResource } from '../jarvis/context-resources.js'
 
 /**
  * 小弟之间的沟通工具集(Jarvis 之外,A2A agent 互相 + 向 Jarvis 汇报)。
@@ -13,6 +14,7 @@ import { appendComms } from '../jarvis/timeline-store.js'
  * 由调用方(a2a/client.ts)经 createAgentSession({ customTools }) 挂载。
  *
  * 工具清单(与旧版逐一对齐):
+ *   - read_context   : 按资源指针读详情(受限:仅自己任务/共享制品,其余拒绝)
  *   - message_jarvis : 向 Jarvis 捎话(progress/question/deliverable/blocked)
  *   - message_peer   : 给并行协作的其他小弟发消息(异步,发完不等)
  *   - check_inbox    : 查收件箱(Jarvis 追加指令 / peer 消息或回复)
@@ -20,6 +22,28 @@ import { appendComms } from '../jarvis/timeline-store.js'
  */
 export function createAgentCommsTools(subtaskId: string, taskId: string, userId: string, agentName: string): ToolDefinition[] {
   return [
+    defineTool({
+      name: 'read_context',
+      label: 'Read Context',
+      description: `按资源指针读取详情(受限视图)。资源语法:\n`
+        + `task/${taskId}: 你自己任务的完整详情(子任务/轮次/沟通记录)\n`
+        + `artifact/<id>: 制品库里的制品全文(长文分页)\n`
+        + `其他资源对你是不可见的——需要的上下文系统会投递给你。`,
+      parameters: Type.Object({
+        resource: Type.String({ description: `资源指针,如 task/${taskId}、artifact/abc123` }),
+        offset: Type.Optional(Type.Number({ description: '文本续读偏移(字符)' })),
+        limit: Type.Optional(Type.Number({ description: '本次最多返回字符数(默认 4000,上限 8000)' })),
+      }),
+      execute: async (_toolCallId, params) => {
+        try {
+          const text = await readResource(userId, params.resource, { offset: params.offset ?? 0, limit: params.limit }, { role: 'worker', taskId })
+          return { content: [{ type: 'text', text }], details: {} }
+        } catch (err) {
+          return { content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }], details: {} }
+        }
+      },
+    }),
+
     defineTool({
       name: 'message_jarvis',
       label: 'Message Jarvis',

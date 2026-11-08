@@ -23,6 +23,7 @@ import {
 } from './agent-profile.js'
 import { sendJdMe } from '../events/sources/jdsme.js'
 import { peekCurrentOrigin, setTaskOrigin } from './task-origin.js'
+import { readResource, RESOURCE_GRAMMAR } from './context-resources.js'
 
 /**
  * Artifact detail as returned by the Java server (GET/PATCH /api/artifact/{id}).
@@ -111,6 +112,25 @@ const AgentModuleParam = Type.Object({
  */
 export function createJarvisTools(userId: string): ToolDefinition[] {
   return [
+    defineTool({
+      name: 'read_context',
+      label: 'Read Context',
+      description: `按资源指针读取上下文全文(上下文里只注入卡片,需要细节时用它展开)。资源语法:\n${RESOURCE_GRAMMAR}\n文本资源默认返回前 4000 字,可传 offset 续读。`,
+      parameters: Type.Object({
+        resource: Type.String({ description: `资源指针,如 task/abc123、message/42、conversation、artifact/xxx` }),
+        offset: Type.Optional(Type.Number({ description: '文本续读偏移(字符)' })),
+        limit: Type.Optional(Type.Number({ description: '本次最多返回字符数(默认 4000,上限 8000)' })),
+      }),
+      execute: async (_toolCallId, params) => {
+        try {
+          const text = await readResource(userId, params.resource, { offset: params.offset ?? 0, limit: params.limit }, { role: 'jarvis' })
+          return { content: [{ type: 'text', text }], details: {} }
+        } catch (err) {
+          return { content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }], details: {} }
+        }
+      },
+    }),
+
     defineTool({
       name: 'list_team',
       label: 'List Team',

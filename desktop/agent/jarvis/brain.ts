@@ -4,9 +4,8 @@ import { listAdhocAgents } from '../a2a/adhoc.js'
 import { bus } from '../a2a/bus.js'
 import { consumeArtifact, type PendingArtifact } from './tools.js'
 import { onMessageHandled } from './state.js'
-import { getTaskSummary } from '../task/manager.js'
 import { debug, withBrainLock, rawLlmCall, llmCall } from './llm.js'
-import { addToBuffer, getRecentConversation, saveArtifact } from './conversation.js'
+import { addToBuffer, saveArtifact } from './conversation.js'
 import { searchMemory } from '../memory/everos.js'
 import { parseAction } from './action-dispatcher.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
@@ -20,6 +19,9 @@ import { loadPipelineSkillContent, getOwnerIdentity } from './persona.js'
 import { createTimelineCollector, saveTimeline } from './timeline-store.js'
 import { peekCurrentOrigin } from './task-origin.js'
 import { setMessageOrigin } from './message-origin.js'
+import { serverGet } from '../shared/server-client.js'
+import { redactSecrets } from '../shared/redact.js'
+import { taskCard, messageStub } from './context-resources.js'
 
 export { parseAction } from './action-dispatcher.js'
 export { addToBuffer } from './conversation.js'
@@ -63,7 +65,16 @@ export async function think(userId: string, userMessage: string, onProgress?: (t
   const t0 = Date.now()
   debug('think() called:', userMessage.slice(0, 50), images?.length ? `+${images.length}img` : '')
 
-  const taskContext = await getTaskSummary(userId)
+  // 任务上下文卡片化(P1,Inline & Spill):只注入卡片(预览+全文长度+读指针),
+  // 详情由模型按需 read_context 'task/<id>' 展开 —— 窗口留给当前消息,不再被任务史稀释。
+  const { tasks: allTasks } = await serverGet<{ summary: string; tasks: Array<{ id: string; name: string; status: string; description?: string }> }>(userId, '/api/tasks')
+  const activeTasks = allTasks.filter(t => !['completed', 'failed', 'cancelled'].includes(t.status))
+  const taskContext = activeTasks.length
+    ? activeTasks.slice(0, 8).map(taskCard).join('\n')
+      + (activeTasks.length > 8
+        ? `\n(共 ${activeTasks.length} 个活动任务仅显示 8 个;全部列表 read_context 'tasks')`
+        : '\n(任务详情 read_context \'task/<id>\')')
+    : '暂无进行中的任务'
   if (signal?.aborted) throw new Error('aborted')
 
   const recipes = await listRecipes(userId)
@@ -78,18 +89,47 @@ export async function think(userId: string, userMessage: string, onProgress?: (t
       .join('\n'))
     .catch(() => '')
 
+  // 技能目录卡化(P1):85 个 hub skill 的完整描述曾占 ~19k 字符/每次 think。
+  // 现在只注入"名字 + 80 字预览",总预算 6k,超预算截断并留 read_context 'skills' 指针。
   const availableSkills = await listSkillsForUser(userId)
-  const enabledSkillLines = availableSkills
-    .filter(s => s.enabled)
-    .map(s => `- ${s.name}: ${s.description}`)
-    .join('\n')
+  const SKILL_LINE_BUDGET = 6000
+  const enabledSkillLines = (() => {
+    const lines: string[] = []
+    let budget = SKILL_LINE_BUDGET
+    for (const s of availableSkills.filter(s => s.enabled)) {
+      const line = `- ${s.name}: ${s.description.replace(/\s+/g, ' ').trim().slice(0, 80)}`
+      if (budget - line.length < 0) {
+        lines.push(`(还有 ${availableSkills.filter(x => x.enabled).length - lines.length} 个技能未列出,read_context 'skills' 查看完整目录)`)
+        break
+      }
+      budget -= line.length
+      lines.push(line)
+    }
+    return lines.join('\n')
+  })()
 
   // 长期记忆(自托管 EverOS):检索相关记忆注入;失败/为空降级为空段,不阻塞 think。
   const memories = await searchMemory(userId, userMessage, 5).catch(() => '')
   console.log(`[perf] searchMemory: ${memories.length} chars`)
   const memoriesSection = memories ? `## 关于 Sir 的记忆\n${memories}\n` : ''
 
-  const recentConvo = await getRecentConversation(userId)
+  // 对话上下文卡片化(P1):最近 8 条全文,更早的降级为 stub 指针 —— 老对话不再被
+  // "只保留最近 N 轮"截断丢弃,模型可沿 message/<id> 按需读回(read_context)。
+  const turns = await serverGet<Array<{ id: number; role: string; content: string }>>(userId, '/api/conversation')
+  const FULL_TURNS = 8
+  const STUB_WINDOW = 20
+  const fullTurns = turns.slice(-FULL_TURNS)
+  const olderTurns = turns.slice(0, -FULL_TURNS)
+  const olderStubs = olderTurns.slice(-STUB_WINDOW)
+  const recentConvo = fullTurns.length === 0
+    ? '(刚开始对话)'
+    : (olderTurns.length
+        ? `### 更早对话(仅预览,全文 read_context 'message/<id>')\n${olderStubs.map(messageStub).join('\n')}`
+          + (olderTurns.length > olderStubs.length
+            ? `\n(更早 ${olderTurns.length - olderStubs.length} 条未列出,read_context 'conversation' 分页)`
+            : '') + '\n\n'
+        : '')
+      + `### 最近对话\n${fullTurns.map(m => `${m.role === 'user' ? 'Sir' : 'Jarvis'}: ${redactSecrets(m.content)}`).join('\n')}`
   if (signal?.aborted) throw new Error('aborted')
 
   // 拉 Jarvis 自己最近几轮的工具调用轨迹(create_task 拿到的 task_id 等),注入 prompt
@@ -156,7 +196,7 @@ ${ownerLine}
 
   const contextualPrompt = `${runtimeEnv}
 ${authoritySection}
-${pinnedContext}## 当前任务状态
+${pinnedContext}## 进行中的任务
 ${taskContext}
 
 ## 可用团队成员
@@ -166,8 +206,8 @@ ${promoteHint ? `\n### ⚠️ 待转正候选(临时工已达转正线)\n${promo
 ## 可用技能(派任务时可挂给小弟)
 ${enabledSkillLines || '(暂无已启用技能)'}
 
-${memoriesSection}## 本次会话对话记录
-${recentConvo || '(刚开始对话)'}
+${memoriesSection}## 对话记录
+${recentConvo}
 
 ${toolTraceSection}
 ${routerSection}
@@ -177,6 +217,8 @@ ${userMessage}`
   onProgress?.('正在分析你的需求...')
   const t2 = Date.now()
   console.log(`[perf] prompt built, length: ${contextualPrompt.length} chars`)
+  // 分区尺寸诊断(P1):上下文优化的标尺 —— 哪一段肥了一目了然
+  console.log(`[perf] prompt sections: tasks=${taskContext.length} team=${teamInfo.length} skills=${enabledSkillLines.length} convo=${recentConvo.length} traces=${toolTraceSection.length} router=${routerSection.length} authority=${authoritySection.length} pinned=${pinnedContext.length} memories=${memoriesSection.length} msg=${userMessage.length}`)
   let ac: AbortController | undefined
   if (signal) {
     ac = new AbortController()
