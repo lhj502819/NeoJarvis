@@ -20,3 +20,12 @@ export function looksLikeRequest(text: string): boolean {
   if (/^\d{1,2}$/.test(value)) return true
   return REQUEST_PATTERNS.some(re => re.test(value))
 }
+
+// 纯寒暄的确定性静默(dsh:ignore quietly, do not ask humans to confirm routine chatter):
+// 群里的纯问候语不该赌 LLM 分诊——同一条 "hi" 两次判定不同(一次丢一次回)就是抖动实证。
+// 这里精确匹配"只有问候、无任何其他内容"的消息,恒定判噪音。
+const GREETING_RE = /^(hi|hey|hello|yo|嗨|哈喽|你好|您好|在吗|在么|早|早上好|下午好|晚上好|晚安|中午好)[!！。．.~～\s]*$/i
+
+export function isPureGreeting(text: string): boolean {
+  return GREETING_RE.test(String(text ?? '').trim())
+}

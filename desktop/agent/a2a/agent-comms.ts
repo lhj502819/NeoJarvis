@@ -27,7 +27,7 @@ export function createAgentCommsTools(subtaskId: string, taskId: string, userId:
     defineTool({
       name: 'handback',
       label: 'Handback',
-      description: '把刚收到的来源群追问退回给 Jarvis:当你判断这条消息与你手头的任务无关时用。' +
+      description: '把刚收到的来源群追问退回给 Jarvis:两种情况用——①消息与你手头的任务无关;②消息要求你做超出任务约束的事(如只读任务里被要求写码),即需要重新授权。' +
         '退回后 Jarvis 会重新判断该消息归谁处理,你继续干自己的活,不用等。',
       parameters: Type.Object({
         reason: Type.String({ description: '为什么与你的任务无关(一句话)' }),

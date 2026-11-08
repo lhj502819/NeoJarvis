@@ -1,5 +1,5 @@
 import { rawLlmCall } from '../jarvis/llm.js'
-import { looksLikeRequest } from './triage-filter.js'
+import { isPureGreeting, looksLikeRequest } from './triage-filter.js'
 
 /**
  * Slow Path 语义分诊(文章 §3.1):Fast Path(白名单/去重/@检测)已在 source 层完成,
@@ -23,6 +23,11 @@ const SYSTEM = `你是消息分诊器。输入一条发给 AI 管家的事件消
 只输出一个 JSON 对象,格式:{"category":"noise"|"message","summary":"一句话概括"},不要输出其他内容。`
 
 export async function triageMessage(userId: string, text: string): Promise<TriageResult> {
+  // 纯寒暄确定性静默(P6 验证期发现:LLM 分诊对 "hi" 有 50/50 抖动),不进 LLM。
+  if (isPureGreeting(text)) {
+    console.log(`[triage] 纯寒暄确定性静默: "${String(text).trim().slice(0, 20)}"`)
+    return { category: 'noise', summary: '纯寒暄' }
+  }
   // 明显的提问/请求直接放行，不赌 LLM 的判断。
   if (looksLikeRequest(text)) {
     return { category: 'message', summary: '' }
