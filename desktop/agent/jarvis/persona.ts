@@ -1,48 +1,111 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync, readdirSync } from 'fs'
+import { existsSync, readFileSync, readdirSync, renameSync, unlinkSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
+import { docDelete, docGet, docList, docPut } from '../shared/docs.js'
 
 /**
  * persona 配置层 —— Jarvis 的"可在线修改的策略"(DeepSeek 文章 §6 的产品化)。
  *
  * 三层来源,优先级从高到低:
- *   1. data/persona/…   —— 用户运行时覆盖(gitignored,热改即生效:每次调用现读)
- *   2. config/defaults/…—— 仓库内置默认(随版本走)
+ *   1. 用户运行时覆盖 —— 存通用文档表 jarvis_agent_docs(kind='persona-config',
+ *      部署级全局,固定挂在 'system' 用户下;P4 起不再写 data/persona/ JSON 文件)
+ *   2. config/defaults/… —— 仓库内置默认(随版本走,读文件)
  *   3. env              —— 兼容既有环境变量(仅 settings)
+ *
+ * 读取全程同步(热路径 think/watchdog 直调):启动时 initPersonaCache() 一次性
+ * 加载进内存缓存,保存走 DB 并同步刷新缓存 —— "写入库、读走缓存"。
+ * 首次启动发现旧 data/persona/ 文件则一次性导入并改名 .migrated 留档。
  *
  * 覆盖能力:
  *   - system-prompt.md          覆盖 Jarvis 人设/纪律全文(占位符见 prompt.ts)
  *   - skills/<name>/SKILL.md    覆盖内置 pipeline skill(如 message-router)
- *   - settings.json             系统参数(watchdog/免打扰/频控/晨报/事件白名单)
+ *   - settings                  系统参数(watchdog/免打扰/频控/晨报/事件白名单)
+ *   - agent-profile(研发分身)  仍由 agent-profile.ts 文件管理(结构化多文件,后续迁)
  */
 
 const AGENT_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 const DEFAULTS = join(AGENT_ROOT, 'config', 'defaults')
-const OVERRIDES = join(process.cwd(), 'data', 'persona')
+const LEGACY = join(process.cwd(), 'data', 'persona')
 
-function readFirst(...paths: string[]): string | null {
-  for (const p of paths) {
-    try {
-      if (existsSync(p)) return readFileSync(p, 'utf-8')
-    } catch { /* 权限/IO 问题当作不存在,继续下一层 */ }
+const DOC_KIND = 'persona-config'
+const DOC_USER = 'system'   // persona 是部署级全局配置,与登录用户无关
+
+/** 缓存:texts 缺失 = 未覆盖(回落默认文件) */
+const cache: { loaded: boolean; settings: Record<string, any> | null; texts: Map<string, string> } = {
+  loaded: false, settings: null, texts: new Map(),
+}
+
+/** 启动时调用:加载覆盖层进缓存;发现旧文件则一次性导入。失败降级默认,不阻塞启动。 */
+export async function initPersonaCache(): Promise<void> {
+  try {
+    cache.settings = (await docGet<Record<string, unknown>>(DOC_USER, DOC_KIND, 'settings')) ?? null
+    const sys = await docGet<string>(DOC_USER, DOC_KIND, 'system-prompt')
+    if (sys !== null) cache.texts.set('system-prompt', sys)
+    for (const item of await docList<string>(DOC_USER, DOC_KIND, 'skill:')) {
+      cache.texts.set(item.key, item.data)
+    }
+    await migrateLegacyFiles()
+    cache.loaded = true
+    console.log('[persona] 配置缓存已加载(文档表)')
+  } catch (err) {
+    console.error(`[persona] 配置缓存加载失败(走默认+旧文件): ${err instanceof Error ? err.message : err}`)
+    cache.loaded = true
   }
-  return null
+}
+
+async function migrateLegacyFiles(): Promise<void> {
+  let imported = 0
+  // settings.json
+  const legacySettings = join(LEGACY, 'settings.json')
+  if (cache.settings === null && existsSync(legacySettings)) {
+    try {
+      const user = JSON.parse(readFileSync(legacySettings, 'utf-8'))
+      await docPut(DOC_USER, DOC_KIND, 'settings', user)
+      cache.settings = user
+      renameSync(legacySettings, `${legacySettings}.migrated`)
+      imported++
+    } catch { /* 坏文件跳过 */ }
+  }
+  // system-prompt.md
+  const legacyPrompt = join(LEGACY, 'system-prompt.md')
+  if (!cache.texts.has('system-prompt') && existsSync(legacyPrompt)) {
+    await docPut(DOC_USER, DOC_KIND, 'system-prompt', readFileSync(legacyPrompt, 'utf-8'))
+    cache.texts.set('system-prompt', readFileSync(legacyPrompt, 'utf-8'))
+    renameSync(legacyPrompt, `${legacyPrompt}.migrated`)
+    imported++
+  }
+  // skills/<name>/SKILL.md
+  const legacySkills = join(LEGACY, 'skills')
+  if (existsSync(legacySkills)) {
+    for (const name of readdirSync(legacySkills).sort()) {
+      const f = join(legacySkills, name, 'SKILL.md')
+      if (!existsSync(f) || cache.texts.has(`skill:${name}`)) continue
+      await docPut(DOC_USER, DOC_KIND, `skill:${name}`, readFileSync(f, 'utf-8'))
+      cache.texts.set(`skill:${name}`, readFileSync(f, 'utf-8'))
+      renameSync(f, `${f}.migrated`)
+      imported++
+    }
+  }
+  if (imported > 0) console.log(`[persona] 旧配置文件已导入文档表(${imported} 项)`)
+}
+
+function readDefault(rel: string[]): string {
+  const p = join(DEFAULTS, ...rel)
+  try { return existsSync(p) ? readFileSync(p, 'utf-8') : '' } catch { return '' }
 }
 
 /** Jarvis 系统提示词模板(占位符 {{STATE_DESC}} {{MOOD}}… 由 prompt.ts 填充) */
 export function loadSystemPromptTemplate(): string {
-  return readFirst(
-    join(OVERRIDES, 'system-prompt.md'),
-    join(DEFAULTS, 'system-prompt.md'),
-  ) ?? ''
+  const over = cache.texts.get('system-prompt')
+  if (over !== undefined && over.trim()) return over
+  return readDefault(['system-prompt.md'])
 }
 
-/** 内置 pipeline skill 正文(data/persona/skills/<name>/SKILL.md 可覆盖) */
+/** 内置 pipeline skill 正文(用户覆盖优先,回落仓库默认) */
 export function loadPipelineSkillContent(name: string): string {
-  return readFirst(
-    join(OVERRIDES, 'skills', name, 'SKILL.md'),
-    join(DEFAULTS, 'skills', name, 'SKILL.md'),
-  ) ?? ''
+  const over = cache.texts.get(`skill:${name}`)
+  if (over !== undefined && over.trim()) return over
+  return readDefault(['skills', name, 'SKILL.md'])
 }
 
 // ── 系统参数 ──
@@ -68,13 +131,12 @@ function num(v: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback
 }
 
-/** 合并用户覆盖 + env(兼容既有变量)。每次调用现读,支持热改。 */
+/** 合并用户覆盖(缓存)+ env(兼容既有变量)。同步读,热改即生效(保存时刷缓存)。 */
 export function getSettings(): JarvisSettings {
   const s: JarvisSettings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
   try {
-    const file = join(OVERRIDES, 'settings.json')
-    if (existsSync(file)) {
-      const user = JSON.parse(readFileSync(file, 'utf-8'))
+    const user = cache.settings
+    if (user) {
       if (user?.watchdog) s.watchdog = {
         intervalMin: num(user.watchdog.intervalMin, s.watchdog.intervalMin),
         idleMin: num(user.watchdog.idleMin, s.watchdog.idleMin),
@@ -103,11 +165,7 @@ export function getSettings(): JarvisSettings {
   return s
 }
 
-// ── 配置界面读写层(热改即生效:读取方每次现读) ──
-
-function ensureDir(path: string): void {
-  mkdirSync(dirname(path), { recursive: true })
-}
+// ── 配置界面读写层(写 → 文档表 + 刷缓存;读 → 缓存,同步) ──
 
 function isSafeName(name: string): boolean {
   return /^[a-z0-9][a-z0-9-]*$/.test(name)
@@ -123,90 +181,73 @@ export interface PersonaEditorState {
 
 /** 配置页总览:各覆盖层状态 + 生效内容 */
 export function getPersonaState(): PersonaEditorState {
-  const sysOver = join(OVERRIDES, 'system-prompt.md')
-  const setOver = join(OVERRIDES, 'settings.json')
-  const builtinSkills = existsSync(join(DEFAULTS, 'skills'))
-    ? readdirSafe(join(DEFAULTS, 'skills'))
-    : []
-  const overriddenSkills = builtinSkills.filter(name =>
-    existsSync(join(OVERRIDES, 'skills', name, 'SKILL.md')))
+  const builtinSkills = listEditableSkills()
   return {
-    systemPromptOverridden: existsSync(sysOver),
+    systemPromptOverridden: cache.texts.has('system-prompt'),
     systemPrompt: loadSystemPromptTemplate(),
-    settingsOverridden: existsSync(setOver),
+    settingsOverridden: cache.settings !== null,
     builtinSkills,
-    overriddenSkills,
+    overriddenSkills: builtinSkills.filter(name => cache.texts.has(`skill:${name}`)),
   }
 }
 
 export function getSystemPromptEditor(): { content: string; overridden: boolean; defaultContent: string } {
   return {
     content: loadSystemPromptTemplate(),
-    overridden: existsSync(join(OVERRIDES, 'system-prompt.md')),
-    defaultContent: readFileSync(join(DEFAULTS, 'system-prompt.md'), 'utf-8'),
+    overridden: cache.texts.has('system-prompt'),
+    defaultContent: readDefault(['system-prompt.md']),
   }
 }
 
 /** content 为空串 = 删除覆盖,回内置默认 */
-export function saveSystemPromptOverride(content: string): void {
-  const target = join(OVERRIDES, 'system-prompt.md')
+export async function saveSystemPromptOverride(content: string): Promise<void> {
   if (!content.trim()) {
-    if (existsSync(target)) unlinkSync(target)
+    cache.texts.delete('system-prompt')
+    await docDelete(DOC_USER, DOC_KIND, 'system-prompt').catch(() => {})
     return
   }
-  ensureDir(target)
-  writeFileSync(target, content, 'utf-8')
+  cache.texts.set('system-prompt', content)
+  await docPut(DOC_USER, DOC_KIND, 'system-prompt', content)
 }
 
 export function listEditableSkills(): string[] {
-  return existsSync(join(DEFAULTS, 'skills')) ? readdirSafe(join(DEFAULTS, 'skills')) : []
+  const dir = join(DEFAULTS, 'skills')
+  try { return existsSync(dir) ? readdirSync(dir).sort() : [] } catch { return [] }
 }
 
 export function getSkillEditor(name: string): { content: string; overridden: boolean; defaultContent: string } | null {
   if (!isSafeName(name)) return null
-  const def = join(DEFAULTS, 'skills', name, 'SKILL.md')
-  if (!existsSync(def)) return null
-  const over = join(OVERRIDES, 'skills', name, 'SKILL.md')
-  return {
-    content: existsSync(over) ? readFileSync(over, 'utf-8') : readFileSync(def, 'utf-8'),
-    overridden: existsSync(over),
-    defaultContent: readFileSync(def, 'utf-8'),
-  }
+  const def = readDefault(['skills', name, 'SKILL.md'])
+  if (!def) return null
+  const over = cache.texts.get(`skill:${name}`)
+  return { content: over !== undefined && over.trim() ? over : def, overridden: over !== undefined, defaultContent: def }
 }
 
-export function saveSkillOverride(name: string, content: string): boolean {
+export async function saveSkillOverride(name: string, content: string): Promise<boolean> {
   if (!isSafeName(name)) return false
-  const def = join(DEFAULTS, 'skills', name, 'SKILL.md')
-  if (!existsSync(def)) return false
-  const target = join(OVERRIDES, 'skills', name, 'SKILL.md')
+  if (!readDefault(['skills', name, 'SKILL.md'])) return false
   if (!content.trim()) {
-    if (existsSync(target)) unlinkSync(target)
+    cache.texts.delete(`skill:${name}`)
+    await docDelete(DOC_USER, DOC_KIND, `skill:${name}`).catch(() => {})
     return true
   }
-  ensureDir(target)
-  writeFileSync(target, content, 'utf-8')
+  cache.texts.set(`skill:${name}`, content)
+  await docPut(DOC_USER, DOC_KIND, `skill:${name}`, content)
   return true
 }
 
-export function getUserSettingsRaw(): unknown {
-  const file = join(OVERRIDES, 'settings.json')
-  if (!existsSync(file)) return null
-  try { return JSON.parse(readFileSync(file, 'utf-8')) } catch { return null }
+export function getUserSettingsRaw(): Record<string, any> | null {
+  return cache.settings
 }
 
-export function saveUserSettingsRaw(user: Record<string, unknown>): void {
-  const target = join(OVERRIDES, 'settings.json')
-  ensureDir(target)
-  writeFileSync(target, `${JSON.stringify(user, null, 2)}\n`, 'utf-8')
+export async function saveUserSettingsRaw(user: Record<string, unknown>): Promise<void> {
+  cache.settings = user
+  await docPut(DOC_USER, DOC_KIND, 'settings', user)
 }
 
-export function resetUserSettings(): void {
-  const file = join(OVERRIDES, 'settings.json')
-  if (existsSync(file)) unlinkSync(file)
-}
-
-function readdirSafe(dir: string): string[] {
-  try { return readdirSync(dir).sort() } catch { return [] }
+export async function resetUserSettings(): Promise<void> {
+  cache.settings = null
+  await docDelete(DOC_USER, DOC_KIND, 'settings').catch(() => {})
 }
 
 // ── Sir 的身份(权限边界用,代码注入不可被对话改写) ──

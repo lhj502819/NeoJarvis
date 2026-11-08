@@ -3,7 +3,8 @@ import { rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { docGet, docPut } from '../../shared/docs.js'
 import { loadJdMeConfig, JdMeClient, type JdMeConfig } from './jdsme-client.js'
-import { isGroupAllowed } from './jdsme-filter.js'
+import { gateJdmeMessage, isGroupAllowed } from './jdsme-filter.js'
+import { getJdmeInstance } from './registry.js'
 import { listUsers } from '../../auth/users.js'
 import { getSettings } from '../../jarvis/persona.js'
 import type { EventSink, EventSourceDef, JarvisEvent } from '../types.js'
@@ -38,6 +39,9 @@ let stopped = false
 let state: SourceState = { version: STATE_VERSION, cursor: 0, seen: {} }
 let fresh = true
 let whitelistedGroups: string[] = []
+// P4:实例配置(source-instance 文档)——准入模式 + 白名单接管开关
+let admission: 'explicit' | 'candidates' | 'ignore' = 'explicit'
+let hasInstance = false
 
 /** 事件归属用户:单机单主人,取第一个注册用户(多用户绑定后置) */
 async function resolveOwner(): Promise<void> {
@@ -122,15 +126,24 @@ function normalize(event: any): JarvisEvent | null {
     kind = 'group'
     chatId = groupId
     chatName = String(body.groupName ?? body.groupTitle ?? '').trim() || `群 ${groupId}`
-    // 群聊双重门槛:@机器人 + 白名单(白名单为空 = 不筛选，放行全部群)
-    if (!isGroupAllowed(groupId, whitelistedGroups)) return null
     const inner = body.body ?? {}
     const atUsers = Array.isArray(inner.atUsers) ? inner.atUsers : []
     const botName = config.bot?.displayName ?? ''
     const atRobot = atUsers.length
       ? atUsers.some((u: any) => u?.pin === robotPin)
       : Boolean(botName) && String(inner.content ?? '').includes(`@${botName}`)
-    if (!atRobot) return null
+    // P4 Gate:结构化判定(白名单 + 准入表 + @检测),代码层 Fast Path
+    const verdict = gateJdmeMessage({
+      isDm: false,
+      groupAllowed: isGroupAllowed(groupId, whitelistedGroups),
+      atRobot,
+      admission,
+    })
+    if (!verdict.pass) return null
+    if (verdict.strength === 'inferred') {
+      // 候选放行(观察模式):未@的群消息作为候选,交给 slowPath 分诊 + 评估窗口定夺
+      console.log(`[jdsme] 候选放行(未@):「${chatName}」${sender}: ${String(inner.content ?? '').slice(0, 60)}`)
+    }
   } else {
     if (chatType === '2' || !sender) return null
     kind = 'dm'
@@ -232,6 +245,21 @@ export async function initJdMeSource(): Promise<EventSourceDef | null> {
   await resolveOwner()
   await loadState()
   await loadWhitelist()
+
+  // P4:实例配置(文档表 source-instance)优先于 settings/旧白名单文件
+  try {
+    const inst = await getJdmeInstance(ownerId)
+    if (!inst.enabled) {
+      console.log('[jdsme] 事件源已在配置页停用(source-instance.enabled=false)')
+      return null
+    }
+    admission = inst.admission
+    hasInstance = true
+    if (inst.groups.length > 0 || admission !== 'explicit') {
+      whitelistedGroups = inst.groups
+      console.log(`[jdsme] 实例配置生效:准入=${inst.admission},白名单群 ${inst.groups.length} 个`)
+    }
+  } catch { /* 实例配置读不到 → 维持 settings/旧文件行为 */ }
 
   /** 主人 ERP(router 判定消息说话人身份用);未配置 ownerErp 时为空。 */
   ownerErp = String(config.ownerErp ?? '').trim()

@@ -24,6 +24,7 @@ import { dashboardRoutes } from './routes/dashboard.js'
 import { agentRoutes } from './routes/agent.js'
 import { configRoutes } from './routes/config.js'
 import { timelineRoutes } from './routes/timeline.js'
+import { initPersonaCache } from './persona.js'
 import './lifecycle.js'
 
 export { broadcast } from './sse.js'
@@ -133,13 +134,18 @@ export function startJarvisServer(): express.Express {
   app.use(configRoutes())
   app.use(timelineRoutes())
 
+  // persona 配置缓存:监听前加载(旧文件导入 + 文档表读取),watchdog/events 起来前就绪(P4)
+  const ready = initPersonaCache().catch(err => console.error('[persona] 缓存初始化失败:', err))
+
   app.listen(config.jarvisPort, () => {
     console.log(`  Jarvis A2A Server: http://localhost:${config.jarvisPort}`)
     console.log(`  Chat API: http://localhost:${config.jarvisPort}/chat`)
     // Watchdog(定时巡检 running 任务)+ 事件系统(cron 晨报 / 京ME 源)—— HTTP 就绪后拉起
-    try { startWatchdog() } catch (err) { console.error('[watchdog] 启动失败:', err) }
-    try { startPromotionWatch() } catch (err) { console.error('[promotion-watch] 启动失败:', err) }
-    startEventSystem().catch(err => console.error('[events] 启动失败:', err))
+    void ready.then(() => {
+      try { startWatchdog() } catch (err) { console.error('[watchdog] 启动失败:', err) }
+      try { startPromotionWatch() } catch (err) { console.error('[promotion-watch] 启动失败:', err) }
+      startEventSystem().catch(err => console.error('[events] 启动失败:', err))
+    })
   })
 
   return app

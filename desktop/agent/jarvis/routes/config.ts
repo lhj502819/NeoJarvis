@@ -22,11 +22,12 @@ import {
   resetAgentProfile,
   saveAgentProfile,
 } from '../agent-profile.js'
+import { SOURCE_KINDS, getSourceKind, getJdmeInstance, saveJdmeInstance } from '../../events/sources/registry.js'
 
 /**
  * 配置界面 API(docs/superagent-design.md §persona 配置层)。
  *
- * 全部挂在 authMiddleware 之后;写 data/persona/ 覆盖层,读取方每次现读 —— 保存即热生效。
+ * 全部挂在 authMiddleware 之后;覆盖层存文档表(P4),读取走内存缓存 —— 保存即热生效。
  * 约定:PUT body content 为空串 = 删除覆盖,回内置默认。
  */
 export function configRoutes(): Router {
@@ -41,13 +42,13 @@ export function configRoutes(): Router {
   r.get('/api/config/system-prompt', (_req, res) => {
     res.json({ ok: true, ...getSystemPromptEditor() })
   })
-  r.put('/api/config/system-prompt', (req, res) => {
+  r.put('/api/config/system-prompt', async (req, res) => {
     const content = typeof req.body?.content === 'string' ? req.body.content : ''
-    saveSystemPromptOverride(content)
+    await saveSystemPromptOverride(content)
     res.json({ ok: true, ...getSystemPromptEditor() })
   })
-  r.delete('/api/config/system-prompt', (_req, res) => {
-    saveSystemPromptOverride('')
+  r.delete('/api/config/system-prompt', async (_req, res) => {
+    await saveSystemPromptOverride('')
     res.json({ ok: true, ...getSystemPromptEditor() })
   })
 
@@ -77,18 +78,43 @@ export function configRoutes(): Router {
   r.get('/api/config/settings', (_req, res) => {
     res.json({ ok: true, user: getUserSettingsRaw(), effective: getSettings() })
   })
-  r.put('/api/config/settings', (req, res) => {
+  r.put('/api/config/settings', async (req, res) => {
     const user = req.body
     if (!user || typeof user !== 'object' || Array.isArray(user)) {
       res.status(400).json({ ok: false, error: 'settings 必须是对象' })
       return
     }
-    saveUserSettingsRaw(user as Record<string, unknown>)
+    await saveUserSettingsRaw(user as Record<string, unknown>)
     res.json({ ok: true, user: getUserSettingsRaw(), effective: getSettings() })
   })
-  r.delete('/api/config/settings', (_req, res) => {
-    resetUserSettings()
+  r.delete('/api/config/settings', async (_req, res) => {
+    await resetUserSettings()
     res.json({ ok: true, user: null, effective: getSettings() })
+  })
+
+  // ── 事件源(P4):kind 元数据 + 实例配置(source-instance 文档表) ──
+  r.get('/api/config/sources', async (req, res) => {
+    const instances: Record<string, unknown> = {}
+    for (const k of SOURCE_KINDS) {
+      if (k.id === 'jdsme') instances[k.id] = await getJdmeInstance(req.userId!)
+    }
+    res.json({ ok: true, kinds: SOURCE_KINDS, instances })
+  })
+
+  r.put('/api/config/sources/:id', async (req, res) => {
+    const kind = getSourceKind(req.params.id)
+    if (!kind) { res.status(404).json({ ok: false, error: '未知事件源' }); return }
+    const patch = req.body ?? {}
+    if (typeof patch !== 'object' || Array.isArray(patch)) {
+      res.status(400).json({ ok: false, error: '配置必须是对象' })
+      return
+    }
+    if (req.params.id === 'jdsme') {
+      const saved = await saveJdmeInstance(req.userId!, patch)
+      res.json({ ok: true, instance: saved })
+      return
+    }
+    res.status(404).json({ ok: false, error: '未知事件源' })
   })
 
   // ── Agent Profile（研发分身）──

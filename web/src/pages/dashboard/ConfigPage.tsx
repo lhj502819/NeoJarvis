@@ -8,7 +8,7 @@ import { fetchJSON, putJSON, deleteJSON, postJSON } from '../../api/client'
  * 所有修改写入 data/persona/ 覆盖层；读取方每次现读，保存即热生效。
  */
 
-type SectionId = 'prompt' | 'skills' | 'skill-editor' | 'agent' | 'settings'
+type SectionId = 'prompt' | 'skills' | 'skill-editor' | 'agent' | 'settings' | 'sources'
 type AgentBlock = 'modules' | 'role' | 'boundaries' | 'redlines' | 'workflow' | 'taboos'
 
 const SECTIONS: Array<{ id: SectionId; label: string; hint: string }> = [
@@ -16,6 +16,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; hint: string }> = [
   { id: 'prompt', label: '系统提示词', hint: '人设与岗位纪律' },
   { id: 'skills', label: '内置 Skills', hint: '默认加载的决策规则' },
   { id: 'settings', label: '系统参数', hint: 'Watchdog / 免打扰 / 晨报' },
+  { id: 'sources', label: '事件源', hint: '启停与准入模式' },
 ]
 
 const AGENT_BLOCKS: Array<{ id: AgentBlock; label: string; hint: string }> = [
@@ -48,6 +49,23 @@ interface Settings {
   morningReport: { at: string }
   events: { jdsmeGroups: string[] }
 }
+
+interface SourceFieldSpec {
+  key: string
+  label: string
+  type: 'boolean' | 'string' | 'string[]' | 'enum'
+  options?: string[]
+  description?: string
+}
+
+interface SourceKindSpec {
+  id: string
+  title: string
+  description: string
+  fields: SourceFieldSpec[]
+}
+
+type SourceInstance = Record<string, any>
 
 interface SkillView {
   name: string
@@ -114,6 +132,10 @@ export function ConfigPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [settingsOverridden, setSettingsOverridden] = useState(false)
 
+  // 事件源(P4)
+  const [sourceKinds, setSourceKinds] = useState<SourceKindSpec[]>([])
+  const [sourceInstances, setSourceInstances] = useState<Record<string, SourceInstance>>({})
+
   // 研发分身
   const [agent, setAgent] = useState<AgentProfile | null>(null)
   const [agentDefaults, setAgentDefaults] = useState<AgentProfile | null>(null)
@@ -132,6 +154,10 @@ export function ConfigPage() {
       setSettingsOverridden(!!r.user)
     }).catch(() => {})
     fetchJSON<SkillView[]>('/api/skills').then(setSkills).catch(() => {})
+    fetchJSON<{ kinds: SourceKindSpec[]; instances: Record<string, SourceInstance> }>('/api/config/sources').then(r => {
+      setSourceKinds(r.kinds ?? [])
+      setSourceInstances(r.instances ?? {})
+    }).catch(() => {})
     fetchJSON<AgentProfileResponse>('/api/config/agent-profile/dev-avatar').then(r => {
       if (!r.ok) return
       setAgent(r.profile)
@@ -347,6 +373,19 @@ export function ConfigPage() {
             <div className="cfg-card cfg-empty">研发分身配置加载中…</div>
           )}
 
+          {section === 'sources' && (
+            <SourcesSection
+              kinds={sourceKinds}
+              instances={sourceInstances}
+              onSaved={msg => {
+                flash(msg)
+                fetchJSON<{ kinds: SourceKindSpec[]; instances: Record<string, SourceInstance> }>('/api/config/sources').then(r => {
+                  setSourceKinds(r.kinds ?? [])
+                  setSourceInstances(r.instances ?? {})
+                }).catch(() => {})
+              }}
+            />
+          )}
           {section === 'settings' && settings && (
             <SettingsSection
               settings={settings}
@@ -736,6 +775,119 @@ function SettingsSection({
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="cfg-field"><span>{label}</span>{children}</label>
+}
+
+/* ───────────────────────── 事件源(P4) ───────────────────────── */
+
+const ADMISSION_LABEL: Record<string, string> = {
+  explicit: '仅 @机器人（explicit）',
+  candidates: '观察模式：群讨论也放行为候选（candidates）',
+  ignore: '群聊全停（ignore）',
+}
+
+function SourcesSection({
+  kinds, instances, onSaved,
+}: {
+  kinds: SourceKindSpec[]
+  instances: Record<string, SourceInstance>
+  onSaved: (msg: string) => void
+}) {
+  return (
+    <>
+      <SectionHead
+        title="事件源"
+        desc="外部事件进 Jarvis 的入口。启停、准入模式实时生效；群白名单为空表示放行全部群（私聊不受任何限制）。"
+      />
+      {kinds.map(kind => (
+        <SourceCard key={kind.id} kind={kind} initial={instances[kind.id] ?? {}} onSaved={onSaved} />
+      ))}
+      {kinds.length === 0 && <div className="cfg-card cfg-block">暂无可用事件源。</div>}
+    </>
+  )
+}
+
+function SourceCard({
+  kind, initial, onSaved,
+}: {
+  kind: SourceKindSpec
+  initial: SourceInstance
+  onSaved: (msg: string) => void
+}) {
+  const [draft, setDraft] = useState<SourceInstance>(initial)
+  useEffect(() => setDraft(initial), [initial])
+
+  const set = (key: string, value: any) => setDraft(prev => ({ ...prev, [key]: value }))
+
+  const save = async () => {
+    try {
+      await putJSON(`/api/config/sources/${encodeURIComponent(kind.id)}`, draft)
+      onSaved(`「${kind.title}」已保存,即时生效`)
+    } catch {
+      onSaved(`「${kind.title}」保存失败`)
+    }
+  }
+
+  return (
+    <div className="cfg-card cfg-block">
+      <div className="cfg-section">{kind.title} <span className="cfg-hint">{kind.description}</span></div>
+      {kind.fields.map(f => {
+        const value = draft[f.key]
+        if (f.type === 'boolean') {
+          return (
+            <div key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0' }}>
+              <input
+                type="checkbox"
+                checked={value !== false}
+                onChange={e => set(f.key, e.target.checked)}
+              />
+              <span style={{ fontSize: 13 }}>{f.label}</span>
+              {f.description && <span className="cfg-hint">{f.description}</span>}
+            </div>
+          )
+        }
+        if (f.type === 'enum') {
+          return (
+            <div key={f.key} style={{ margin: '10px 0' }}>
+              <div className="cfg-section" style={{ fontSize: 13 }}>{f.label}</div>
+              <select
+                className="j-input"
+                value={String(value ?? '')}
+                onChange={e => set(f.key, e.target.value)}
+              >
+                {(f.options ?? []).map(op => (
+                  <option key={op} value={op}>{ADMISSION_LABEL[op] ?? op}</option>
+                ))}
+              </select>
+              {f.description && <div className="cfg-hint" style={{ marginTop: 4 }}>{f.description}</div>}
+            </div>
+          )
+        }
+        if (f.type === 'string[]') {
+          return (
+            <div key={f.key} style={{ margin: '10px 0' }}>
+              <div className="cfg-section" style={{ fontSize: 13 }}>{f.label}</div>
+              <input
+                className="j-input cfg-mono"
+                value={Array.isArray(value) ? value.join(', ') : ''}
+                placeholder="逗号分隔"
+                onChange={e => set(f.key, e.target.value.split(/[,，\s]+/).map((x: string) => x.trim()).filter(Boolean))}
+              />
+              {f.description && <div className="cfg-hint" style={{ marginTop: 4 }}>{f.description}</div>}
+            </div>
+          )
+        }
+        return (
+          <div key={f.key} style={{ margin: '10px 0' }}>
+            <div className="cfg-section" style={{ fontSize: 13 }}>{f.label}</div>
+            <input className="j-input" value={String(value ?? '')} onChange={e => set(f.key, e.target.value)} />
+          </div>
+        )
+      })}
+      <div className="cfg-actions">
+        <button className="j-btn j-btn-primary" onClick={save}>保存</button>
+      </div>
+    </div>
+  )
 }
 
 /* ───────────────────────── 预览抽屉 ───────────────────────── */
