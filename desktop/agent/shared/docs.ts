@@ -38,6 +38,23 @@ export async function docDelete(userId: string, kind: string, key: string): Prom
   await serverDelete(userId, `${BASE}/${kind}/${encodeURIComponent(key)}`)
 }
 
+/** 批量清空若干 kind 下的全部文档(分页拉取+逐条删;memory/reset 用)。
+ *  幂等:重复调用安全。失败时抛出(调用方决定事务语义——reset 是破坏性操作,如实报错)。 */
+export async function clearDocKinds(userId: string, kinds: string[]): Promise<number> {
+  let removed = 0
+  for (const kind of kinds) {
+    for (;;) {
+      const items = await docList(userId, kind, '', 500)
+      if (items.length === 0) break
+      for (const item of items) {
+        await docDelete(userId, kind, item.key)
+        removed++
+      }
+    }
+  }
+  return removed
+}
+
 /**
  * 列出一个 kind 下的文档,id 倒序(最新写入在前),可选按 key 前缀过滤。
  * 需要时间正序的调用方自行 reverse。

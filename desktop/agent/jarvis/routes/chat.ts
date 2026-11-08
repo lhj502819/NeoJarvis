@@ -6,6 +6,8 @@ import { serverGet, serverPost } from '../../shared/server-client.js'
 import { listAllRunningTasks } from '../../a2a/registry.js'
 import { getOriginsFor } from '../message-origin.js'
 import type { TaskOrigin } from '../task-origin.js'
+import { clearDocKinds } from '../../shared/docs.js'
+import { pinArtifact } from '../orchestrator.js'
 
 /** Java 404 (NotFoundException) — server-client throws with the status in the message. */
 function isNotFound(err: unknown): boolean {
@@ -101,7 +103,20 @@ export function chatRoutes(): Router {
       return
     }
     await serverPost(req.userId!, '/api/conversation/reset')
-    res.json({ ok: true })
+    // P0 后的派生状态一并清:时间线/沟通日志/来源标记/线程与订阅/审批单
+    // (都是对话与执行痕迹的派生物;EverOS 长期记忆刻意保留,不属于"上下文")
+    let cleared = 0
+    try {
+      cleared = await clearDocKinds(req.userId!, [
+        'timeline', 'comms', 'message-origin', 'task-origin',
+        'thread', 'trigger', 'subscription', 'approval',
+      ])
+    } catch (err) {
+      console.error(`[memory/reset] 文档表派生状态清理失败: ${err instanceof Error ? err.message : err}`)
+    }
+    pinArtifact(req.userId!, null)
+    console.log(`[memory/reset] 已清空对话+执行痕迹+文档表派生状态(${cleared} 条)`)
+    res.json({ ok: true, cleared })
   })
 
   router.get('/api/artifact/:id', async (req, res) => {
