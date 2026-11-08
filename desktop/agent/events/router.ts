@@ -7,7 +7,7 @@ import { triageMessage } from './triage.js'
 import { jdsmeSink, initJdMeSource, getJdMeOwnerErp } from './sources/jdsme.js'
 import { createCronSource } from './sources/cron.js'
 import { broadcast } from '../jarvis/sse.js'
-import { deliverToTask, ensureThread, formatGroupMessage, groupThreadKey, listSubscribers, recordTrigger } from '../a2a/threads.js'
+import { deliverToTask, ensureThread, formatGroupMessage, groupThreadKey, listSubscribers, recordTrigger, threadWindow } from '../a2a/threads.js'
 import type { EventSink, EventSourceDef } from './types.js'
 
 /**
@@ -72,12 +72,25 @@ async function handleEvent(ev: JarvisEvent): Promise<void> {
       }
       // 走 Jarvis 完整 think():它按岗位纪律直接回话或 create_task;
       // 拿不准会反问——反问文本经 EventWriter 回到京ME,同时 web 聊天可见
+      // P3:群聊候选注入评估窗口(线程最近消息)+ 评估纪律 —— 上下文有界,决策有据
+      let evalWindow = ''
+      let evalDiscipline = ''
+      if (payload.kind === 'group') {
+        const window = await threadWindow(ev.userId, groupThreadKey(payload.chatId))
+        if (window) {
+          evalWindow = `\n\n【该群最近消息(评估窗口)】\n${window}`
+        }
+        evalDiscipline = `\n\n【评估纪律(P3,先于一切动作)】\n` +
+          `接单前确立三个独立事实:①讨论针对本系统/本团队的真实工作;②消息方明确表达了一件具体的事要办;③方向足够确定,无需替人做产品决策。` +
+          `三者不齐 → 只反问澄清,**绝不 create_task**;纯寒暄/设计讨论/假设性偏好 → 礼貌略过,不追问不建任务。` +
+          `群里的连续消息是自然澄清过程——等意图确立那一条再动手。`
+      }
       const writer = createEventWriter(ev.userId, ev, sinks)
       // 身份标注(权限纪律用):京ME 消息的 sender 与配置的 ownerErp 比对,
       // 结果作为可信标注写进消息前缀 —— 模型不靠自称判身份。
       const isOwner = !!getJdMeOwnerErp() && payload.sender === getJdMeOwnerErp()
       const who = isOwner ? 'Sir(唯一主人)' : `其他人(${payload.sender},非主人)`
-      const labeled = `【京ME ${payload.kind === 'group' ? '群' : '私聊'}「${payload.chatName}」· ${who}】\n${payload.text}\n\n(此消息来自京ME${payload.kind === 'group' ? '群聊' : '私聊'},发消息的是${who}。回复会送回该聊天,请按京ME 信道习惯说话——短平快,两三句说完,不用 markdown,先结论后细节。按「权限与拒绝纪律」判定此人可以要求什么。)`
+      const labeled = `【京ME ${payload.kind === 'group' ? '群' : '私聊'}「${payload.chatName}」· ${who}】\n${payload.text}\n\n(此消息来自京ME${payload.kind === 'group' ? '群聊' : '私聊'},发消息的是${who}。回复会送回该聊天,请按京ME 信道习惯说话——短平快,两三句说完,不用 markdown,先结论后细节。按「权限与拒绝纪律」判定此人可以要求什么。)${evalWindow}${evalDiscipline}`
       // 登记对话来源:本次 think 期间 Jarvis create_task 时会把它挂到任务上,
       // 任务完成后的复盘汇报会同步回这个群/私聊。来源随消息入队、开跑时生效、
       // 收尾时清空 —— 排队期间不会串台。

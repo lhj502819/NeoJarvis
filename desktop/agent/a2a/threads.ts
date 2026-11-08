@@ -34,14 +34,34 @@ export interface TriggerPayload {
   chatName: string
 }
 
-/** Trigger 入库(幂等):同 msgId 只记一次。返回 false = 重复消息,调用方直接丢弃。 */
+/** Trigger 入库(幂等):同 (thread,msgId) 只记一次。返回 false = 重复消息,调用方直接丢弃。
+ *  key 按线程前缀存储(`${threadKey}:${msgId}`),供 threadWindow 按线程列窗口;
+ *  京ME msgId 全局唯一,跨线程重名不存在。 */
 export async function recordTrigger(userId: string, threadKey: string, p: TriggerPayload): Promise<boolean> {
-  const existing = await docGet(userId, 'trigger', p.msgId)
+  const key = `${threadKey}:${p.msgId}`
+  const existing = await docGet(userId, 'trigger', key)
   if (existing) return false
-  await docPut(userId, 'trigger', p.msgId, {
-    threadKey, sender: p.sender, text: p.text.slice(0, 2000), at: Date.now(), human: true,
+  await docPut(userId, 'trigger', key, {
+    threadKey, msgId: p.msgId, sender: p.sender, text: p.text.slice(0, 2000), at: Date.now(), human: true,
   })
   return true
+}
+
+/**
+ * 评估窗口(dsh admission-context 的等价物):线程最近 N 条 Trigger 的紧凑视图,
+ * 带 omitted 计数 —— 模型知道"看到的只是一段"。京ME无回复链元数据,v1 取时间序尾部。
+ */
+export async function threadWindow(userId: string, threadKey: string, count = 8): Promise<string> {
+  const all = await docList<{ sender: string; text: string; at: number }>(userId, 'trigger', `${threadKey}:`, 50)
+  if (all.length === 0) return ''
+  const recent = all.slice(-count)
+  const omitted = all.length - recent.length
+  const lines = recent.map(i => {
+    const d = i.data
+    const time = new Date(d.at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    return `- [${time}] ${d.sender}: ${d.text.replace(/\s+/g, ' ').slice(0, 120)}`
+  })
+  return lines.join('\n') + (omitted > 0 ? `\n(更早 ${omitted} 条未显示)` : '')
 }
 
 export async function ensureThread(userId: string, threadKey: string, label: string): Promise<void> {

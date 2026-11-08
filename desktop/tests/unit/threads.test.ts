@@ -36,7 +36,7 @@ vi.mock('../../agent/task/manager.js', () => ({ getTask: (...a: unknown[]) => ge
 vi.mock('../../agent/jarvis/sse.js', () => ({ broadcast: vi.fn() }))
 vi.mock('../../agent/jarvis/timeline-store.js', () => ({ appendComms: vi.fn(async () => {}) }))
 
-const { recordTrigger, ensureThread, subscribeTask, unsubscribeTaskEverywhere, listSubscribers, deliverToTask, groupThreadKey }
+const { recordTrigger, ensureThread, subscribeTask, unsubscribeTaskEverywhere, listSubscribers, deliverToTask, groupThreadKey, threadWindow }
   = await import('../../agent/a2a/threads.js')
 
 const uid = 'u1'
@@ -126,5 +126,25 @@ describe('ensureThread 登记', () => {
     await ensureThread(uid, groupThreadKey('g1'), '联调群')
     await ensureThread(uid, groupThreadKey('g1'), '联调群')
     expect(store.has(`${uid}:thread:${groupThreadKey('g1')}`)).toBe(true)
+  })
+})
+
+describe('评估窗口(P3,dsh threadWindow 等价物)', () => {
+  it('返回最近 N 条紧凑视图,带 omitted 计数,跨线程不串', async () => {
+    const tk = groupThreadKey('g1')
+    for (let i = 1; i <= 12; i++) {
+      await recordTrigger(uid, tk, { msgId: `w${i}`, sender: `成员${i}`, text: `消息${i}`, chatId: 'g1', chatName: '联调群' })
+    }
+    await recordTrigger(uid, groupThreadKey('g2'), { msgId: 'wX', sender: '别人', text: '别群的', chatId: 'g2', chatName: '别群' })
+    const win = await threadWindow(uid, tk, 8)
+    expect(win).toContain('消息12')            // 最新在尾部
+    expect(win).toContain('消息5')             // 尾部 8 条 = 5..12
+    expect(win).not.toContain('消息4')         // 更早的不在
+    expect(win).toContain('更早 4 条未显示')   // omitted 计数
+    expect(win).not.toContain('别群的')        // 线程隔离
+  })
+
+  it('空线程返回空串(不注入无意义段)', async () => {
+    expect(await threadWindow(uid, groupThreadKey('ghost'))).toBe('')
   })
 })
