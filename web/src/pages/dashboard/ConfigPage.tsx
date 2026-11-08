@@ -48,6 +48,7 @@ interface Settings {
   proactive: { hourlyCap: number }
   morningReport: { at: string }
   events: { jdsmeGroups: string[] }
+  runtime?: 'pi' | 'claude'
 }
 
 interface SourceFieldSpec {
@@ -750,6 +751,18 @@ function SettingsSection({
           <Field label="每小时上限"><input className="j-input" name="proactive-hourlyCap" value={settings.proactive.hourlyCap} onChange={e => setNum('proactive', 'hourlyCap', e.target.value, 3)} /></Field>
           <Field label="晨报时间"><input className="j-input" name="morning-report-at" value={settings.morningReport.at} placeholder="09:00，留空停用" onChange={e => setSettings({ ...settings, morningReport: { at: e.target.value } })} /></Field>
         </div>
+
+        <div className="cfg-section">Agent 运行时 <span className="cfg-hint">pi = 进程内(默认);claude = Claude Agent SDK(能力强,spawn CLI 稍重)</span></div>
+        <select
+          className="j-input"
+          name="runtime"
+          value={settings.runtime ?? 'pi'}
+          onChange={e => setSettings({ ...settings, runtime: e.target.value as 'pi' | 'claude' })}
+        >
+          <option value="pi">Pi(进程内,快)</option>
+          <option value="claude">Claude Agent SDK(能力强)</option>
+        </select>
+        <div className="cfg-hint" style={{ marginTop: 5 }}>切换后下一条消息生效;小弟会话当前仍走 Pi(批次二)。env JARVIS_RUNTIME 优先级更高。</div>
 
         <div className="cfg-section">京ME 群白名单 <span className="cfg-hint">空 = 不筛选、放行全部群；填了则只放行这些群</span></div>
         <input

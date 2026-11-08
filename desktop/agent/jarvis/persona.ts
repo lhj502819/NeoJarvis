@@ -116,6 +116,8 @@ export interface JarvisSettings {
   proactive: { hourlyCap: number }
   morningReport: { at: string }
   events: { jdsmeGroups: string[] }
+  /** agent 运行时:pi(进程内,默认)| claude(Claude Agent SDK,agent 能力强) */
+  runtime: 'pi' | 'claude'
 }
 
 const DEFAULT_SETTINGS: JarvisSettings = {
@@ -124,6 +126,7 @@ const DEFAULT_SETTINGS: JarvisSettings = {
   proactive: { hourlyCap: 3 },
   morningReport: { at: '09:00' },
   events: { jdsmeGroups: [] },
+  runtime: 'pi',
 }
 
 function num(v: unknown, fallback: number): number {
@@ -150,6 +153,7 @@ export function getSettings(): JarvisSettings {
       if (user?.proactive) s.proactive = { hourlyCap: num(user.proactive.hourlyCap, s.proactive.hourlyCap) }
       if (typeof user?.morningReport?.at === 'string') s.morningReport.at = user.morningReport.at
       if (Array.isArray(user?.events?.jdsmeGroups)) s.events.jdsmeGroups = user.events.jdsmeGroups.map(String)
+      if (user?.runtime === 'claude' || user?.runtime === 'pi') s.runtime = user.runtime
     }
   } catch { /* 用户配置坏了就用默认,别崩 */ }
 

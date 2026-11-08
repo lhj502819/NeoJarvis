@@ -5,8 +5,10 @@ import {
   SettingsManager,
   getAgentDir,
   type ToolDefinition,
-} from '@earendil-works/pi-coding-agent'
+ } from '@earendil-works/pi-coding-agent'
 import { getModelRuntime, getJarvisModel } from '../shared/pi-models.js'
+import { getRuntimeId, type RuntimeTool } from '../shared/agent-runtime.js'
+import { claudeRunTurn } from '../runtime/claude.js'
 import { buildSystemPrompt } from './prompt.js'
 import type { ChatImage } from '../shared/types.js'
 import { createJarvisTools } from './tools.js'
@@ -81,6 +83,42 @@ export async function rawLlmCall(
   const t0 = Date.now()
   debug('rawLlmCall start, prompt length:', prompt.length, images?.length ? `+${images.length} images` : '')
   console.log(`[perf] rawLlmCall start, system prompt: ${systemPrompt.length} chars, user prompt: ${prompt.length} chars`)
+
+  // ── 双运行时分发(P6):claude = Claude Agent SDK,pi = 下方 Pi 会话(默认) ──
+  if (getRuntimeId() === 'claude') {
+    const rtTools: RuntimeTool[] = (customTools ?? []).map(def => ({
+      name: def.name,
+      description: def.description,
+      jsonSchema: (def.parameters ?? { type: 'object', properties: {} }) as Record<string, unknown>,
+      execute: async (args: Record<string, unknown>) => {
+        const r = await (def as any).execute(`rt-${Date.now()}`, args ?? {})
+        const text = Array.isArray(r?.content) ? r.content.map((c: any) => c?.text ?? '').join('\n') : String(r ?? '')
+        return { text }
+      },
+    }))
+    const turn = await claudeRunTurn(userId, systemPrompt, prompt, rtTools, {
+      userId, systemPrompt, prompt, tools: rtTools,
+      signal: abortController?.signal, images,
+      cwd: getUserWorkspace(userId),
+      onDelta, onEvent: opts?.onEvent,
+    })
+    // 工具轨迹回填(与 Pi 路径同契约,brain 的流水决策段消费)
+    for (let i = 0; i < turn.toolCalls.length; i++) {
+      const c = turn.toolCalls[i]
+      toolTraces?.push({
+        callIndex: i,
+        toolCallId: `rt-${t0}-${i}`,
+        toolName: c.toolName,
+        args: c.args,
+        resultText: `(claude runtime)${c.isError ? ' [isError]' : ''}`,
+        isError: !!c.isError,
+        startedAt: new Date(t0).toISOString(),
+        endedAt: new Date(t0 + turn.costMs).toISOString(),
+      })
+    }
+    console.log(`[perf] runtime:claude done ${turn.costMs}ms, response ${turn.response.length} chars`)
+    return turn.response
+  }
 
   const modelRuntime = await getModelRuntime()
   const model = await getJarvisModel('sonnet')
