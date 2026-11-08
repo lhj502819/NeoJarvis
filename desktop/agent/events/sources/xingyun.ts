@@ -121,7 +121,7 @@ async function dispatchCardTask(userId: string, card: { cardId: string; title: s
   }
   const labeled = `【行云需求卡(已授权:${basis})】\n标题:${card.title}\n链接:${card.url}\n创建人:${card.creator}${detail}\n\n(这是行云上的正式需求,来源即授权依据。请评估后 create_task 派小弟执行,拆解要贴合需求描述;完成后汇报会登记到该需求卡,不在京ME回信。)`
   enqueueBackgroundMessage(userId, labeled, noopWriter, origin)
-  broadcast('user_message', JSON.stringify({ text: labeled, origin: { kind: 'dm', chatName: origin.chatName } }), userId, 'event-reply')
+  broadcast('user_message', JSON.stringify({ text: labeled, origin: { kind: 'dm', chatName: origin.chatName, channel: 'xingyun' } }), userId, 'event-reply')
 }
 
 /** 卡片关闭 → 订阅该卡的任务自动收尾(P5:bindThread + threadClosed 语义) */

@@ -606,3 +606,8 @@ body::after {
 }
 @keyframes msg-tl-spin { to { transform: rotate(360deg); } }
 @keyframes msg-tl-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.9; } }
+.msg-origin-xy {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 4px;
+  background: #1f6fff; color: #fff; font-size: 10px; font-weight: 700;
+}

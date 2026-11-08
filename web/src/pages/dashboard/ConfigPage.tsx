@@ -5,7 +5,7 @@ import { fetchJSON, putJSON, deleteJSON, postJSON } from '../../api/client'
  * 配置页 —— persona 配置层 + Agent Profile（研发分身）。
  *
  * 分区：系统提示词 / 内置 Skills / 研发分身 / 系统参数。
- * 所有修改写入 data/persona/ 覆盖层；读取方每次现读，保存即热生效。
+ * 所有修改写入数据库(persona-config 文档);读取走内存缓存,保存即热生效。
  */
 
 type SectionId = 'prompt' | 'skills' | 'skill-editor' | 'agent' | 'settings' | 'sources'
@@ -288,7 +288,7 @@ export function ConfigPage() {
       <div className="cfg-head">
         <h2>配置</h2>
         {saved && <span className="cfg-saved">✓ {saved}</span>}
-        <span className="cfg-hint">所有修改写入 data/persona/ 覆盖层,保存即热生效,无需重启。清空内容保存 = 恢复内置默认。</span>
+        <span className="cfg-hint">所有修改写入数据库,保存即热生效,无需重启。清空内容保存 = 恢复内置默认。</span>
       </div>
 
       <div className="cfg-layout">

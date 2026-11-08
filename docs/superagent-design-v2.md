@@ -121,6 +121,21 @@ worker 读边界 redact 补全（跨任务/决策不可见）；`conversation` �
 | P5 | 745046f | 行云需求源(车道A:卡片=Mandate) + 审批队列(approval/auto)+ Policy 版本 + 卡片关闭自动收尾 | ✅ |
 | P6 | (本次) | skillCatalogLines 预算函数化 + 预算单测;实施记录 | ✅ |
 
+### 验证记录(2026-11-08 浏览器+API 实测)
+
+**已实战验证**:
+- P0:文档表 CRUD(curl 全套/404);jdsme 游标真实落 DB;timeline/comms 从 DB 还原;settings 跨重启持久化
+- P1:prompt 27612→11802(-57%,分区日志);read_context 实战 6 类资源(conversation/message/tasks/task/trace ×2)
+- P2/P3:历史京ME消息种 origin 后徽章渲染+标注剥离(浏览器实测);行云空卡正确反问不建任务(P3 纪律)
+- P4:ConfigPage 事件源分区渲染(两源卡+审批队列)与 UI 保存链路(UI→PUT→文档表);settings 端点
+- P5:审批队列 UI(徽章/批准/驳回/最近已处理)→批准即派工(后台 think 日志+聊天流气泡)
+  —— 行云来源徽章"云" chip + 回复"已回 行云卡"(channel 字段)
+- 用户隔离:测试用户与主人的审批/消息桶互不可见
+
+**待用户配合的真实链路**(单测已覆盖逻辑,缺真实外部事件):
+- P2 直通全链:京ME群在任务执行中真人发消息(日志应出 `[events] 群消息直通`)
+- P5 行云实战:配置 sprintId 后真实卡片→审批→执行→卡片关闭收尾;审批京ME推送(需 ownerErp)
+
 ### 遗留与说明
 - **agent-profile(研发分身)仍文件存储**:该模块把配置物化成 skill 目录供 Pi SDK 加载,
   文件是其运行接口而非单纯存储;迁移=源头入库+物化落盘双写,牵动用户自建模块,待与作者对齐后单独做。

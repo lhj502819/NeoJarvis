@@ -27,11 +27,13 @@ export function JdmeIcon({ size = 14 }: { size?: number }) {
 function OriginChip({ message }: { message: Message }) {
   const o = message.origin!
   const isUser = message.role === 'user'
+  const isXingyun = o.channel === 'xingyun'
   // 群聊显示群名;私聊若是他人来件,亮出发件人(权限边界的可见信号)
-  const who = !o.isOwner && o.sender ? ` · ${o.sender}` : ''
+  const who = !isXingyun && !o.isOwner && o.sender ? ` · ${o.sender}` : ''
+  const channelName = isXingyun ? '行云' : `京ME${o.kind === 'group' ? '群' : '私聊'}`
   return (
-    <div className="msg-origin-chip" data-role={message.role} title={isUser ? `来自京ME${o.kind === 'group' ? '群' : '私聊'}` : `此回复已同步至京ME${o.kind === 'group' ? '群' : '私聊'}`}>
-      <JdmeIcon />
+    <div className="msg-origin-chip" data-role={message.role} title={isUser ? `来自${channelName}` : `此回复已同步至${channelName}`}>
+      {isXingyun ? <span className="msg-origin-xy">云</span> : <JdmeIcon />}
       <span>{isUser ? '' : '已回 '}{o.chatName}{who}</span>
     </div>
   )

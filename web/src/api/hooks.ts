@@ -36,6 +36,8 @@ export interface MessageOrigin {
   /** 京ME发件人 ERP(非主人来件展示用) */
   sender?: string
   isOwner?: boolean
+  /** 回报信道:行云需求卡来源时徽章显示"行云"而非"京ME" */
+  channel?: 'jdsme' | 'xingyun'
 }
 
 export interface Message {
