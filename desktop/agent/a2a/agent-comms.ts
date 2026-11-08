@@ -5,6 +5,7 @@ import { getPeerAgents } from './registry.js'
 import { broadcast } from '../jarvis/sse.js'
 import { appendComms } from '../jarvis/timeline-store.js'
 import { readResource } from '../jarvis/context-resources.js'
+import { docGet, docPut } from '../shared/docs.js'
 
 /**
  * 小弟之间的沟通工具集(Jarvis 之外,A2A agent 互相 + 向 Jarvis 汇报)。
@@ -15,6 +16,7 @@ import { readResource } from '../jarvis/context-resources.js'
  *
  * 工具清单(与旧版逐一对齐):
  *   - read_context   : 按资源指针读详情(受限:仅自己任务/共享制品,其余拒绝)
+ *   - handback       : 把来源群的追问退回 Jarvis 重判(与手头任务无关时用)
  *   - message_jarvis : 向 Jarvis 捎话(progress/question/deliverable/blocked)
  *   - message_peer   : 给并行协作的其他小弟发消息(异步,发完不等)
  *   - check_inbox    : 查收件箱(Jarvis 追加指令 / peer 消息或回复)
@@ -22,6 +24,50 @@ import { readResource } from '../jarvis/context-resources.js'
  */
 export function createAgentCommsTools(subtaskId: string, taskId: string, userId: string, agentName: string): ToolDefinition[] {
   return [
+    defineTool({
+      name: 'handback',
+      label: 'Handback',
+      description: '把刚收到的来源群追问退回给 Jarvis:当你判断这条消息与你手头的任务无关时用。' +
+        '退回后 Jarvis 会重新判断该消息归谁处理,你继续干自己的活,不用等。',
+      parameters: Type.Object({
+        reason: Type.String({ description: '为什么与你的任务无关(一句话)' }),
+      }),
+      execute: async (_toolCallId, params) => {
+        // 取回投递给本小弟的最后一条群追问(direct-through 时 metadata.type='follow_up')
+        const conv = await bus.getConversation(taskId)
+        const followUp = conv?.messages
+          .filter(m => m.to === subtaskId && m.metadata?.type === 'follow_up')
+          .at(-1)
+        const text = followUp?.parts.find(p => p.kind === 'text')?.text || ''
+        const meta = (followUp?.metadata ?? {}) as { chatId?: string; chatName?: string; msgId?: string }
+        await appendComms(userId, {
+          at: Date.now(), dir: 'to_jarvis', agentName, type: 'progress',
+          content: `[handback] ${params.reason}`,
+        }).catch(() => {})
+        broadcast('worker_msg', JSON.stringify({
+          subtaskId, taskId, agentName, type: 'progress',
+          content: `[退回] ${params.reason}`,
+        }), userId, 'event-reply')
+        if (!text || !meta.chatId) {
+          return { content: [{ type: 'text', text: '退回失败:找不到原始追问。直接继续干你的活即可。' }], details: {} }
+        }
+        // 二次退回防抖:同 msgId 已被本任务退回过就不重排(避免 worker↔router 打乒乓)
+        const hbKey = `${taskId}:${meta.msgId}`
+        const already = await docGet<{ reason: string }>(userId, 'handback', hbKey)
+        if (already) {
+          return { content: [{ type: 'text', text: '这条追问此前已退回过,Jarvis 会处理。继续你的活。' }], details: {} }
+        }
+        await docPut(userId, 'handback', hbKey, { reason: params.reason, at: Date.now() })
+        // 重排队:带退回说明的原文重新走 Router think(队列语义:不打断当前对话)
+        const { enqueueBackgroundMessage, noopWriter } = await import('../jarvis/orchestrator.js')
+        const labeled = `${text}\n\n(小弟 ${agentName} 已把这条追问退回: ${params.reason}。请重新判断它该归谁处理——可能需要给别的任务捎话、建新任务,或直接答复。)`
+        enqueueBackgroundMessage(userId, labeled, noopWriter, {
+          kind: 'group', chatId: meta.chatId, chatName: meta.chatName ?? '',
+        })
+        return { content: [{ type: 'text', text: `已退回(${params.reason}),Jarvis 会重新处理。继续你的活。` }], details: {} }
+      },
+    }),
+
     defineTool({
       name: 'read_context',
       label: 'Read Context',

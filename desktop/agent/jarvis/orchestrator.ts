@@ -17,6 +17,9 @@ export interface SSEWriter {
   closed: boolean
 }
 
+/** 无连接虚拟 writer:handback 等内部重排队路径借用 think 状态机但不接 SSE。 */
+export const noopWriter: SSEWriter = { id: 'noop', send: () => {}, end: () => {}, closed: false }
+
 interface BufferedMessage {
   text: string
   images?: ChatImage[]

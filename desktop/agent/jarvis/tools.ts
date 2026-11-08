@@ -24,6 +24,7 @@ import {
 import { sendJdMe } from '../events/sources/jdsme.js'
 import { peekCurrentOrigin, setTaskOrigin } from './task-origin.js'
 import { readResource, RESOURCE_GRAMMAR } from './context-resources.js'
+import { subscribeTask, unsubscribeTaskEverywhere } from '../a2a/threads.js'
 
 /**
  * Artifact detail as returned by the Java server (GET/PATCH /api/artifact/{id}).
@@ -605,8 +606,12 @@ export function createJarvisTools(userId: string): ToolDefinition[] {
           await updateTask(userId, task.id, { status: 'planning' })
           // 来源登记:京ME 群/私聊里派的活儿,完成后复盘汇报同步回来源聊天。
           // web 对话 peekCurrentOrigin() 为 null,不登记。
+          // 群聊来源同时订阅群 Thread(P2):后续同群消息直通执行中的小弟,不再过 brain。
           const origin = peekCurrentOrigin()
-          if (origin) await setTaskOrigin(userId, task.id, origin).catch(() => {})
+          if (origin) {
+            await setTaskOrigin(userId, task.id, origin).catch(() => {})
+            await subscribeTask(userId, task.id, origin).catch(() => {})
+          }
           const { executeTaskInBackground } = await import('./action-dispatcher.js')
           executeTaskInBackground(userId, task.id, params.subtasks)
           const list = params.subtasks.map((st, i) => `  ${i + 1}. ${st.name}（${st.assignee}）`).join('\n')
@@ -626,13 +631,15 @@ export function createJarvisTools(userId: string): ToolDefinition[] {
           const { abortTask } = await import('./action-dispatcher.js')
           if (params.taskId === 'all') {
             const active = (await listTasks(userId)).filter(t => !['completed', 'failed', 'cancelled'].includes(t.status))
-            for (const t of active) { await updateTask(userId, t.id, { status: 'cancelled' }); abortTask(t.id) }
+            for (const t of active) { await updateTask(userId, t.id, { status: 'cancelled' }); abortTask(t.id); await unsubscribeTaskEverywhere(userId, t.id).catch(() => {}) }
             return { content: [{ type: 'text', text: `已取消全部 ${active.length} 个任务。${params.reason ? `原因:${params.reason}` : ''}` }], details: {} }
           }
           const task = await getTask(userId, params.taskId)
           if (!task) return { content: [{ type: 'text', text: '未找到该任务。' }], details: {} }
           await updateTask(userId, params.taskId, { status: 'cancelled' })
           abortTask(params.taskId)
+          // Sir 叫停的任务解除群订阅:后续群消息回落 Router,不再直通(P2)
+          await unsubscribeTaskEverywhere(userId, params.taskId).catch(() => {})
           return { content: [{ type: 'text', text: `已取消任务「${task.name}」。` }], details: {} }
       },
     }),

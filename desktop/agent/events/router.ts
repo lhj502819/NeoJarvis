@@ -6,13 +6,17 @@ import { createEventWriter } from './writer.js'
 import { triageMessage } from './triage.js'
 import { jdsmeSink, initJdMeSource, getJdMeOwnerErp } from './sources/jdsme.js'
 import { createCronSource } from './sources/cron.js'
+import { broadcast } from '../jarvis/sse.js'
+import { deliverToTask, ensureThread, formatGroupMessage, groupThreadKey, listSubscribers, recordTrigger } from '../a2a/threads.js'
 import type { EventSink, EventSourceDef } from './types.js'
 
 /**
- * 事件路由(docs/superagent-design.md §3):
+ * 事件路由(docs/superagent-design.md §3 + superagent-v2.md P2):
  *   cron/morning_report → 程序组装 → 主动消息
- *   jdsme/im_message    → slowPath 噪音分诊 → Jarvis 完整 think()(经后台队列,不打断对话)
- *                         → EventWriter 把最终回复送回京ME sink
+ *   jdsme/im_message    → P2 intake 分流:
+ *                          群消息先过 Trigger 幂等 → 有订阅任务且直通成功 → 结束(不进 brain)
+ *                          否则 → slowPath 噪音分诊 → Jarvis 完整 think()(经后台队列)
+ *                          → EventWriter 把最终回复送回京ME sink
  */
 
 const sinks: EventSink[] = [jdsmeSink]
@@ -32,6 +36,34 @@ async function handleEvent(ev: JarvisEvent): Promise<void> {
       // 私聊 = Sir 的直接对话,不分诊、不丢弃,全部进 Jarvis;
       // 噪音分诊只用于群聊(@机器人 的寒暄贴才可能成为噪音)——"你好"被丢的教训。
       if (payload.kind === 'group') {
+        // ── P2 intake:Trigger 幂等 → 订阅直通 → 无订阅才走分诊/brain ──
+        const threadKey = groupThreadKey(payload.chatId)
+        const fresh = await recordTrigger(ev.userId, threadKey, payload)
+        if (!fresh) {
+          console.log(`[events] 重复消息丢弃: ${payload.msgId}`)
+          return
+        }
+        await ensureThread(ev.userId, threadKey, payload.chatName)
+        const subscribers = await listSubscribers(ev.userId, threadKey)
+        if (subscribers.length > 0) {
+          const isOwner = !!getJdMeOwnerErp() && payload.sender === getJdMeOwnerErp()
+          const senderLabel = isOwner ? 'Sir(唯一主人)' : payload.sender
+          const shown = formatGroupMessage(payload, senderLabel)
+          let deliveredTo = ''
+          for (const taskId of subscribers) {
+            const r = await deliverToTask(ev.userId, taskId, payload, {
+              senderLabel,
+              broadcastOnce: (text) => broadcast('user_message', JSON.stringify({ text }), ev.userId, 'event-reply'),
+            })
+            if (r.delivered) deliveredTo += (deliveredTo ? ',' : '') + r.note
+          }
+          if (deliveredTo) {
+            console.log(`[events] 群消息直通(${payload.msgId} → ${deliveredTo}),不进 brain`)
+            return  // 订阅直通语义:人的消息直达小弟,不经 Eval/brain(dsh §3.2)
+          }
+          // 全部投递失败(无在跑小弟/不在线)→ 回落下方 Router 路径
+          console.log('[events] 订阅存在但无在跑小弟,回落 Router')
+        }
         const triage = await triageMessage(ev.userId, payload.text)
         if (triage.category === 'noise') {
           console.log(`[events] 噪音丢弃: ${payload.chatId} "${payload.text.slice(0, 40)}"`)
