@@ -218,6 +218,12 @@ export const jdsmeSink: EventSink = {
  * 主动发京ME 消息(工具 send_jdme 用)。事件源未启用(无凭证)时返回 false。
  * chatId:群号(群聊)或对方 erp(私聊),与事件 payload 同一套标识。
  */
+/** JoySpace 文档出口(P6 验证期):markdown 产物 → 在线文档,返回 url 供京ME发链接。 */
+export async function createJoyDoc(input: { title: string; folderName?: string; markdown: string; members?: string[] }) {
+  if (!client) throw new Error('京ME未启用(JoySpace 出口依赖同一服务)')
+  return client.createJoyDoc(input)
+}
+
 export async function sendJdMe(
   kind: 'group' | 'dm',
   chatId: string,

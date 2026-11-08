@@ -120,6 +120,25 @@ export class JdMeClient {
     return Number(data?.last_seq) || 0
   }
 
+  // ---- JoySpace 文档(重内容出口:markdown → 在线文档,返回 url 发群) ----
+  /** 调 one-ai-native 的 /chat/me/joyspace/create,把 markdown 建成 JoySpace 在线文档并分享给 members。 */
+  async createJoyDoc(input: { title: string; folderName?: string; markdown: string; members?: string[] }): Promise<{ url: string; folderName?: string; pageId?: string; sharedTo?: number }> {
+    const base = this.config.server.replace(/\/$/, '')
+    const data = await this.requestJson(`${base}/chat/me/joyspace/create?profile=${encodeURIComponent(this.config.profile)}`, {
+      method: 'POST',
+      headers: { 'X-Agent-Token': this.config.agentToken },
+      body: {
+        title: input.title,
+        ...(input.folderName ? { folder_name: input.folderName } : {}),
+        markdown: input.markdown,
+        ...(input.members?.length ? { members: input.members } : {}),
+      },
+      timeoutMs: 60_000,
+    })
+    if (!data?.url) throw new Error(`JoySpace 建文档失败:${JSON.stringify(data).slice(0, 200)}`)
+    return { url: String(data.url), folderName: data.folderName, pageId: data.pageId, sharedTo: data.sharedTo }
+  }
+
   // ---- 开放平台(机器人发消息) ----
   private async getAppToken(force = false): Promise<string> {
     if (!force && this.appToken && Date.now() < this.appTokenExpiresAt) return this.appToken

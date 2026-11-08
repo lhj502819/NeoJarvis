@@ -60,3 +60,24 @@ describe('gateJdmeMessage(P4 准入表)', () => {
     expect(v.basis).toBe('off')
   })
 })
+
+// ── P6:isPureGreeting 确定性寒暄(替换 LLM 分诊抖动) ──
+import { isPureGreeting } from '../../agent/events/triage-filter.js'
+
+describe('isPureGreeting(寒暄确定性静默)', () => {
+  it('纯问候恒定为真(含标点/空白尾巴)', () => {
+    for (const t of ['hi', 'HI', '你好', '在吗?', '早上好!', '哈喽~', 'hello  ', '晚安。']) {
+      expect(isPureGreeting(t), t).toBe(true)
+    }
+  })
+
+  it('带任何实质内容的不是寒暄(不被静默)', () => {
+    for (const t of ['hi jarvis', '你好,帮我查个事', '在吗?在的话派个任务', '你好呀,昨天方案咋样了']) {
+      expect(isPureGreeting(t), t).toBe(false)
+    }
+  })
+
+  it('空串不是寒暄(交回原逻辑)', () => {
+    expect(isPureGreeting('')).toBe(false)
+  })
+})

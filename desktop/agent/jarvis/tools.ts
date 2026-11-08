@@ -21,7 +21,7 @@ import {
   type AgentModule,
   type AgentProfile,
 } from './agent-profile.js'
-import { sendJdMe } from '../events/sources/jdsme.js'
+import { sendJdMe, createJoyDoc } from '../events/sources/jdsme.js'
 import { peekCurrentOrigin, setTaskOrigin } from './task-origin.js'
 import { readResource, RESOURCE_GRAMMAR } from './context-resources.js'
 import { subscribeTask, unsubscribeTaskEverywhere } from '../a2a/threads.js'
@@ -724,6 +724,42 @@ export function createJarvisTools(userId: string): ToolDefinition[] {
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
             return { content: [{ type: 'text', text: `发送失败:${msg}。不要对 Sir 说已发送。` }], details: {} }
+          }
+      },
+    }),
+
+    defineTool({
+      name: 'send_joydoc',
+      label: 'Send JoyDoc',
+      description: '把一份 markdown 内容建成 JoySpace 在线文档(标题/目录/成员分享),返回链接——京ME 发不了文件,重内容走这里:' +
+        '方案、报告、说明文档等超过两屏的内容,建完把链接发到京ME 群/私聊(配合 send_jdme)或写进你的回复。' +
+        '需要京ME 事件源已配置(同一套凭证)。',
+      parameters: Type.Object({
+        title: Type.String({ description: '文档标题' }),
+        markdown: Type.String({ description: '文档正文(markdown)' }),
+        folderName: Type.Optional(Type.String({ description: 'JoySpace 目录名(默认同标题)' })),
+        members: Type.Optional(Type.Array(Type.String({ description: '分享给哪些人(erp 列表,可选)' }))),
+        notifyKind: Type.Optional(Type.Union([Type.Literal('group'), Type.Literal('dm')], { description: '建完后把链接发到京ME 群/私聊(可选)' })),
+        notifyChatId: Type.Optional(Type.String({ description: '通知目标的群号或 erp' })),
+      }),
+      execute: async (_toolCallId, params) => {
+          try {
+            const doc = await createJoyDoc({ title: params.title.trim(), folderName: params.folderName, markdown: params.markdown, members: params.members })
+            let note = `文档已创建:${doc.url}`
+            if (doc.sharedTo !== undefined) note += `(已分享给 ${doc.sharedTo} 人)`
+            if (params.notifyKind && params.notifyChatId) {
+              try {
+                await sendJdMe(params.notifyKind, params.notifyChatId.trim(), `📄 ${params.title}\n${doc.url}`)
+                note += `;链接已发到京ME${params.notifyKind === 'group' ? '群' : '私聊'}`
+              } catch (err) {
+                note += `;但京ME 通知失败:${err instanceof Error ? err.message : String(err)}`
+              }
+            }
+            broadcast('progress', `📄 JoyDoc: ${params.title.slice(0, 40)}`, userId)
+            return { content: [{ type: 'text', text: note }], details: {} }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            return { content: [{ type: 'text', text: `建文档失败:${msg}` }], details: {} }
           }
       },
     }),
