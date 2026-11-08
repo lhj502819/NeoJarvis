@@ -144,5 +144,12 @@ worker 读边界 redact 补全（跨任务/决策不可见）；`conversation` �
   Jarvis(send_joydoc,建完可即发京ME)与小弟(joydoc_create,链接写汇报)双工具落地;
   **MCP→Pi 桥接为基建待办**(buildUserMcpServers 是迁移降级实现返回空数组,MCP 工具运行时不存在;
   接 GitHub/Slack 等外部 MCP 时须先补此桥接)
+- **MCP↔Pi 桥接已补齐**(基建,验证期):`mcp-stdio.ts`(JSON-RPC over stdio,
+  initialize/tools/list/tools/call,spawn error 处理,进程级共享池+10min 空闲回收)+
+  `buildUserMcpServers` 实装(三来源同名 DB 覆盖 hub,黑名单过滤,降级只丢自身)。
+  **设计取舍:每 server 一个发现式代理工具**(不传 tool=列清单)而非直通映射——
+  13 个 server 直通会注入 100+ 工具 schema(每请求 ~15k token 常驻)。
+  实测:stdio 型 5 个代理激活(context7 对真实服务完成发现调用);**sse/http 型待批次二**
+  (~/.claude.json 里 japi-api-docs/one_knowledge 等 JD 网关 majority)。
 - **【待办·下一个】队列面板**(Dashboard 侧栏,MonitorPanel 同级):①运行中任务 + 排队的后台消息(orchestrator 暴露 GET /api/queue);②待审批前 3 条(复用 /api/approvals);③事件源心跳(上次轮询/游标/放行与过滤计数,记 source-instance 或 health 文档)。用户已确认要做,排在功能验证之后。
 - 行云轮询默认关闭(enabled+sprintId 需在配置页→事件源里开启);审批模式默认 approval。

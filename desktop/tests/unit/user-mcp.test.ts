@@ -1,16 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { writeFileSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'node:url'
 
-// user-mcp.buildUserMcpServers 迁移说明:
-//   Claude Agent SDK 原生支持 MCP(query({ mcpServers })),Pi 设计哲学是 No MCP。
-//   本次迁移把 buildUserMcpServers 降级为返回 ToolDefinition[](空数组),
-//   保证 llm.ts / client.ts / factory.ts 主流程不崩。完整 MCP 桥接待后续 extension 补齐。
-//
-//   旧测试断言的是 Record<string, McpServerConfig> 的三来源合并(hub + DB + 黑名单),
-//   现在合并逻辑只用于视图层(mcp-hub.ts / mcp-prefs.ts),不再参与运行时工具组装。
-//   新测试验证:① 降级返回空数组 ② 任何来源异常都不抛错。
+// user-mcp.buildUserMcpServers(P6 桥接已实装):
+//   三来源合并(同名 DB 覆盖 hub)+ 黑名单,每 stdio server 桥接为一个代理工具
+//   (mcp_<name>,发现式调用)。本文件验证合并语义与各种异常的降级;
+//   协议层交互的集成测试在 user-mcp-bridge.test.ts(真实 spawn mock server)。
 
 const store = vi.hoisted(() => ({
   disabled: new Map<string, Set<string>>(),
@@ -57,47 +54,56 @@ afterEach(() => {
 
 const USER = `u-user-mcp-${Date.now()}`
 
-describe('buildUserMcpServers 迁移降级(Pi SDK: No MCP)', () => {
-  it('降级期:无论 hub/DB 配置如何,返回空 ToolDefinition[](不崩主流程)', async () => {
-    writeCfg({
-      mcpServers: {
-        'chrome-devtools': { type: 'stdio', command: 'npx', args: ['-y', 'chrome-devtools-mcp@latest'] },
-      },
-    })
+const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), '../fixtures/mock-mcp-server.mjs')
+
+describe('buildUserMcpServers 三来源合并与降级(P6 桥接)', () => {
+  it('同名时 DB user 覆盖 hub:桥接的是 DB 配的命令', async () => {
+    // hub 配一个坏命令,DB 同名配好命令(真实可 spawn)——DB 必须胜出
+    writeCfg({ mcpServers: { fixture: { type: 'stdio', command: '/definitely/not/exist' } } })
     store.resolved.set(USER, [
-      { name: 'db-only', transport: 'stdio', command: 'user-cmd' },
+      { name: 'fixture', transport: 'stdio', command: process.execPath, args: [FIXTURE] },
     ])
     const { buildUserMcpServers } = await import('../../agent/shared/user-mcp.js')
     const out = await buildUserMcpServers(USER)
-    expect(Array.isArray(out)).toBe(true)
-    expect(out).toEqual([])
-  })
+    expect(out).toHaveLength(1)
+    expect(out[0].name).toBe('mcp_fixture')
+    const listed = await out[0].execute('call-1', {})
+    expect(listed.content[0].text).toContain('echo')   // 坏命令胜出的话这里拿不到工具清单
+  }, 20_000)
 
-  it('hub 读取异常时不抛错,仍返回空数组', async () => {
-    // 配置文件不存在 → listHubMcpServers 会抛,buildUserMcpServers 内部 catch
+  it('hub 读取异常时不抛错,DB 部分照常桥接', async () => {
     process.env.JARVIS_HUB_MCP_CONFIG = join(tmpDir, 'nonexistent.json')
+    store.resolved.set(USER, [
+      { name: 'fixture', transport: 'stdio', command: process.execPath, args: [FIXTURE] },
+    ])
     const { buildUserMcpServers } = await import('../../agent/shared/user-mcp.js')
     const out = await buildUserMcpServers(USER)
-    expect(out).toEqual([])
-  })
+    expect(out).toHaveLength(1)
+    expect(out[0].name).toBe('mcp_fixture')
+  }, 20_000)
 
-  it('DB resolve 抛错时不抛错,返回空数组', async () => {
+  it('sse/http 型 server 跳过不崩(stdio 照常)', async () => {
     writeCfg({ mcpServers: {} })
-    // 通过不预置 resolved 让 mock 返回空(等效降级路径)
+    store.resolved.set(USER, [
+      { name: 'remote', transport: 'sse', url: 'http://example.invalid/mcp/sse' },
+      { name: 'fixture', transport: 'stdio', command: process.execPath, args: [FIXTURE] },
+    ])
     const { buildUserMcpServers } = await import('../../agent/shared/user-mcp.js')
     const out = await buildUserMcpServers(USER)
-    expect(out).toEqual([])
-  })
+    expect(out).toHaveLength(1)
+    expect(out[0].name).toBe('mcp_fixture')
+  }, 20_000)
 
-  it('黑名单读取异常时不抛错,返回空数组', async () => {
-    writeCfg({ mcpServers: { good: { type: 'stdio', command: 'x' } } })
+  it('黑名单命中的 server 不桥接', async () => {
+    writeCfg({ mcpServers: {} })
+    store.resolved.set(USER, [
+      { name: 'blocked', transport: 'stdio', command: process.execPath, args: [FIXTURE] },
+      { name: 'fixture', transport: 'stdio', command: process.execPath, args: [FIXTURE] },
+    ])
+    store.disabled.set(USER, new Set(['blocked']))
     const { buildUserMcpServers } = await import('../../agent/shared/user-mcp.js')
     const out = await buildUserMcpServers(USER)
-    expect(out).toEqual([])
-  })
-
-  // TODO(MCP-bridge): 用 Pi extension 实现完整 MCP 桥接后,恢复以下合并逻辑测试:
-  //   - hub 独有 / sse-http 映射 / DB user 覆盖 hub / 黑名单过滤 / PIPELINE_MCPS 排除
-  //   - 缺字段跳过 / 降级路径
-  // 届时 buildUserMcpServers 返回 ToolDefinition[],每个 MCP server 的工具动态发现。
+    expect(out).toHaveLength(1)
+    expect(out[0].name).toBe('mcp_fixture')
+  }, 20_000)
 })
