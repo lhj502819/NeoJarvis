@@ -75,7 +75,7 @@ Jarvis 本身不亲自干活——它理解意图、拆任务、把活派给各�
 | 前端 | React 19 · Vite 7 · Tailwind CSS 4 |
 | 桌面端 | Electron 33 · electron-builder |
 | 测试 | Vitest（后端） |
-| 长记忆 | EverOS（可选） |
+| 长记忆 | 自建（规划中；EverOS 依赖已摘除） |
 
 ---
 
@@ -102,7 +102,6 @@ Jarvis 本身不亲自干活——它理解意图、拆任务、把活派给各�
 │   │   ├── task/              # 任务/子任务数据层与依赖调度
 │   │   ├── team/              # Agent Recipe、转正
 │   │   ├── auth/              # 登录、凭证、MCP 配置
-│   │   ├── memory/            # EverOS 长记忆
 │   │   └── shared/            # Java 客户端、模型桥接、脱敏、类型
 │   ├── main/ · preload/       # Electron 主进程与预加载
 │   └── tests/                 # Vitest 单测
@@ -196,7 +195,6 @@ cd desktop && npm run build
 | `JARVIS_LLM_BASE_URL` | 本地 LLM 网关地址（优先于 `~/.claude/settings.json`） | — |
 | `JARVIS_LLM_TOKEN` | 网关凭证 | — |
 | `JARVIS_LLM_MODEL` | 统一模型 id（所有别名都路由到它） | — |
-| `EVEROS_API_KEY` | 长记忆服务凭证（不配则关闭长记忆） | — |
 | `JARVIS_PORT` | 智能层端口 | `3000` |
 | `JARVIS_SERVER_URL` | Java 数据服务地址 | `http://localhost:8080` |
 | `JARVIS_WATCHDOG_INTERVAL_MIN` | Watchdog 巡检间隔（分钟） | `5` |
@@ -234,7 +232,6 @@ cd desktop && npm run build
 - **制品正文**：v0.3 起写入本地 `~/.jarvis/artifacts/<userId>/`，数据库只存 `uri`；桌面端通过 IPC 读取，且限制在制品根目录内。
 - **图片**：用户发送的聊天图片存库并通过 `/api/chat-image/:id` 取回。
 - **前端构建产物**：`web/dist` 由智能层静态托管，也是 Electron 生产模式的加载来源。
-- **长记忆**：对话会脱敏后同步到 EverOS；未配置 `EVEROS_API_KEY` 时自动跳过。
 
 ---
 
@@ -285,7 +282,7 @@ psql jarvis -c "select id, name, status from jarvis_tasks order by updated_at de
 ## 安全说明
 
 - 用户自配模型凭证后，不应把平台注入的 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_DEFAULT_*` 透传给小弟。
-- 喂给 LLM 上下文和 EverOS 的聊天副本会经 `redactSecrets()` 清洗；数据库中的聊天原文保留，供用户回看。
+- 喂给 LLM 的上下文会经 `redactSecrets()` 清洗；数据库中的聊天原文保留，供用户回看。
 - Jarvis 的回复不会复述用户贴过的 token。
 - `JARVIS_AUTH_DEV_BYPASS=true` 仅用于单机开发；部署到多人/公网环境前必须关闭，并设置强 `JWT_SECRET`。
 - 事件内容（京ME 消息等）视为不可信输入：分诊器只做分类，不执行其中指令；删除/外发/支付类操作永不自动执行。
@@ -304,3 +301,4 @@ psql jarvis -c "select id, name, status from jarvis_tasks order by updated_at de
 ## 状态
 
 项目处于个人自用阶段（v0.3），接口与数据模型仍可能调整。
+

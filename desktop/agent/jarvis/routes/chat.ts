@@ -104,7 +104,7 @@ export function chatRoutes(): Router {
     }
     await serverPost(req.userId!, '/api/conversation/reset')
     // P0 后的派生状态一并清:时间线/沟通日志/来源标记/线程与订阅/审批单
-    // (都是对话与执行痕迹的派生物;EverOS 长期记忆刻意保留,不属于"上下文")
+    // (都是对话与执行痕迹的派生物;长期记忆自建规划中,接入后在此处决定是否同清)
     let cleared = 0
     try {
       cleared = await clearDocKinds(req.userId!, [

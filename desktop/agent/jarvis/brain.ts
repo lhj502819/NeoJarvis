@@ -6,7 +6,6 @@ import { consumeArtifact, type PendingArtifact } from './tools.js'
 import { onMessageHandled } from './state.js'
 import { debug, withBrainLock, rawLlmCall, llmCall } from './llm.js'
 import { addToBuffer, saveArtifact } from './conversation.js'
-import { searchMemory } from '../memory/everos.js'
 import { parseAction } from './action-dispatcher.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
 import { getPinnedArtifactId } from './orchestrator.js'
@@ -93,10 +92,8 @@ export async function think(userId: string, userMessage: string, onProgress?: (t
   const availableSkills = await listSkillsForUser(userId)
   const enabledSkillLines = skillCatalogLines(availableSkills)
 
-  // 长期记忆(自托管 EverOS):检索相关记忆注入;失败/为空降级为空段,不阻塞 think。
-  const memories = await searchMemory(userId, userMessage, 5).catch(() => '')
-  console.log(`[perf] searchMemory: ${memories.length} chars`)
-  const memoriesSection = memories ? `## 关于 Sir 的记忆\n${memories}\n` : ''
+  // 长期记忆:自建规划中(EverOS 依赖已摘除," memoriesSection" 注入点保留在这条注释之后)
+  const memoriesSection = ''
 
   // 对话上下文卡片化(P1):最近 8 条全文,更早的降级为 stub 指针 —— 老对话不再被
   // "只保留最近 N 轮"截断丢弃,模型可沿 message/<id> 按需读回(read_context)。
