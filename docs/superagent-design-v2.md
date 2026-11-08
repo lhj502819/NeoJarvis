@@ -140,5 +140,9 @@ worker 读边界 redact 补全（跨任务/决策不可见）；`conversation` �
 - **agent-profile(研发分身)仍文件存储**:该模块把配置物化成 skill 目录供 Pi SDK 加载,
   文件是其运行接口而非单纯存储;迁移=源头入库+物化落盘双写,牵动用户自建模块,待与作者对齐后单独做。
 - watchdog 会话化 / 推测执行(静默复现修复) / 行云卡片评论同步 / Thread 细化聚类:设计文档标注的可选项,未排期。
+- **JoySpace 出口已接**(ef924f0/3b6ab9d):one-ai-native 自带 /chat/me/joyspace/create(markdown→在线文档+成员分享),
+  Jarvis(send_joydoc,建完可即发京ME)与小弟(joydoc_create,链接写汇报)双工具落地;
+  **MCP→Pi 桥接为基建待办**(buildUserMcpServers 是迁移降级实现返回空数组,MCP 工具运行时不存在;
+  接 GitHub/Slack 等外部 MCP 时须先补此桥接)
 - **【待办·下一个】队列面板**(Dashboard 侧栏,MonitorPanel 同级):①运行中任务 + 排队的后台消息(orchestrator 暴露 GET /api/queue);②待审批前 3 条(复用 /api/approvals);③事件源心跳(上次轮询/游标/放行与过滤计数,记 source-instance 或 health 文档)。用户已确认要做,排在功能验证之后。
 - 行云轮询默认关闭(enabled+sprintId 需在配置页→事件源里开启);审批模式默认 approval。
