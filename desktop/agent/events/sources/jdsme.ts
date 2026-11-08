@@ -139,7 +139,11 @@ function normalize(event: any): JarvisEvent | null {
       atRobot,
       admission,
     })
-    if (!verdict.pass) return null
+    if (!verdict.pass) {
+      // 过滤可观测:静默丢弃排查起来是盲区(验证期教训)
+      console.log(`[jdsme] gate 过滤: 「${chatName}」${sender} "${String(inner.content ?? '').slice(0, 40)}" — ${verdict.reason}`)
+      return null
+    }
     if (verdict.strength === 'inferred') {
       // 候选放行(观察模式):未@的群消息作为候选,交给 slowPath 分诊 + 评估窗口定夺
       console.log(`[jdsme] 候选放行(未@):「${chatName}」${sender}: ${String(inner.content ?? '').slice(0, 60)}`)
