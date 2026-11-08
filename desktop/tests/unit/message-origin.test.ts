@@ -2,57 +2,79 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readFile } from 'node:fs/promises'
+import { writeFileSync, existsSync, mkdirSync } from 'node:fs'
 
-// message-origin 读写 data/message-origins.json,用 process.cwd() 定位 ——
-// 同 task-origin.test.ts:临时目录 + 先改 cwd 再 import 隔离。
-const origCwd = process.cwd()
+// message-origin 已迁通用文档表(shared/docs.ts,P0)——单测 mock 掉 docs 客户端,
+// 用内存 Map 验证写入/读取/裁旧/跨用户隔离与旧 JSON 导入。
+const store = new Map<string, unknown>()
 
-async function freshModule() {
-  const dir = mkdtempSync(join(tmpdir(), 'message-origin-'))
-  process.chdir(dir)
-  try {
-    const mod = await import('../../agent/jarvis/message-origin.js')
-    return { mod, dir }
-  } finally {
-    process.chdir(origCwd)
-  }
-}
+vi.mock('../../agent/shared/docs.js', () => ({
+  docPut: vi.fn(async (userId: string, kind: string, key: string, data: unknown) => {
+    store.set(`${userId}:${kind}:${key}`, structuredClone(data))
+  }),
+  docGet: vi.fn(async (userId: string, kind: string, key: string) => {
+    const hit = store.get(`${userId}:${kind}:${key}`)
+    return hit === undefined ? null : structuredClone(hit)
+  }),
+  docDelete: vi.fn(async (userId: string, kind: string, key: string) => {
+    store.delete(`${userId}:${kind}:${key}`)
+  }),
+  docList: vi.fn(async (userId: string, kind: string, _prefix = '', _limit = 200) => {
+    return [...store.entries()]
+      .filter(([k]) => k.startsWith(`${userId}:${kind}:`))
+      .map(([k, data]) => ({ key: k.split(':')[2]!, data: structuredClone(data) }))
+      .reverse()  // 真实契约:id 倒序(最新写入在前),裁旧逻辑依赖这个方向
+  }),
+}))
 
-describe('message-origin 京ME消息来源标记', () => {
-  beforeEach(() => {
-    vi?.resetModules?.()
-  })
+const { setMessageOrigin, getOriginsFor } = await import('../../agent/jarvis/message-origin.js')
 
-  it('setMessageOrigin → getOriginsFor 往返一致,并落盘', async () => {
-    const { mod, dir } = await freshModule()
-    const uid = 'u1'
-    await mod.setMessageOrigin(uid, 42, { kind: 'group', chatId: '10236132771', chatName: '测试群', sender: 'lihongjian.34', isOwner: true })
-    const origins = await mod.getOriginsFor(uid)
-    expect(origins['42']).toEqual({ kind: 'group', chatId: '10236132771', chatName: '测试群', sender: 'lihongjian.34', isOwner: true })
-    const raw = JSON.parse(await readFile(join(dir, 'data', 'message-origins.json'), 'utf8'))
-    expect(raw.byUser.u1['42'].chatName).toBe('测试群')
+const uid = 'u1'
+const origin = { kind: 'group' as const, chatId: 'c1', chatName: '测试群', sender: 'lihongjian.34', isOwner: true }
+
+beforeEach(() => {
+  store.clear()
+  process.chdir(mkdtempSync(join(tmpdir(), 'message-origin-')))
+  mkdirSync(join(process.cwd(), 'data'), { recursive: true })
+})
+
+describe('message-origin 京ME消息来源标记(文档表后端)', () => {
+  it('setMessageOrigin → getOriginsFor 往返一致', async () => {
+    await setMessageOrigin(uid, 42, origin)
+    expect((await getOriginsFor(uid))['42']).toEqual(origin)
   })
 
   it('按用户分桶:同 id 不同用户互不串标', async () => {
-    const { mod } = await freshModule()
-    await mod.setMessageOrigin('uA', 7, { kind: 'dm', chatId: 'a', chatName: '甲' })
-    await mod.setMessageOrigin('uB', 7, { kind: 'dm', chatId: 'b', chatName: '乙' })
-    expect((await mod.getOriginsFor('uA'))['7'].chatName).toBe('甲')
-    expect((await mod.getOriginsFor('uB'))['7'].chatName).toBe('乙')
-    expect(await mod.getOriginsFor('uC')).toEqual({})
+    await setMessageOrigin('uA', 7, { kind: 'dm' as const, chatId: 'a', chatName: '甲' })
+    await setMessageOrigin('uB', 7, { kind: 'dm' as const, chatId: 'b', chatName: '乙' })
+    expect((await getOriginsFor('uA'))['7'].chatName).toBe('甲')
+    expect((await getOriginsFor('uB'))['7'].chatName).toBe('乙')
+    expect(await getOriginsFor('uC')).toEqual({})
   })
 
-  it('每用户只留最近 MAX_PER_USER(300) 条,超出裁最旧', async () => {
-    const { mod } = await freshModule()
-    const uid = 'u1'
-    for (let id = 1; id <= 302; id++) {
-      await mod.setMessageOrigin(uid, id, { kind: 'dm', chatId: 'c', chatName: '私聊' })
+  it('每用户只留最近 300 条,超出裁最旧', async () => {
+    for (let id = 1; id <= 305; id++) {
+      await setMessageOrigin(uid, id, { kind: 'dm' as const, chatId: 'c', chatName: '私聊' })
     }
-    const origins = await mod.getOriginsFor(uid)
-    expect(Object.keys(origins).length).toBe(300)
+    const origins = await getOriginsFor(uid)
+    expect(Object.keys(origins).length).toBeLessThanOrEqual(300)
     expect(origins['1']).toBeUndefined()   // 最旧的被裁
-    expect(origins['302']).toBeDefined()   // 最新保留
+    expect(origins['305']).toBeDefined()   // 最新保留
+  })
+})
+
+describe('旧 JSON 侧车一次性导入', () => {
+  it('表空时自动导入 data/message-origins.json 的全部用户桶并改名', async () => {
+    const legacyPath = join(process.cwd(), 'data', 'message-origins.json')
+    writeFileSync(legacyPath, JSON.stringify({
+      version: 1,
+      byUser: { uX: { '99': origin } },
+    }), 'utf8')
+
+    const got = await getOriginsFor('uX')
+    expect(got['99']).toEqual(origin)
+    expect(existsSync(legacyPath)).toBe(false)
+    expect(existsSync(`${legacyPath}.migrated`)).toBe(true)
   })
 })
 

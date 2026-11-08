@@ -207,7 +207,7 @@ ${userMessage}`
   if (replyOrigin) await setMessageOrigin(userId, messageId, replyOrigin)
   // 时间线落盘(思考过程 + 工具调用顺序)—— 刷新后对话流还原用
   if (collector.hasContent()) {
-    saveTimeline(userId, messageId, collector.timeline())
+    await saveTimeline(userId, messageId, collector.timeline())
   }
   // 拿到 messageId 后回填 traces 的归属并逐条 POST(失败不阻塞主流程,内部 catch)
   for (const t of toolTraces) {

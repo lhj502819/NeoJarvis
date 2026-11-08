@@ -294,3 +294,20 @@ CREATE TABLE IF NOT EXISTS jarvis_tool_traces (
 CREATE INDEX IF NOT EXISTS idx_tt_message ON jarvis_tool_traces(message_id) WHERE scope='jarvis';
 CREATE INDEX IF NOT EXISTS idx_tt_subtask ON jarvis_tool_traces(subtask_id, turn_index, call_index) WHERE scope='subtask';
 CREATE INDEX IF NOT EXISTS idx_tt_user_created ON jarvis_tool_traces(user_id, created_at DESC);
+
+-- ═══ 通用文档表(superagent-v2 P0,docs/superagent-design-v2.md) ═══
+-- 智能层运行时状态的统一落点:承接原 JSON 侧车(task-origin/message-origin/jdsme游标/
+-- timeline/comms)与后续 thread/trigger/subscription/approval/policy-version 等状态。
+-- (user_id, kind, doc_key) 唯一 = upsert 语义;id 自增保留插入序(list 按 id 倒序取最新)。
+-- data 一律 JSONB —— 键空间受控(数字 id/受控枚举),不存自由全文索引需求。
+CREATE TABLE IF NOT EXISTS jarvis_agent_docs (
+  id         BIGSERIAL PRIMARY KEY,
+  user_id    VARCHAR(191) NOT NULL,
+  kind       VARCHAR(64)  NOT NULL,
+  doc_key    VARCHAR(191) NOT NULL,
+  data       JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, kind, doc_key)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_docs_list ON jarvis_agent_docs(user_id, kind, id DESC);

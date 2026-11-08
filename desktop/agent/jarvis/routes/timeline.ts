@@ -9,17 +9,17 @@ export function timelineRoutes(): Router {
   const r = Router()
 
   // 该用户全部消息时间线(刷新后一次性拉取,前端按 message_id 对齐)
-  r.get('/api/timeline/all', (req, res) => {
-    res.json({ ok: true, timelines: getAllTimelines(req.userId!) })
+  r.get('/api/timeline/all', async (req, res) => {
+    res.json({ ok: true, timelines: await getAllTimelines(req.userId!) })
   })
 
-  r.get('/api/timeline/:messageId', (req, res) => {
-    res.json({ ok: true, timeline: getTimeline(req.userId!, Number(req.params.messageId)) })
+  r.get('/api/timeline/:messageId', async (req, res) => {
+    res.json({ ok: true, timeline: await getTimeline(req.userId!, Number(req.params.messageId)) })
   })
 
   // 沟通日志(小弟 ↔ Jarvis)
-  r.get('/api/comms', (req, res) => {
-    res.json({ ok: true, comms: getComms(req.userId!) })
+  r.get('/api/comms', async (req, res) => {
+    res.json({ ok: true, comms: await getComms(req.userId!) })
   })
 
   return r

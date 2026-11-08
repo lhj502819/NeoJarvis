@@ -586,7 +586,7 @@ export function createJarvisTools(userId: string): ToolDefinition[] {
           // 来源登记:京ME 群/私聊里派的活儿,完成后复盘汇报同步回来源聊天。
           // web 对话 peekCurrentOrigin() 为 null,不登记。
           const origin = peekCurrentOrigin()
-          if (origin) await setTaskOrigin(task.id, origin).catch(() => {})
+          if (origin) await setTaskOrigin(userId, task.id, origin).catch(() => {})
           const { executeTaskInBackground } = await import('./action-dispatcher.js')
           executeTaskInBackground(userId, task.id, params.subtasks)
           const list = params.subtasks.map((st, i) => `  ${i + 1}. ${st.name}（${st.assignee}）`).join('\n')

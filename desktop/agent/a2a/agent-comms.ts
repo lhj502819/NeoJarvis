@@ -39,7 +39,7 @@ export function createAgentCommsTools(subtaskId: string, taskId: string, userId:
           type: params.type,
           content: params.content.slice(0, 600),
         }), userId, 'event-reply')
-        appendComms(userId, { at: Date.now(), dir: 'to_jarvis', agentName, type: params.type, content: params.content.slice(0, 600) })
+        await appendComms(userId, { at: Date.now(), dir: 'to_jarvis', agentName, type: params.type, content: params.content.slice(0, 600) })
 
         const reply = await bus.send(userId, subtaskId, 'jarvis', taskId, `[${params.type}] ${params.content}`, { type: params.type })
         const replyText = reply?.parts.find(p => p.kind === 'text')?.text || '（Jarvis 暂无回复，继续执行）'
@@ -47,7 +47,7 @@ export function createAgentCommsTools(subtaskId: string, taskId: string, userId:
         broadcast('jarvis_msg', JSON.stringify({
           to: subtaskId, agentName, content: replyText.slice(0, 600),
         }), userId, 'event-reply')
-        appendComms(userId, { at: Date.now(), dir: 'to_worker', agentName, type: 'jarvis', content: replyText.slice(0, 600) })
+        await appendComms(userId, { at: Date.now(), dir: 'to_worker', agentName, type: 'jarvis', content: replyText.slice(0, 600) })
         return { content: [{ type: 'text', text: replyText }], details: {} }
       },
     }),

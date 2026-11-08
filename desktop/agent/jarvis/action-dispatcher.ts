@@ -306,7 +306,7 @@ export async function finalizeAndReport(userId: string, taskId: string): Promise
 
   // 京ME 同步短讯:这个任务若是从京ME 群/私聊派来的,完成情况要同步回那个聊天。
   // 同一次 LLM 调用顺带产出(标记分隔,解析出来),失败不影响主汇报。
-  const origin = await getTaskOrigin(taskId).catch(() => null)
+  const origin = await getTaskOrigin(userId, taskId).catch(() => null)
   if (origin) {
     reportPrompt += `\n\n【额外任务】这个任务是从京ME ${origin.kind === 'group' ? `群「${origin.chatName}」` : `私聊「${origin.chatName}」`}里派下来的，群里的人还在等结果。` +
       `请在汇报正文之后，另起一行输出分隔标记 =====JDME===== ，然后写一条直接发到该${origin.kind === 'group' ? '群' : '私聊'}的同步短讯：\n` +
@@ -357,12 +357,12 @@ export async function finalizeAndReport(userId: string, taskId: string): Promise
     // 网页汇报只留正文,不展示内部短讯
     if (rest.length > 0) {
       await deliverReport(userId, taskId, finalTask, failed, mainReport.trim(), autoArtifact)
-      await clearTaskOrigin(taskId).catch(() => {})
+      await clearTaskOrigin(userId, taskId).catch(() => {})
       return
     }
   }
   await deliverReport(userId, taskId, finalTask, failed, report, autoArtifact)
-  if (origin) await clearTaskOrigin(taskId).catch(() => {})
+  if (origin) await clearTaskOrigin(userId, taskId).catch(() => {})
 }
 
 /** 汇报落库 + SSE(原 finalizeAndReport 尾段抽出;artifact 逻辑不变)。 */
@@ -642,7 +642,7 @@ export async function dispatchAction(
         to: subtaskId,
         content: msg.slice(0, 600),
       }), userId, 'event-reply')
-      appendComms(userId, { at: Date.now(), dir: 'to_worker', agentName: subtaskId, type: 'jarvis', content: msg.slice(0, 600) })
+      await appendComms(userId, { at: Date.now(), dir: 'to_worker', agentName: subtaskId, type: 'jarvis', content: msg.slice(0, 600) })
       response = delivered
         ? `已即时送达 agent (${subtaskId.slice(0, 6)})：「${msg.slice(0, 40)}」`
         : `agent 当前不在线，消息已放入离线收件箱，下次恢复 / check_inbox 时可读：「${msg.slice(0, 40)}」`

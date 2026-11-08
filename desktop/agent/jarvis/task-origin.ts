@@ -1,18 +1,19 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { rename } from 'node:fs/promises'
+import { join } from 'node:path'
+import { docGet, docDelete, docList, docPut } from '../shared/docs.js'
 
 /**
  * 任务来源登记:京ME 群/私聊里派的活儿,完成后汇报要同步回来源聊天。
  *
- * 为什么落盘:任务执行跨越进程重启(热重载/手动重启)后 recoverInterruptedTasks
- * 会补结算 + 补汇报,内存登记会丢;来源丢失 = 群里永远等不到那声「办完了」。
- * 存 data/task-origins.json,量小(taskId → 聊天标识),整文件读写即可。
+ * 存储(superagent-v2 P0):原先的 data/task-origins.json 侧车已迁入通用文档表
+ * jarvis_agent_docs(kind='task-origin',key=taskId)——运行时状态一律进数据库,
+ * 不再写 JSON 文件。首次访问时旧文件内容一次性导入,导入后旧文件改名留档。
  *
  * 不动 Task 表结构:任务本身是平台中立的,「从哪个聊天来」是事件层的事。
  */
 
-const VERSION = 1
-const statePath = join(process.cwd(), 'data', 'task-origins.json')
+const DOC_KIND = 'task-origin'
+const legacyPath = (): string => join(process.cwd(), 'data', 'task-origins.json')
 
 export type TaskOrigin = {
   kind: 'group' | 'dm'
@@ -24,42 +25,52 @@ export type TaskOrigin = {
   isOwner?: boolean
 }
 
-let state: { version: number; origins: Record<string, TaskOrigin> } = { version: VERSION, origins: {} }
-let loaded = false
-
-async function load(): Promise<void> {
-  if (loaded) return
-  loaded = true
+/** 旧 JSON 侧车一次性导入:首次按用户读空时执行,导入后旧文件改名 .migrated 留档。 */
+async function migrateLegacy(userId: string): Promise<void> {
   try {
-    const parsed = JSON.parse(await readFile(statePath, 'utf8'))
-    if (parsed?.version === VERSION && parsed.origins) state = parsed
-  } catch { /* 首次运行无文件 */ }
+    const { readFile } = await import('node:fs/promises')
+    const parsed = JSON.parse(await readFile(legacyPath(), 'utf8'))
+    const origins: Record<string, TaskOrigin> = parsed?.origins ?? {}
+    for (const [taskId, origin] of Object.entries(origins)) {
+      await docPut(userId, DOC_KIND, taskId, origin)
+    }
+    await rename(legacyPath(), `${legacyPath()}.migrated`)
+    console.log(`[task-origin] 旧 JSON 已导入文档表(${Object.keys(origins).length} 条)`)
+  } catch { /* 无旧文件或导入失败——走空状态,不阻塞 */ }
 }
 
-async function persist(): Promise<void> {
+export async function setTaskOrigin(userId: string, taskId: string, origin: TaskOrigin): Promise<void> {
+  await docPut(userId, DOC_KIND, taskId, origin)
+}
+
+export async function getTaskOrigin(userId: string, taskId: string): Promise<TaskOrigin | null> {
+  const doc = await docGet<TaskOrigin>(userId, DOC_KIND, taskId).catch(async err => {
+    // 表还没建/Java 未升级等异常降级:尝试旧文件直读,保住"办完了要回群说一声"
+    console.error(`[task-origin] 文档表读取失败,回退旧 JSON: ${err instanceof Error ? err.message : err}`)
+    return legacyGet(taskId)
+  })
+  if (doc !== null) return doc
+  // 未命中且文档表整体为空 → 可能是首次运行,尝试旧 JSON 导入后再查一次
+  const rest = await docList(userId, DOC_KIND, '', 1)
+  if (rest.length === 0) {
+    await migrateLegacy(userId)
+    return docGet<TaskOrigin>(userId, DOC_KIND, taskId)
+  }
+  return null
+}
+
+/** 任务收尾清理:汇报同步完成后删掉登记,表不无限膨胀。 */
+export async function clearTaskOrigin(userId: string, taskId: string): Promise<void> {
+  await docDelete(userId, DOC_KIND, taskId)
+}
+
+async function legacyGet(taskId: string): Promise<TaskOrigin | null> {
   try {
-    await mkdir(dirname(statePath), { recursive: true })
-    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
-  } catch { /* 登记写失败不致命,只丢同步 */ }
-}
-
-export async function setTaskOrigin(taskId: string, origin: TaskOrigin): Promise<void> {
-  await load()
-  state.origins[taskId] = origin
-  await persist()
-}
-
-export async function getTaskOrigin(taskId: string): Promise<TaskOrigin | null> {
-  await load()
-  return state.origins[taskId] ?? null
-}
-
-/** 任务收尾清理:汇报同步完成后删掉登记,文件不无限膨胀。 */
-export async function clearTaskOrigin(taskId: string): Promise<void> {
-  await load()
-  if (state.origins[taskId]) {
-    delete state.origins[taskId]
-    await persist()
+    const { readFile } = await import('node:fs/promises')
+    const parsed = JSON.parse(await readFile(legacyPath(), 'utf8'))
+    return parsed?.origins?.[taskId] ?? null
+  } catch {
+    return null
   }
 }
 

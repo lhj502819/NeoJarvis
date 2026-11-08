@@ -1,5 +1,7 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { rename } from 'node:fs/promises'
+import { join } from 'node:path'
+import { docGet, docPut } from '../../shared/docs.js'
 import { loadJdMeConfig, JdMeClient, type JdMeConfig } from './jdsme-client.js'
 import { isGroupAllowed } from './jdsme-filter.js'
 import { listUsers } from '../../auth/users.js'
@@ -48,20 +50,34 @@ async function resolveOwner(): Promise<void> {
 }
 
 async function loadState(): Promise<void> {
+  // 游标状态迁入通用文档表(superagent-v2 P0):kind='jdsme-cursor',按归属用户隔离。
+  // 首次读空时尝试旧 JSON 侧车一次性导入,导入后改名留档。
+  try {
+    const doc = await docGet<SourceState>(ownerId, 'jdsme-cursor', 'state')
+    if (doc?.version === STATE_VERSION) {
+      state = doc
+      fresh = false
+      return
+    }
+  } catch (err) {
+    console.error(`[jdsme] 游标文档表读取失败(走旧文件): ${err instanceof Error ? err.message : err}`)
+  }
   try {
     const parsed = JSON.parse(await readFile(statePath, 'utf8'))
     if (parsed?.version === STATE_VERSION) {
       state = parsed
       fresh = false
+      await persistState()
+      await rename(statePath, `${statePath}.migrated`).catch(() => {})
+      console.log('[jdsme] 旧游标文件已迁入文档表')
     }
   } catch { /* 首次运行无状态文件 */ }
 }
 
 async function persistState(): Promise<void> {
   try {
-    await mkdir(dirname(statePath), { recursive: true })
-    await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
-  } catch { /* 状态盘写失败不致命 */ }
+    await docPut(ownerId, 'jdsme-cursor', 'state', state)
+  } catch { /* 游标落库失败不致命:下次轮询按水位校正 */ }
 }
 
 async function loadWhitelist(): Promise<void> {
