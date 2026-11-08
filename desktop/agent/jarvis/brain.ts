@@ -21,6 +21,7 @@ import { setMessageOrigin } from './message-origin.js'
 import { serverGet } from '../shared/server-client.js'
 import { redactSecrets } from '../shared/redact.js'
 import { taskCard, messageStub, skillCatalogLines } from './context-resources.js'
+import { addStage, setContext, setOutcome } from './message-trace.js'
 
 export { parseAction } from './action-dispatcher.js'
 export { addToBuffer } from './conversation.js'
@@ -58,6 +59,8 @@ export interface ThinkResult {
 export interface ThinkOpts {
   /** 对话流 UI 事件(思考增量/工具调用起止),由调用方决定如何送到前端 */
   onEvent?: (type: string, content: string) => void
+  /** 运行面板流水 id:上下文组装/决策/去向写回 mtrace(可选) */
+  traceId?: string
 }
 
 export async function think(userId: string, userMessage: string, onProgress?: (text: string) => void, onDelta?: (text: string) => void, signal?: AbortSignal, images?: ChatImage[], opts?: ThinkOpts): Promise<ThinkResult> {
@@ -201,6 +204,16 @@ ${userMessage}`
   console.log(`[perf] prompt built, length: ${contextualPrompt.length} chars`)
   // 分区尺寸诊断(P1):上下文优化的标尺 —— 哪一段肥了一目了然
   console.log(`[perf] prompt sections: tasks=${taskContext.length} team=${teamInfo.length} skills=${enabledSkillLines.length} convo=${recentConvo.length} traces=${toolTraceSection.length} router=${routerSection.length} authority=${authoritySection.length} pinned=${pinnedContext.length} memories=${memoriesSection.length} msg=${userMessage.length}`)
+  // 运行面板流水:上下文组装落 trace(P6)
+  if (opts?.traceId) {
+    setContext(opts.traceId, {
+      tasks: taskContext.length, team: teamInfo.length, skills: enabledSkillLines.length,
+      convo: recentConvo.length, traces: toolTraceSection.length, router: routerSection.length,
+      authority: authoritySection.length, pinned: pinnedContext.length, memories: memoriesSection.length,
+      msg: userMessage.length,
+    }, contextualPrompt.length)
+    addStage(opts.traceId, `上下文组装 ${contextualPrompt.length} 字符`, { detail: `traces=${toolTraceSection.length} skills=${enabledSkillLines.length} convo=${recentConvo.length}` })
+  }
   let ac: AbortController | undefined
   if (signal) {
     ac = new AbortController()
@@ -236,6 +249,18 @@ ${userMessage}`
   // 拿到 messageId 后回填 traces 的归属并逐条 POST(失败不阻塞主流程,内部 catch)
   for (const t of toolTraces) {
     recordToolTrace(userId, { ...t, scope: 'jarvis', messageId })
+  }
+  // 运行面板流水:决策与工具调用落 trace
+  if (opts?.traceId) {
+    const createTask = toolTraces.find(t => t.toolName === 'create_task')
+    if (createTask) {
+      let taskName = ''
+      try { taskName = String((createTask.args as any)?.name ?? '') } catch { /* ignore */ }
+      addStage(opts.traceId, `决策:create_task「${taskName}」`, { mech: '接单门槛' })
+    } else if (toolTraces.length > 0) {
+      addStage(opts.traceId, `工具调用 ${toolTraces.length} 次(${toolTraces.map(t => t.toolName).slice(0, 3).join(',')})`)
+    }
+    setOutcome(opts.traceId, 'replied', { costMs: Date.now() - t0 })
   }
   // 长期记忆(自建,规划中):原 saveConversation→EverOS 双写已移除;消息持久化在 addToBuffer
   return { response: finalResponse, artifact: artifact || undefined }

@@ -7,6 +7,7 @@ import { appendComms } from '../jarvis/timeline-store.js'
 import { readResource } from '../jarvis/context-resources.js'
 import { docGet, docPut } from '../shared/docs.js'
 import { createJoyDoc } from '../events/sources/jdsme.js'
+import { addStage, flushTrace } from '../jarvis/message-trace.js'
 
 /**
  * 小弟之间的沟通工具集(Jarvis 之外,A2A agent 互相 + 向 Jarvis 汇报)。
@@ -84,6 +85,11 @@ export function createAgentCommsTools(subtaskId: string, taskId: string, userId:
           return { content: [{ type: 'text', text: '这条追问此前已退回过,Jarvis 会处理。继续你的活。' }], details: {} }
         }
         await docPut(userId, 'handback', hbKey, { reason: params.reason, at: Date.now() })
+        // 运行面板流水:handback 是关键路由事件,挂回原消息的 trace
+        if (meta.msgId) {
+          addStage(meta.msgId, `handback: ${params.reason}`, { detail: `小弟 ${agentName} 退回`, mech: 'handback' })
+          void flushTrace(meta.msgId)
+        }
         // 重排队:带退回说明的原文重新走 Router think(队列语义:不打断当前对话)
         const { enqueueBackgroundMessage, noopWriter } = await import('../jarvis/orchestrator.js')
         const labeled = `${text}\n\n(小弟 ${agentName} 已把这条追问退回: ${params.reason}。请重新判断它该归谁处理——可能需要给别的任务捎话、建新任务,或直接答复。)`

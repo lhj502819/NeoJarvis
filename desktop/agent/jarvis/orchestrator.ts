@@ -3,6 +3,7 @@ import { saveChatImages } from './conversation.js'
 import { broadcast } from './sse.js'
 import { setCurrentOrigin, type TaskOrigin } from './task-origin.js'
 import { setMessageOrigin } from './message-origin.js'
+import { addStage, bumpCounter, setContext, setOutcome, startTrace } from './message-trace.js'
 import type { ChatImage } from '../shared/types.js'
 
 const BUFFER_WINDOW_MS = 1500
@@ -118,17 +119,26 @@ export async function enqueueMessage(userId: string, text: string, writer: SSEWr
 // create_task 读它登记任务来源;收尾清空。web 路径不传。
 const pendingBackground = new Map<string, Array<{ text: string; writer: SSEWriter; origin?: TaskOrigin }>>()
 
-export function enqueueBackgroundMessage(userId: string, text: string, writer: SSEWriter, origin?: TaskOrigin): void {
+export function enqueueBackgroundMessage(userId: string, text: string, writer: SSEWriter, origin?: TaskOrigin, traceId?: string): void {
   const session = getSession(userId)
   if (session.state === 'idle') {
+    if (traceId) addStage(traceId, '队列空 → 立即 think')
     console.log(`[orchestrator] background flush(now): "${text.slice(0, 40)}"`)
-    startBackgroundThink(userId, session, text, writer, origin)
+    startBackgroundThink(userId, session, text, writer, origin, traceId)
     return
   }
   const q = pendingBackground.get(userId) ?? []
   q.push({ text, writer, origin })
   pendingBackground.set(userId, q)
+  if (traceId) addStage(traceId, `排队中(第 ${q.length} 位,等当前对话结束)`, { mech: 'queue-wait' })
   console.log(`[orchestrator] background queued(${q.length}): "${text.slice(0, 40)}"`)
+}
+
+/** 队列状态(运行面板 /api/queue):pendingBackground 与 think 占用。 */
+export function getQueueStatus(userId: string): { pending: number; thinking: boolean; state: string } {
+  const session = sessions.get(userId)
+  const pending = pendingBackground.get(userId)?.length ?? 0
+  return { pending, thinking: session?.state === 'thinking', state: session?.state ?? 'idle' }
 }
 
 /** 该用户是否有后台消息在排队或正在 think(事件路径用于决定何时清 currentOrigin)。 */
@@ -139,7 +149,7 @@ export function hasQueuedOrRunningBackground(userId: string): boolean {
   return !!session && session.state === 'thinking'
 }
 
-function startBackgroundThink(userId: string, session: UserSession, text: string, writer: SSEWriter, origin?: TaskOrigin): void {
+function startBackgroundThink(userId: string, session: UserSession, text: string, writer: SSEWriter, origin?: TaskOrigin, traceId?: string): void {
   // 借用 thinking 状态机;writer 是事件侧虚拟 writer,无 /chat 连接语义
   session.state = 'thinking'
   session.writers.push(writer)
@@ -165,11 +175,12 @@ function startBackgroundThink(userId: string, session: UserSession, text: string
       const result = await think(userId, text, (progress) => emit('progress', progress), (delta) => {
         session.liveContent += delta
         emit('delta', delta)
-      }, undefined, undefined, { onEvent: emit })
+      }, undefined, undefined, { onEvent: emit, traceId })
       session.liveContent = result.response
       emit('response', result.response)
       if (result.artifact) emit('artifact', JSON.stringify(result.artifact))
     } catch (err) {
+      if (traceId) setOutcome(traceId, 'error', { detail: err instanceof Error ? err.message : String(err) })
       emit('response', `[错误] ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setCurrentOrigin(null)
@@ -279,6 +290,10 @@ async function flushBuffer(userId: string, session: UserSession) {
 async function executeThink(userId: string, session: UserSession, mergedMessage: string, images: ChatImage[] = []) {
   session.state = 'thinking'
   session.liveContent = ''
+  // web 消息也进流水(运行面板):trace id 时间戳生成
+  const webTraceId = `web-${Date.now()}`
+  startTrace(userId, webTraceId, { channel: 'web', sender: 'Sir', textPreview: mergedMessage })
+  addStage(webTraceId, `入队(合并 ${session.buffer.length || 1} 条,立即 think)`)
 
   const ac = new AbortController()
   session.abortController = ac
@@ -322,7 +337,7 @@ async function executeThink(userId: string, session: UserSession, mergedMessage:
         if (!gotFirstDelta) { gotFirstDelta = true; clearInterval(heartbeat) }
         session.liveContent += delta
         emit('delta', delta)
-      }, ac.signal, images, { onEvent })
+      }, ac.signal, images, { onEvent, traceId: webTraceId })
 
       if (ac.signal.aborted) return
 
@@ -334,6 +349,7 @@ async function executeThink(userId: string, session: UserSession, mergedMessage:
     } catch (err) {
       if (ac.signal.aborted) return
       const msg = err instanceof Error ? err.message : String(err)
+      setOutcome(webTraceId, 'error', { detail: msg })
       emit('response', `[错误] ${msg}`)
     } finally {
       clearInterval(heartbeat)

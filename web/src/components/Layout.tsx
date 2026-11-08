@@ -11,11 +11,12 @@ import { ArtifactsPage } from '../pages/dashboard/ArtifactsPage'
 import { SkillsPage } from '../pages/dashboard/SkillsPage'
 import { McpPage } from '../pages/dashboard/McpPage'
 import { ConfigPage } from '../pages/dashboard/ConfigPage'
+import { RunningPage } from '../pages/dashboard/RunningPage'
 import { CredentialsModal } from './CredentialsModal'
 import '../pages/dashboard/dashboard.css'
 import './Layout.css'
 
-type View = 'chat' | 'tasks' | 'team' | 'artifacts' | 'skills' | 'mcp' | 'config'
+type View = 'chat' | 'tasks' | 'team' | 'artifacts' | 'skills' | 'mcp' | 'config' | 'running'
 
 /* ── Codex 式 16px 线性图标(stroke 跟随 currentColor)── */
 const Icon = {
@@ -81,6 +82,7 @@ const WORKBENCH_ITEMS: Array<{ view: View; label: string; icon: ReactNode }> = [
   { view: 'artifacts', label: '制品库', icon: <Icon.folder /> },
   { view: 'skills', label: '技能', icon: <Icon.folder /> },
   { view: 'config', label: '配置', icon: <Icon.gear /> },
+  { view: 'running', label: '运行', icon: <Icon.clock /> },
 ]
 
 export default function Layout() {
@@ -271,6 +273,7 @@ function MainArea({ view, user, newTaskSignal }: { view: View; user: AuthUser; n
         {view === 'skills' && <div className="main-page-wrap"><SkillsPage /></div>}
         {view === 'mcp' && <div className="main-page-wrap"><McpPage /></div>}
         {view === 'config' && <div className="main-page-wrap"><ConfigPage /></div>}
+        {view === 'running' && <div className="main-page-wrap"><RunningPage /></div>}
       </div>
       {view !== 'tasks' && monitorOpen && <MonitorPanel onOpen={(taskId, subtaskId) => setModal({ taskId, subtaskId })} />}
       {modal && <ExecutionModal taskId={modal.taskId} subtaskId={modal.subtaskId} onClose={() => setModal(null)} />}

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { docGet, docPut } from '../../shared/docs.js'
 import { loadJdMeConfig, JdMeClient, type JdMeConfig } from './jdsme-client.js'
 import { gateJdmeMessage, isGroupAllowed } from './jdsme-filter.js'
+import { addStage, bumpCounter, setOutcome, startTrace } from '../../jarvis/message-trace.js'
 import { getJdmeInstance } from './registry.js'
 import { listUsers } from '../../auth/users.js'
 import { getSettings } from '../../jarvis/persona.js'
@@ -39,6 +40,8 @@ let stopped = false
 let state: SourceState = { version: STATE_VERSION, cursor: 0, seen: {} }
 let fresh = true
 let whitelistedGroups: string[] = []
+let runningFlag = false
+let lastPollAt = 0
 // P4:实例配置(source-instance 文档)——准入模式 + 白名单接管开关
 let admission: 'explicit' | 'candidates' | 'ignore' = 'explicit'
 let hasInstance = false
@@ -132,6 +135,8 @@ function normalize(event: any): JarvisEvent | null {
     const atRobot = atUsers.length
       ? atUsers.some((u: any) => u?.pin === robotPin)
       : Boolean(botName) && String(inner.content ?? '').includes(`@${botName}`)
+    const content = stripMention(String(body.body?.content ?? ''), payload)
+    const msgId = String(body.msgId ?? '').trim() || `seq-${event.seq}`
     // P4 Gate:结构化判定(白名单 + 准入表 + @检测),代码层 Fast Path
     const verdict = gateJdmeMessage({
       isDm: false,
@@ -139,11 +144,19 @@ function normalize(event: any): JarvisEvent | null {
       atRobot,
       admission,
     })
+    // 运行面板流水:每条消息从 gate 开始留痕(P6)
+    const channel = 'jdsme-group' as const
     if (!verdict.pass) {
-      // 过滤可观测:静默丢弃排查起来是盲区(验证期教训)
+      startTrace(ownerId, msgId, { channel, chatName, sender, textPreview: content })
+      addStage(msgId, `gate 过滤:${verdict.reason}`, { mech: 'gate-filter' })
+      bumpCounter('jdsme-gate-filtered')
+      setOutcome(msgId, 'dropped-gate', { detail: verdict.reason })
       console.log(`[jdsme] gate 过滤: 「${chatName}」${sender} "${String(inner.content ?? '').slice(0, 40)}" — ${verdict.reason}`)
       return null
     }
+    startTrace(ownerId, msgId, { channel, chatName, sender, textPreview: content })
+    addStage(msgId, `收到 · gate ${verdict.strength}`, { detail: verdict.reason, mech: verdict.strength === 'explicit' ? 'gate-explicit' : 'gate-candidates' })
+    bumpCounter('jdsme-passed')
     if (verdict.strength === 'inferred') {
       // 候选放行(观察模式):未@的群消息作为候选,交给 slowPath 分诊 + 评估窗口定夺
       console.log(`[jdsme] 候选放行(未@):「${chatName}」${sender}: ${String(inner.content ?? '').slice(0, 60)}`)
@@ -157,15 +170,26 @@ function normalize(event: any): JarvisEvent | null {
 
   const content = stripMention(String(body.body?.content ?? ''), payload)
   if (!content) return null
+  const msgId = String(body.msgId ?? '').trim() || `seq-${event.seq}`
 
-    const msgId = String(body.msgId ?? '').trim() || `seq-${event.seq}`
-    const seenKey = `${kind}:${chatId}`
-    const seen = state.seen[seenKey] ?? (state.seen[seenKey] = [])
-    if (seen.includes(msgId)) return null
-    seen.push(msgId)
-    if (seen.length > 200) seen.splice(0, seen.length - 200)
+  // 私聊:此处补 trace(dm 无 gate,恒 explicit)
+  if (kind === 'dm') {
+    startTrace(ownerId, msgId, { channel: 'jdsme-dm', chatName, sender, textPreview: content })
+    addStage(msgId, '收到 · 私聊直进(不分诊不丢弃)', { mech: 'dm-bypass' })
+    bumpCounter('jdsme-passed')
+  }
 
-    console.log(`[jdsme] 收到 ${kind === 'group' ? '群' : '私聊'}「${chatName}」${sender}: ${content.slice(0, 80)}`)
+  const seenKey = `${kind}:${chatId}`
+  const seen = state.seen[seenKey] ?? (state.seen[seenKey] = [])
+  if (seen.includes(msgId)) {
+    addStage(msgId, '重复消息丢弃(会话内去重)', { mech: 'dedup' })
+    setOutcome(msgId, 'dropped-dup')
+    return null
+  }
+  seen.push(msgId)
+  if (seen.length > 200) seen.splice(0, seen.length - 200)
+
+  console.log(`[jdsme] 收到 ${kind === 'group' ? '群' : '私聊'}「${chatName}」${sender}: ${content.slice(0, 80)}`)
 
   return {
     id: `jdsme-${event.seq}-${msgId}`,
@@ -245,6 +269,11 @@ export function getJdMeOwnerErp(): string {
   return ownerErp
 }
 
+/** 运行信息(事件源心跳):运行面板 /api/heartbeat 用 */
+export function getJdMeRuntimeInfo(): { running: boolean; lastPollAt: number; cursor: number; admission: string; whitelistGroups: number } {
+  return { running: runningFlag && !stopped, lastPollAt, cursor: state.cursor, admission, whitelistGroups: whitelistedGroups.length }
+}
+
 export async function initJdMeSource(): Promise<EventSourceDef | null> {
   config = await loadJdMeConfig()
   if (!config) {
@@ -297,9 +326,11 @@ export async function initJdMeSource(): Promise<EventSourceDef | null> {
         console.log(`[jdsme] 事件源已启动(profile=${config.profile},游标=${state.cursor},${whitelistedGroups.length > 0 ? `白名单群 ${whitelistedGroups.length} 个` : '未设白名单 → 放行全部群'})`)
 
         let lastError = ''
+        runningFlag = true
         while (!stopped) {
           try {
             const data = await client.fetchEvents(state.cursor, { wait: config.pollSeconds ?? 25 })
+            lastPollAt = Date.now()
             if (lastError) {
               console.log('[jdsme] 轮询恢复')
               lastError = ''

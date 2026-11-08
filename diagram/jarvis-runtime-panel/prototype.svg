@@ -1,0 +1,301 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1560 1010">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap');
+    text { font-family: 'JetBrains Mono', 'Noto Sans SC', 'PingFang SC', sans-serif; }
+  </style>
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+    </pattern>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#60a5fa"/>
+    </marker>
+  </defs>
+
+  <!-- ═══ 背景 ═══ -->
+  <rect width="100%" height="100%" fill="#0f172a"/>
+  <rect width="100%" height="100%" fill="url(#grid)"/>
+
+  <!-- ═══ 标题 ═══ -->
+  <text x="24" y="30" fill="#ffffff" font-size="16" font-weight="700">Jarvis 运行面板 · 消息处理流水(原型)</text>
+  <text x="24" y="48" fill="#94a3b8" font-size="9">目标:每条消息进来,入口 → 路由 → 上下文组装 → 机制命中 → 去向,全程可视。黑盒变白盒。</text>
+
+  <!-- ═══ 应用窗口 ═══ -->
+  <rect x="24" y="64" width="1140" height="920" rx="10" fill="#0f172a"/>
+  <rect x="24" y="64" width="1140" height="920" rx="10" fill="rgba(15,23,42,0.7)" stroke="#334155" stroke-width="1.5"/>
+
+  <!-- ─── 导航列 ─── -->
+  <line x1="184" y1="64" x2="184" y2="984" stroke="#1e293b" stroke-width="1"/>
+  <rect x="40" y="88" width="8" height="8" rx="2" fill="#22d3ee"/><text x="56" y="96" fill="#94a3b8" font-size="10">新任务</text>
+  <rect x="40" y="120" width="8" height="8" rx="2" fill="#334155"/><text x="56" y="128" fill="#94a3b8" font-size="10">搜索</text>
+  <rect x="40" y="152" width="8" height="8" rx="2" fill="#334155"/><text x="56" y="160" fill="#94a3b8" font-size="10">插件</text>
+  <rect x="40" y="184" width="8" height="8" rx="2" fill="#334155"/><text x="56" y="192" fill="#94a3b8" font-size="10">定时任务</text>
+  <text x="40" y="230" fill="#64748b" font-size="8" font-weight="600">工作台</text>
+  <rect x="40" y="244" width="8" height="8" rx="2" fill="#334155"/><text x="56" y="252" fill="#94a3b8" font-size="10">团队</text>
+  <rect x="40" y="276" width="8" height="8" rx="2" fill="#334155"/><text x="56" y="284" fill="#94a3b8" font-size="10">制品库</text>
+  <rect x="40" y="308" width="8" height="8" rx="2" fill="#334155"/><text x="56" y="316" fill="#94a3b8" font-size="10">技能</text>
+  <rect x="32" y="336" width="140" height="24" rx="6" fill="rgba(59,130,246,0.3)" stroke="#60a5fa" stroke-width="1.5"/>
+  <rect x="40" y="344" width="8" height="8" rx="2" fill="#60a5fa"/><text x="56" y="352" fill="#ffffff" font-size="10" font-weight="600">运行</text>
+  <rect x="40" y="372" width="8" height="8" rx="2" fill="#334155"/><text x="56" y="380" fill="#94a3b8" font-size="10">配置</text>
+  <circle cx="48" cy="948" r="8" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1"/>
+  <text x="48" y="951" fill="#fff" font-size="7" text-anchor="middle" font-weight="600">A</text>
+  <text x="62" y="951" fill="#94a3b8" font-size="9">admin</text>
+
+  <!-- ─── 主区标题行 ─── -->
+  <text x="204" y="94" fill="#ffffff" font-size="13" font-weight="700">运行面板</text>
+  <rect x="1046" y="80" width="96" height="20" rx="10" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1"/>
+  <text x="1094" y="93" fill="#34d399" font-size="8" text-anchor="middle">10s 自动刷新</text>
+  <rect x="966" y="80" width="72" height="20" rx="10" fill="rgba(30,41,59,0.5)" stroke="#334155" stroke-width="1"/>
+  <text x="1002" y="93" fill="#94a3b8" font-size="8" text-anchor="middle">时间:今天</text>
+
+  <!-- ─── 概览条 ─── -->
+  <rect x="204" y="106" width="150" height="44" rx="8" fill="rgba(30,41,59,0.5)" stroke="#334155" stroke-width="1"/>
+  <text x="218" y="126" fill="#34d399" font-size="15" font-weight="700">1</text><text x="236" y="126" fill="#94a3b8" font-size="8">运行中任务</text>
+  <text x="218" y="141" fill="#475569" font-size="7.5">watchdog 巡检中</text>
+  <rect x="360" y="106" width="150" height="44" rx="8" fill="rgba(30,41,59,0.5)" stroke="#334155" stroke-width="1"/>
+  <text x="374" y="126" fill="#94a3b8" font-size="15" font-weight="700">0</text><text x="392" y="126" fill="#94a3b8" font-size="8">排队后台消息</text>
+  <text x="374" y="141" fill="#475569" font-size="7.5">pendingBackground</text>
+  <rect x="516" y="106" width="150" height="44" rx="8" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1"/>
+  <text x="530" y="126" fill="#fbbf24" font-size="15" font-weight="700">1</text><text x="548" y="126" fill="#94a3b8" font-size="8">待审批</text>
+  <text x="530" y="141" fill="#475569" font-size="7.5">行云卡 · 审批模式</text>
+  <rect x="672" y="106" width="150" height="44" rx="8" fill="rgba(30,41,59,0.5)" stroke="#334155" stroke-width="1"/>
+  <text x="686" y="126" fill="#ffffff" font-size="15" font-weight="700">23</text><text x="712" y="126" fill="#94a3b8" font-size="8">今日进消息</text>
+  <text x="686" y="141" fill="#475569" font-size="7.5">京ME 18 · web 4 · 行云 1</text>
+  <rect x="828" y="106" width="150" height="44" rx="8" fill="rgba(59,130,246,0.3)" stroke="#60a5fa" stroke-width="1"/>
+  <text x="842" y="126" fill="#60a5fa" font-size="15" font-weight="700">5</text><text x="862" y="126" fill="#94a3b8" font-size="8">直通命中</text>
+  <text x="842" y="141" fill="#475569" font-size="7.5">不过 brain,直达小弟</text>
+  <rect x="984" y="106" width="150" height="44" rx="8" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/>
+  <text x="998" y="126" fill="#fb7185" font-size="15" font-weight="700">9</text><text x="1020" y="126" fill="#94a3b8" font-size="8">噪音过滤</text>
+  <text x="998" y="141" fill="#475569" font-size="7.5">gate 3 + 寒暄 4 + 分诊 2</text>
+
+  <!-- ─── Section A:消息处理流水 ─── -->
+  <rect x="204" y="162" width="946" height="436" rx="10" fill="rgba(15,23,42,0.6)" stroke="#334155" stroke-width="1"/>
+  <text x="218" y="184" fill="#22d3ee" font-size="11" font-weight="600">消息处理流水</text>
+  <text x="1136" y="184" fill="#475569" font-size="8" text-anchor="end">最近 50 条 · 点开一行 → 右侧看处理链与上下文组装</text>
+  <text x="216" y="206" fill="#64748b" font-size="8">时间</text>
+  <text x="284" y="206" fill="#64748b" font-size="8">信道</text>
+  <text x="368" y="206" fill="#64748b" font-size="8">发送人</text>
+  <text x="470" y="206" fill="#64748b" font-size="8">摘要</text>
+  <text x="806" y="206" fill="#64748b" font-size="8">路由结果</text>
+  <text x="1088" y="206" fill="#64748b" font-size="8">耗时</text>
+  <line x1="212" y1="214" x2="1142" y2="214" stroke="#1e293b" stroke-width="1"/>
+
+  <!-- 行1:直通(未选中) -->
+  <text x="216" y="236" fill="#cbd5e1" font-size="9">16:42</text>
+  <text x="284" y="236" fill="#94a3b8" font-size="8.5">京ME群</text>
+  <text x="368" y="236" fill="#cbd5e1" font-size="8.5">Sir</text>
+  <text x="470" y="236" fill="#cbd5e1" font-size="9">"进度怎么样了?"</text>
+  <rect x="806" y="222" width="190" height="20" rx="9" fill="rgba(59,130,246,0.3)" stroke="#60a5fa" stroke-width="1"/>
+  <text x="901" y="235" fill="#60a5fa" font-size="8" text-anchor="middle">直通 → PRD开发(不过 brain)</text>
+  <text x="1100" y="236" fill="#94a3b8" font-size="8">8ms</text>
+  <text x="470" y="252" fill="#475569" font-size="7.5">线程 jdsme:group:10236147834 · 订阅命中 1 任务</text>
+  <line x1="212" y1="264" x2="1142" y2="264" stroke="#1e293b" stroke-width="0.5"/>
+
+  <!-- 行2:brain·接单(选中,蓝框) -->
+  <rect x="208" y="270" width="938" height="72" rx="8" fill="rgba(59,130,246,0.15)" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="216" y="292" fill="#ffffff" font-size="9" font-weight="600">16:40</text>
+  <text x="284" y="292" fill="#94a3b8" font-size="8.5">京ME群</text>
+  <text x="368" y="292" fill="#ffffff" font-size="8.5">Sir</text>
+  <text x="470" y="292" fill="#ffffff" font-size="9">"查一下目前在PRD工作台创建PRD…改成 chubaofs 固定目录读取"</text>
+  <rect x="806" y="278" width="220" height="20" rx="9" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1"/>
+  <text x="916" y="291" fill="#22d3ee" font-size="8" text-anchor="middle">brain · 接单 → 建任务 2839a219</text>
+  <text x="1100" y="292" fill="#94a3b8" font-size="8">21.3s</text>
+  <text x="470" y="308" fill="#64748b" font-size="7.5">接单门槛:三事实 ✓ · 订阅来源群 ✓ · 授权边界标注 ✓ · msgId 405451996</text>
+  <text x="216" y="330" fill="#475569" font-size="7.5">▼ 已选中 — 右侧抽屉展示完整处理链与上下文组装</text>
+
+  <!-- 行3:噪音丢弃 -->
+  <text x="216" y="368" fill="#cbd5e1" font-size="9">16:39</text>
+  <text x="284" y="368" fill="#94a3b8" font-size="8.5">京ME群</text>
+  <text x="368" y="368" fill="#cbd5e1" font-size="8.5">张三</text>
+  <text x="470" y="368" fill="#cbd5e1" font-size="9">"hi"</text>
+  <rect x="806" y="354" width="200" height="20" rx="9" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/>
+  <text x="906" y="367" fill="#fb7185" font-size="8" text-anchor="middle">噪音丢弃 · 寒暄静默(确定性)</text>
+  <text x="1100" y="368" fill="#94a3b8" font-size="8">3ms</text>
+  <line x1="212" y1="382" x2="1142" y2="382" stroke="#1e293b" stroke-width="0.5"/>
+
+  <!-- 行4:私聊回复 -->
+  <text x="216" y="404" fill="#cbd5e1" font-size="9">16:37</text>
+  <text x="284" y="404" fill="#94a3b8" font-size="8.5">京ME私聊</text>
+  <text x="368" y="404" fill="#cbd5e1" font-size="8.5">Sir</text>
+  <text x="470" y="404" fill="#cbd5e1" font-size="9">"hi"</text>
+  <rect x="806" y="390" width="200" height="20" rx="9" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1"/>
+  <text x="906" y="403" fill="#22d3ee" font-size="8" text-anchor="middle">brain · 直接回复(私聊不分诊)</text>
+  <text x="1100" y="404" fill="#94a3b8" font-size="8">2.5s</text>
+  <line x1="212" y1="418" x2="1142" y2="418" stroke="#1e293b" stroke-width="0.5"/>
+
+  <!-- 行5:行云审批 -->
+  <text x="216" y="440" fill="#cbd5e1" font-size="9">16:30</text>
+  <text x="284" y="440" fill="#94a3b8" font-size="8.5">行云</text>
+  <text x="368" y="440" fill="#cbd5e1" font-size="8.5">系统</text>
+  <text x="470" y="440" fill="#cbd5e1" font-size="9">需求卡 REQ-102「拼团加速包」</text>
+  <rect x="806" y="426" width="200" height="20" rx="9" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1"/>
+  <text x="906" y="439" fill="#fbbf24" font-size="8" text-anchor="middle">审批 → Sir 批准后派工</text>
+  <text x="1100" y="440" fill="#94a3b8" font-size="8">—</text>
+  <text x="470" y="456" fill="#475569" font-size="7.5">Mandate:行云卡片即授权 · policy pv-x</text>
+  <line x1="212" y1="470" x2="1142" y2="470" stroke="#1e293b" stroke-width="0.5"/>
+
+  <!-- 行6:gate过滤 -->
+  <text x="216" y="492" fill="#cbd5e1" font-size="9">16:28</text>
+  <text x="284" y="492" fill="#94a3b8" font-size="8.5">京ME群</text>
+  <text x="368" y="492" fill="#cbd5e1" font-size="8.5">王五</text>
+  <text x="470" y="492" fill="#cbd5e1" font-size="9">"大家好"(未@机器人)</text>
+  <rect x="806" y="478" width="200" height="20" rx="9" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/>
+  <text x="906" y="491" fill="#fb7185" font-size="8" text-anchor="middle">gate 过滤 · 未 @(explicit 模式)</text>
+  <text x="1100" y="492" fill="#94a3b8" font-size="8">1ms</text>
+  <text x="216" y="580" fill="#475569" font-size="8">« 上一页 · 1 / 1 · 下一页 »     筛选:[全部 ▾] [仅京ME] [仅异常] [搜索 msgId…]</text>
+
+  <!-- ─── Section B:队列 ─── -->
+  <rect x="204" y="612" width="466" height="128" rx="10" fill="rgba(15,23,42,0.6)" stroke="#334155" stroke-width="1"/>
+  <text x="218" y="634" fill="#34d399" font-size="10" font-weight="600">队列</text>
+  <circle cx="228" cy="654" r="4" fill="#34d399"/>
+  <text x="240" y="657" fill="#ffffff" font-size="8.5">2839a219 PRD 工作台整改 — PRD开发 执行中</text>
+  <text x="240" y="670" fill="#64748b" font-size="7.5">已直通 1 条追问 · 25/40 步 · watchdog 正常</text>
+  <circle cx="228" cy="692" r="4" fill="#475569"/>
+  <text x="240" y="695" fill="#94a3b8" font-size="8.5">排队后台消息 0(京ME消息在 Sir 对话中进来时排队处)</text>
+  <circle cx="228" cy="716" r="4" fill="#fbbf24"/>
+  <text x="240" y="719" fill="#fbbf24" font-size="8.5">审批队列 1 → 点此处理</text>
+
+  <rect x="684" y="612" width="466" height="128" rx="10" fill="rgba(15,23,42,0.6)" stroke="#334155" stroke-width="1"/>
+  <text x="698" y="634" fill="#fbbf24" font-size="10" font-weight="600">待审批</text>
+  <rect x="698" y="644" width="438" height="52" rx="8" fill="rgba(30,41,59,0.5)" stroke="#334155" stroke-width="1"/>
+  <text x="710" y="662" fill="#ffffff" font-size="8.5" font-weight="600">行云卡 REQ-102「拼团加速包」</text>
+  <text x="710" y="676" fill="#64748b" font-size="7.5">ap-x · 创建人:李四 · policy pv-x · 等待 12 分钟</text>
+  <rect x="1004" y="666" width="52" height="20" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1"/>
+  <text x="1030" y="679" fill="#34d399" font-size="8" text-anchor="middle">批准</text>
+  <rect x="1062" y="666" width="52" height="20" rx="6" fill="rgba(30,41,59,0.5)" stroke="#64748b" stroke-width="1"/>
+  <text x="1088" y="679" fill="#94a3b8" font-size="8" text-anchor="middle">驳回</text>
+  <text x="698" y="722" fill="#475569" font-size="7.5">超时策略:24h 未处理自动提醒一次(可配)</text>
+
+  <!-- ─── Section C:事件源心跳 ─── -->
+  <rect x="204" y="756" width="466" height="112" rx="10" fill="rgba(15,23,42,0.6)" stroke="#334155" stroke-width="1"/>
+  <text x="218" y="778" fill="#34d399" font-size="10" font-weight="600">京ME 源 ● 运行中</text>
+  <text x="218" y="798" fill="#94a3b8" font-size="8">上次轮询 3s 前 · 游标 1337 · 无积压</text>
+  <text x="218" y="816" fill="#64748b" font-size="8">今日:放行 18 · gate 过滤 3 · 噪音丢弃 6 · 寒暄静默 4 · 直通 5</text>
+  <text x="218" y="834" fill="#475569" font-size="7.5">准入 explicit · 群白名单 未配置(放行全部)</text>
+  <text x="218" y="852" fill="#475569" font-size="7.5">[配置 →]</text>
+
+  <rect x="684" y="756" width="466" height="112" rx="10" fill="rgba(15,23,42,0.6)" stroke="#334155" stroke-width="1"/>
+  <text x="698" y="778" fill="#94a3b8" font-size="10" font-weight="600">行云端 ○ 未启用</text>
+  <text x="698" y="798" fill="#64748b" font-size="8">未配置 sprintId · 配置页 → 事件源 → 行云需求卡开启</text>
+  <text x="698" y="816" fill="#475569" font-size="7.5">cookie 依赖:~/.config/task-hud/cookie(检测:存在)</text>
+  <text x="698" y="834" fill="#475569" font-size="7.5">[去配置 →]</text>
+
+  <!-- ─── Section D:记忆构成 ─── -->
+  <rect x="204" y="884" width="946" height="84" rx="10" fill="rgba(76,29,149,0.15)" stroke="#a78bfa" stroke-width="1"/>
+  <text x="218" y="906" fill="#a78bfa" font-size="10" font-weight="600">记忆构成</text>
+  <text x="1136" y="906" fill="#475569" font-size="7.5" text-anchor="end">EverOS 已下线 · 长期记忆自建规划中</text>
+  <text x="218" y="928" fill="#cbd5e1" font-size="8.5">对话 468 条 · 工具轨迹 1203 · 线程 12 · 时间线 210 · 来源标记 87 · 审批 2 · 制品 24 · 任务 6</text>
+  <text x="218" y="946" fill="#475569" font-size="7.5">[清空记忆](破坏性:对话+执行痕迹+派生状态;保留团队/制品/凭证/配置)      [导出 trace JSON →]</text>
+
+  <!-- ═══ 右侧详情抽屉 ═══ -->
+  <line x1="1146" y1="306" x2="1180" y2="306" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrow-blue)"/>
+  <rect x="1180" y="64" width="356" height="920" rx="10" fill="#0f172a"/>
+  <rect x="1180" y="64" width="356" height="920" rx="10" fill="rgba(15,23,42,0.92)" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="1196" y="90" fill="#ffffff" font-size="12" font-weight="700">消息详情</text>
+  <text x="1516" y="90" fill="#64748b" font-size="12" text-anchor="end">×</text>
+  <text x="1196" y="110" fill="#64748b" font-size="8">msgId 405451996 · 京ME群「联调群」· Sir · 16:40:03</text>
+
+  <rect x="1196" y="122" width="324" height="56" rx="6" fill="rgba(30,41,59,0.5)" stroke="#334155" stroke-width="1"/>
+  <text x="1206" y="140" fill="#cbd5e1" font-size="8">"查一下目前在PRD 工作台创建 PRD,使用自定义</text>
+  <text x="1206" y="154" fill="#cbd5e1" font-size="8">SKILL 的链路,计划移除依赖 dongcli 下载 skill 的</text>
+  <text x="1206" y="168" fill="#cbd5e1" font-size="8">逻辑,改成 skill 内置在 chubaofs 固定目录…"</text>
+
+  <!-- 处理链 -->
+  <text x="1196" y="204" fill="#22d3ee" font-size="10" font-weight="600">处理链</text>
+  <line x1="1200" y1="216" x2="1200" y2="470" stroke="#22d3ee" stroke-width="1.5" opacity="0.5"/>
+  <circle cx="1200" cy="226" r="3.5" fill="#22d3ee"/>
+  <text x="1212" y="222" fill="#ffffff" font-size="8.5">收到 · gate <tspan fill="#34d399">explicit</tspan>(@机器人)</text>
+  <text x="1212" y="234" fill="#475569" font-size="7">basis=addressed · 准入表 explicit</text>
+  <circle cx="1200" cy="262" r="3.5" fill="#22d3ee"/>
+  <text x="1212" y="258" fill="#ffffff" font-size="8.5">Trigger 幂等 ✓(新消息)</text>
+  <text x="1212" y="270" fill="#475569" font-size="7">线程 jdsme:group:10236147834</text>
+  <circle cx="1200" cy="298" r="3.5" fill="#22d3ee"/>
+  <text x="1212" y="294" fill="#ffffff" font-size="8.5">订阅:无 → 走分诊</text>
+  <text x="1212" y="306" fill="#475569" font-size="7">群内无在跑任务订阅此线程</text>
+  <circle cx="1200" cy="334" r="3.5" fill="#22d3ee"/>
+  <text x="1212" y="330" fill="#ffffff" font-size="8.5">分诊:looksLikeRequest ✓</text>
+  <text x="1212" y="342" fill="#475569" font-size="7">确定性放行(跳过 LLM,0ms)</text>
+  <circle cx="1200" cy="370" r="3.5" fill="#22d3ee"/>
+  <text x="1212" y="366" fill="#ffffff" font-size="8.5">队列空 → 立即 think(未排队)</text>
+  <circle cx="1200" cy="398" r="3.5" fill="#22d3ee"/>
+  <text x="1212" y="394" fill="#ffffff" font-size="8.5">决策:create_task 2839a219</text>
+  <text x="1212" y="406" fill="#475569" font-size="7">接单门槛三事实 ✓ · 订阅来源群 ✓ · 授权边界标注 ✓</text>
+  <circle cx="1200" cy="434" r="3.5" fill="#22d3ee"/>
+  <text x="1212" y="430" fill="#ffffff" font-size="8.5">回复 → 京ME群「联调群」(21.3s)</text>
+  <text x="1212" y="442" fill="#475569" font-size="7">origin 已标记 · 前端徽章「京ME群·联调群」</text>
+  <circle cx="1200" cy="470" r="3.5" fill="#475569"/>
+  <text x="1212" y="466" fill="#64748b" font-size="8">未触发:直通 / handback / 审批 / 记忆检索(已下线)</text>
+
+  <!-- 上下文组装 -->
+  <text x="1196" y="500" fill="#a78bfa" font-size="10" font-weight="600">上下文组装 · 24,110 字符</text>
+  <text x="1196" y="514" fill="#475569" font-size="7">每个分区一条,宽度=字符数;实现期可点开看 100 字预览</text>
+  <text x="1196" y="534" fill="#cbd5e1" font-size="7.5">traces</text>
+  <rect x="1250" y="524" width="240" height="12" rx="3" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+  <text x="1496" y="534" fill="#94a3b8" font-size="7">11963</text>
+  <text x="1196" y="554" fill="#cbd5e1" font-size="7.5">skills</text>
+  <rect x="1250" y="544" width="122" height="12" rx="3" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+  <text x="1378" y="554" fill="#94a3b8" font-size="7">6052</text>
+  <text x="1196" y="574" fill="#cbd5e1" font-size="7.5">convo</text>
+  <rect x="1250" y="564" width="56" height="12" rx="3" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+  <text x="1312" y="574" fill="#94a3b8" font-size="7">2793</text>
+  <text x="1196" y="594" fill="#cbd5e1" font-size="7.5">router</text>
+  <rect x="1250" y="584" width="40" height="12" rx="3" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+  <text x="1296" y="594" fill="#94a3b8" font-size="7">1966</text>
+  <text x="1196" y="614" fill="#cbd5e1" font-size="7.5">authority</text>
+  <rect x="1250" y="604" width="35" height="12" rx="3" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+  <text x="1291" y="614" fill="#94a3b8" font-size="7">1718</text>
+  <text x="1196" y="634" fill="#cbd5e1" font-size="7.5">team</text>
+  <rect x="1250" y="624" width="6" height="12" rx="2" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+  <text x="1262" y="634" fill="#94a3b8" font-size="7">237</text>
+  <text x="1196" y="654" fill="#cbd5e1" font-size="7.5">msg(本次)</text>
+  <rect x="1250" y="644" width="3" height="12" rx="1.5" fill="rgba(59,130,246,0.5)" stroke="#60a5fa" stroke-width="1"/>
+  <text x="1259" y="654" fill="#94a3b8" font-size="7">111</text>
+  <text x="1196" y="674" fill="#cbd5e1" font-size="7.5">tasks</text>
+  <rect x="1250" y="664" width="2" height="12" rx="1" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="0.5"/>
+  <text x="1258" y="674" fill="#94a3b8" font-size="7">8</text>
+  <text x="1196" y="700" fill="#64748b" font-size="7.5">memories = 0(EverOS 已下线) · pinned = 0(未钉制品)</text>
+  <text x="1196" y="714" fill="#64748b" font-size="7.5">对比:桥接前同消息 27,612 字符(skills 全量 19k)→ 现 24,110</text>
+
+  <!-- 机制命中 -->
+  <text x="1196" y="742" fill="#34d399" font-size="10" font-weight="600">机制命中</text>
+  <rect x="1196" y="752" width="156" height="18" rx="9" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1"/>
+  <text x="1274" y="764" fill="#34d399" font-size="7.5" text-anchor="middle">✓ gate-explicit(@)</text>
+  <rect x="1358" y="752" width="156" height="18" rx="9" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1"/>
+  <text x="1436" y="764" fill="#34d399" font-size="7.5" text-anchor="middle">✓ Trigger 幂等</text>
+  <rect x="1196" y="774" width="156" height="18" rx="9" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1"/>
+  <text x="1274" y="786" fill="#34d399" font-size="7.5" text-anchor="middle">✓ 接单门槛(三事实)</text>
+  <rect x="1358" y="774" width="156" height="18" rx="9" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1"/>
+  <text x="1436" y="786" fill="#34d399" font-size="7.5" text-anchor="middle">✓ 订阅登记</text>
+  <rect x="1196" y="796" width="156" height="18" rx="9" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1"/>
+  <text x="1274" y="808" fill="#34d399" font-size="7.5" text-anchor="middle">✓ 京ME回信(自动)</text>
+  <rect x="1358" y="796" width="156" height="18" rx="9" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="1436" y="808" fill="#fb7185" font-size="7.5" text-anchor="middle">— 直通(无订阅,未触发)</text>
+  <rect x="1196" y="818" width="156" height="18" rx="9" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="1274" y="830" fill="#fb7185" font-size="7.5" text-anchor="middle">— handback(未触发)</text>
+  <rect x="1358" y="818" width="156" height="18" rx="9" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="1436" y="830" fill="#fb7185" font-size="7.5" text-anchor="middle">— 记忆检索(已下线)</text>
+
+  <rect x="1196" y="856" width="100" height="22" rx="6" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1"/>
+  <text x="1246" y="870" fill="#22d3ee" font-size="8" text-anchor="middle">查看回复</text>
+  <rect x="1304" y="856" width="150" height="22" rx="6" fill="rgba(30,41,59,0.5)" stroke="#334155" stroke-width="1"/>
+  <text x="1379" y="870" fill="#94a3b8" font-size="8" text-anchor="middle">关联任务 2839a219 →</text>
+  <rect x="1462" y="856" width="60" height="22" rx="6" fill="rgba(30,41,59,0.5)" stroke="#334155" stroke-width="1"/>
+  <text x="1492" y="870" fill="#94a3b8" font-size="8" text-anchor="middle">JSON</text>
+
+  <text x="1196" y="902" fill="#475569" font-size="7.5">数据源:kind=mtrace 文档表 · 每条消息一条 · 保留最近 300 条</text>
+  <text x="1196" y="916" fill="#475569" font-size="7.5">采集点:收到/gate → 幂等 → 订阅/分诊 → 排队 → think 上下文 → 决策 → 去向</text>
+  <text x="1196" y="930" fill="#475569" font-size="7.5">抽屉顶部可切:本条 / 同线程前后消息 / 同任务关联消息</text>
+
+  <!-- ═══ 图例 ═══ -->
+  <text x="24" y="1000" fill="#64748b" font-size="8">图例:</text>
+  <rect x="56" y="992" width="10" height="10" rx="2" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1"/><text x="72" y="1001" fill="#94a3b8" font-size="8">处理链/主工具</text>
+  <rect x="168" y="992" width="10" height="10" rx="2" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/><text x="184" y="1001" fill="#94a3b8" font-size="8">上下文/记忆</text>
+  <rect x="288" y="992" width="10" height="10" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1"/><text x="304" y="1001" fill="#94a3b8" font-size="8">队列/心跳/命中</text>
+  <rect x="424" y="992" width="10" height="10" rx="2" fill="rgba(136,19,55,0.4)" stroke="#fb7185" stroke-width="1"/><text x="440" y="1001" fill="#94a3b8" font-size="8">噪音/过滤/未触发</text>
+  <rect x="552" y="992" width="10" height="10" rx="2" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1"/><text x="568" y="1001" fill="#94a3b8" font-size="8">审批</text>
+  <rect x="624" y="992" width="10" height="10" rx="2" fill="rgba(59,130,246,0.3)" stroke="#60a5fa" stroke-width="1"/><text x="640" y="1001" fill="#94a3b8" font-size="8">选中/直通</text>
+  <text x="1536" y="1001" fill="#475569" font-size="8" text-anchor="end">jarvis · superagent-v2 运行面板原型 v1</text>
+</svg>

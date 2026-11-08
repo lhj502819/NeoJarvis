@@ -109,7 +109,7 @@ export function chatRoutes(): Router {
     try {
       cleared = await clearDocKinds(req.userId!, [
         'timeline', 'comms', 'message-origin', 'task-origin',
-        'thread', 'trigger', 'subscription', 'approval',
+        'thread', 'trigger', 'subscription', 'approval', 'mtrace',
       ])
     } catch (err) {
       console.error(`[memory/reset] 文档表派生状态清理失败: ${err instanceof Error ? err.message : err}`)

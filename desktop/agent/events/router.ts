@@ -8,6 +8,7 @@ import { jdsmeSink, initJdMeSource, getJdMeOwnerErp } from './sources/jdsme.js'
 import { createCronSource } from './sources/cron.js'
 import { broadcast } from '../jarvis/sse.js'
 import { deliverToTask, ensureThread, formatGroupMessage, groupThreadKey, listSubscribers, recordTrigger, threadWindow } from '../a2a/threads.js'
+import { addStage, bumpCounter, setOutcome, startTrace } from '../jarvis/message-trace.js'
 import { createXingyunSource, handleXingyunEvent } from './sources/xingyun.js'
 import type { EventSink, EventSourceDef } from './types.js'
 
@@ -41,15 +42,19 @@ async function handleEvent(ev: JarvisEvent): Promise<void> {
         const threadKey = groupThreadKey(payload.chatId)
         const fresh = await recordTrigger(ev.userId, threadKey, payload)
         if (!fresh) {
+          addStage(payload.msgId, 'Trigger 幂等:重复丢弃', { mech: 'dedup' })
+          setOutcome(payload.msgId, 'dropped-dup')
           console.log(`[events] 重复消息丢弃: ${payload.msgId}`)
           return
         }
+        addStage(payload.msgId, 'Trigger 登记 ✓', { detail: `线程 ${threadKey}`, mech: 'trigger-登记' })
         await ensureThread(ev.userId, threadKey, payload.chatName)
         const subscribers = await listSubscribers(ev.userId, threadKey)
         if (subscribers.length > 0) {
           const isOwner = !!getJdMeOwnerErp() && payload.sender === getJdMeOwnerErp()
           const senderLabel = isOwner ? 'Sir(唯一主人)' : payload.sender
           const shown = formatGroupMessage(payload, senderLabel)
+          addStage(payload.msgId, `订阅命中 ${subscribers.length} 个任务`, { mech: '订阅直通' })
           let deliveredTo = ''
           for (const taskId of subscribers) {
             const r = await deliverToTask(ev.userId, taskId, payload, {
@@ -59,17 +64,25 @@ async function handleEvent(ev: JarvisEvent): Promise<void> {
             if (r.delivered) deliveredTo += (deliveredTo ? ',' : '') + r.note
           }
           if (deliveredTo) {
+            addStage(payload.msgId, `直通 ${deliveredTo}`, { detail: shown.slice(0, 160), mech: '订阅直通' })
+            bumpCounter('direct-through')
+            setOutcome(payload.msgId, 'direct-through', { detail: deliveredTo })
             console.log(`[events] 群消息直通(${payload.msgId} → ${deliveredTo}),不进 brain`)
             return  // 订阅直通语义:人的消息直达小弟,不经 Eval/brain(dsh §3.2)
           }
           // 全部投递失败(无在跑小弟/不在线)→ 回落下方 Router 路径
+          addStage(payload.msgId, '订阅在但无在跑小弟,回落 Router')
           console.log('[events] 订阅存在但无在跑小弟,回落 Router')
         }
         const triage = await triageMessage(ev.userId, payload.text)
         if (triage.category === 'noise') {
+          addStage(payload.msgId, '分诊:噪音丢弃', { detail: triage.summary || payload.text.slice(0, 60), mech: 'LLM分诊' })
+          bumpCounter('noise-dropped')
+          setOutcome(payload.msgId, 'dropped-noise', { detail: triage.summary })
           console.log(`[events] 噪音丢弃: ${payload.chatId} "${payload.text.slice(0, 40)}"`)
           return
         }
+        addStage(payload.msgId, '分诊放行', { detail: '分诊判定为实质消息', mech: 'LLM分诊' })
       }
       // 走 Jarvis 完整 think():它按岗位纪律直接回话或 create_task;
       // 拿不准会反问——反问文本经 EventWriter 回到京ME,同时 web 聊天可见
@@ -98,7 +111,7 @@ async function handleEvent(ev: JarvisEvent): Promise<void> {
       enqueueBackgroundMessage(ev.userId, labeled, writer, {
         kind: payload.kind, chatId: payload.chatId, chatName: payload.chatName,
         sender: payload.sender, isOwner,
-      })
+      }, payload.msgId)
       break
     }
 

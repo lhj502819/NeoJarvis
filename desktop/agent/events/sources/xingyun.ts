@@ -10,6 +10,7 @@ import { jdmePlain, sendJdMe } from './jdsme.js'
 import { XingyunClient, type XingyunCard } from './xingyun-client.js'
 import type { EventSink, EventSourceDef, JarvisEvent } from '../types.js'
 import { createHash } from 'node:crypto'
+import { addStage, setOutcome, startTrace } from '../../jarvis/message-trace.js'
 
 /**
  * 行云需求源(superagent-v2 P5,docs/superagent-design-v2.md):
@@ -143,6 +144,8 @@ export async function closeTasksForCard(userId: string, cardId: string): Promise
 
 let stopped = false
 let ownerId = 'system'
+let lastPollAt = 0
+let startedFlag = false
 
 async function resolveOwner(): Promise<void> {
   try {
@@ -173,9 +176,11 @@ export function createXingyunSource(): EventSourceDef {
         }
         let state = await loadState()
         console.log(`[xingyun] 事件源已启动:sprint=${cfg.sprintId},审批=${cfg.approval},轮询=${cfg.pollMin}分钟`)
+        startedFlag = true
         while (!stopped) {
           try {
             const cards = await client.listSprintCards(cfg.sprintId)
+            lastPollAt = Date.now()
             for (const card of cards) {
               const sig = cardSignature(card)
               const prev = state.seenCards[card.id]
@@ -218,11 +223,15 @@ export async function handleXingyunEvent(ev: JarvisEvent): Promise<void> {
   const userId = ev.userId
   if (ev.type === 'xingyun_card') {
     const { card, approval, policyVersion } = ev.payload as { card: XingyunCard; approval: 'auto' | 'approval'; policyVersion: string }
+    const tid = `xy-${card.id}`
+    startTrace(userId, tid, { channel: 'xingyun', sender: card.creatorName || card.creatorErp, textPreview: card.title })
+    addStage(tid, '收到 · 行云需求卡(卡片即授权)', { detail: `policy ${policyVersion}`, mech: approval === 'auto' ? '审批-auto' : '审批' })
     if (approval === 'auto') {
       await dispatchCardTask(userId, {
         cardId: card.id, title: card.title, url: card.url, creator: card.creatorName || card.creatorErp,
       }, `行云卡 ${card.cardCode || card.id},policy ${policyVersion}`)
       console.log(`[xingyun] 需求卡直派(auto): ${card.title}`)
+      setOutcome(tid, 'dispatched', { detail: '卡片即授权直派' })
       return
     }
     const rec = await createApproval(userId, {
@@ -230,6 +239,7 @@ export async function handleXingyunEvent(ev: JarvisEvent): Promise<void> {
       creator: card.creatorName || card.creatorErp, policyVersion,
     })
     void rec
+    addStage(tid, '进审批队列,等待 Sir 处理', { detail: `审批单 ${rec.id}` })
     const note = `【待审批】行云需求卡「${card.title}」\n创建人:${rec.creator}\n审批单:${rec.id}(policy ${policyVersion})\n回复"批准 ${rec.id}"开始执行,或在配置页→事件源→审批队列处理。`
     broadcast('user_message', JSON.stringify({ text: note }), userId, 'event-reply')
     console.log(`[xingyun] 需求卡进审批队列: ${card.title}(${rec.id})`)
@@ -254,6 +264,11 @@ export async function handleXingyunEvent(ev: JarvisEvent): Promise<void> {
       await docPut(userId, 'approval', ap.id, { ...ap, status: 'rejected', decidedAt: Date.now(), note: '需求卡已关闭' })
     }
   }
+}
+
+/** 运行信息(事件源心跳) */
+export function getXingyunRuntimeInfo(): { running: boolean; lastPollAt: number } {
+  return { running: startedFlag && !stopped, lastPollAt }
 }
 
 export const xingyunSink: EventSink = {
