@@ -151,5 +151,8 @@ worker 读边界 redact 补全（跨任务/决策不可见）；`conversation` �
   13 个 server 直通会注入 100+ 工具 schema(每请求 ~15k token 常驻)。
   实测:stdio 型 5 个代理激活(context7 对真实服务完成发现调用);**sse/http 型待批次二**
   (~/.claude.json 里 japi-api-docs/one_knowledge 等 JD 网关 majority)。
-- **【待办·下一个】队列面板**(Dashboard 侧栏,MonitorPanel 同级):①运行中任务 + 排队的后台消息(orchestrator 暴露 GET /api/queue);②待审批前 3 条(复用 /api/approvals);③事件源心跳(上次轮询/游标/放行与过滤计数,记 source-instance 或 health 文档)。用户已确认要做,排在功能验证之后。
+- **运行面板已上线**(41146cd,原型 diagram/jarvis-runtime-panel/):工作台"运行"入口。
+  消息处理流水(mtrace 文档表,300 条滚动,7 采集点)+ 详情(处理链/上下文组装条形/机制命中 ✓—)+
+  队列/审批/事件源心跳(计数器)/记忆构成。web 消息同链;采集永不阻塞主流程。
+- **【待办】队列面板**(Dashboard 侧栏,MonitorPanel 同级):①运行中任务 + 排队的后台消息(orchestrator 暴露 GET /api/queue);②待审批前 3 条(复用 /api/approvals);③事件源心跳(上次轮询/游标/放行与过滤计数,记 source-instance 或 health 文档)。用户已确认要做,排在功能验证之后。
 - 行云轮询默认关闭(enabled+sprintId 需在配置页→事件源里开启);审批模式默认 approval。
