@@ -23,6 +23,7 @@ import {
   saveAgentProfile,
 } from '../agent-profile.js'
 import { SOURCE_KINDS, getSourceKind, getJdmeInstance, saveJdmeInstance } from '../../events/sources/registry.js'
+import { getXingyunInstance, saveXingyunInstance } from '../../events/sources/xingyun.js'
 
 /**
  * 配置界面 API(docs/superagent-design.md §persona 配置层)。
@@ -97,6 +98,7 @@ export function configRoutes(): Router {
     const instances: Record<string, unknown> = {}
     for (const k of SOURCE_KINDS) {
       if (k.id === 'jdsme') instances[k.id] = await getJdmeInstance(req.userId!)
+      if (k.id === 'xingyun') instances[k.id] = await getXingyunInstance(req.userId!)
     }
     res.json({ ok: true, kinds: SOURCE_KINDS, instances })
   })
@@ -111,6 +113,11 @@ export function configRoutes(): Router {
     }
     if (req.params.id === 'jdsme') {
       const saved = await saveJdmeInstance(req.userId!, patch)
+      res.json({ ok: true, instance: saved })
+      return
+    }
+    if (req.params.id === 'xingyun') {
+      const saved = await saveXingyunInstance(req.userId!, patch)
       res.json({ ok: true, instance: saved })
       return
     }

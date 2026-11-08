@@ -24,6 +24,7 @@ import { dashboardRoutes } from './routes/dashboard.js'
 import { agentRoutes } from './routes/agent.js'
 import { configRoutes } from './routes/config.js'
 import { timelineRoutes } from './routes/timeline.js'
+import { approvalRoutes } from './routes/approvals.js'
 import { initPersonaCache } from './persona.js'
 import './lifecycle.js'
 
@@ -133,6 +134,7 @@ export function startJarvisServer(): express.Express {
   app.use(agentRoutes())
   app.use(configRoutes())
   app.use(timelineRoutes())
+  app.use(approvalRoutes())
 
   // persona 配置缓存:监听前加载(旧文件导入 + 文档表读取),watchdog/events 起来前就绪(P4)
   const ready = initPersonaCache().catch(err => console.error('[persona] 缓存初始化失败:', err))

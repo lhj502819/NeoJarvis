@@ -57,6 +57,21 @@ export const SOURCE_KINDS: SourceKindSpec[] = [
       { key: 'groups', label: '群白名单', type: 'string[]', description: '群号列表,空 = 放行全部群' },
     ],
   },
+  {
+    id: 'xingyun',
+    title: '行云需求卡',
+    description: '迭代工作项进 Jarvis:新卡片即需求,卡片关闭自动收尾任务。需本机有 task-hud 的行云 cookie(~/.config/task-hud/cookie)。',
+    fields: [
+      { key: 'enabled', label: '启用', type: 'boolean', description: '关闭后不再轮询行云' },
+      { key: 'sprintId', label: '迭代 ID', type: 'string', description: '行云迭代 ID(行云 URL 里的 sprintId,或 task-hud 迭代列表);留空 = 源不启动' },
+      {
+        key: 'approval', label: '接单模式', type: 'enum',
+        options: ['approval', 'auto'],
+        description: 'approval=每张新卡需 Sir 审批后才执行(默认);auto=行云卡片即授权,直接派工',
+      },
+      { key: 'pollMin', label: '轮询间隔(分钟)', type: 'string', description: '默认 5 分钟' },
+    ],
+  },
 ]
 
 export function getSourceKind(id: string): SourceKindSpec | undefined {

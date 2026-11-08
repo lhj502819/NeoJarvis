@@ -23,6 +23,8 @@ export type TaskOrigin = {
   sender?: string
   /** 发件人是否为配置的主人(Sir),router 比对 ownerErp 后写入 */
   isOwner?: boolean
+  /** 回报信道:xingyun = 需求卡来源,复盘不回京ME(P5) */
+  channel?: 'jdsme' | 'xingyun'
 }
 
 /** 旧 JSON 侧车一次性导入:首次按用户读空时执行,导入后旧文件改名 .migrated 留档。 */

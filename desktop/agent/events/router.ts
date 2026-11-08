@@ -8,6 +8,7 @@ import { jdsmeSink, initJdMeSource, getJdMeOwnerErp } from './sources/jdsme.js'
 import { createCronSource } from './sources/cron.js'
 import { broadcast } from '../jarvis/sse.js'
 import { deliverToTask, ensureThread, formatGroupMessage, groupThreadKey, listSubscribers, recordTrigger, threadWindow } from '../a2a/threads.js'
+import { createXingyunSource, handleXingyunEvent } from './sources/xingyun.js'
 import type { EventSink, EventSourceDef } from './types.js'
 
 /**
@@ -101,6 +102,13 @@ async function handleEvent(ev: JarvisEvent): Promise<void> {
       break
     }
 
+    case 'xingyun_card':
+    case 'xingyun_card_closed': {
+      // 行云需求卡(P5 车道A):卡片即 Mandate —— auto 直派 / approval 进队列 / closed 收尾
+      await handleXingyunEvent(ev)
+      break
+    }
+
     default:
       console.log(`[events] 未处理事件类型: ${ev.type}(${ev.source})`)
   }
@@ -112,6 +120,11 @@ export async function startEventSystem(): Promise<void> {
     defs.push(await initJdMeSource())
   } catch (err) {
     console.error('[events] 京ME源初始化失败:', err instanceof Error ? err.message : err)
+  }
+  try {
+    defs.push(createXingyunSource())
+  } catch (err) {
+    console.error('[events] 行云端初始化失败:', err instanceof Error ? err.message : err)
   }
 
   const ctx = {

@@ -69,11 +69,20 @@ export async function ensureThread(userId: string, threadKey: string, label: str
   if (!existing) await docPut(userId, 'thread', threadKey, { label, createdAt: Date.now() })
 }
 
-/** 建任务即订阅来源群(仅群聊;私聊保持 brain 介达)。 */
+/** 建任务即订阅来源(P5):京ME群 → 群线程;行云需求卡 → 卡片线程。私聊不订阅。 */
 export async function subscribeTask(userId: string, taskId: string, origin: TaskOrigin): Promise<void> {
-  if (origin.kind !== 'group') return
-  const threadKey = groupThreadKey(origin.chatId)
-  await ensureThread(userId, threadKey, origin.chatName)
+  let threadKey: string
+  let label: string
+  if (origin.channel === 'xingyun') {
+    threadKey = `xingyun:card:${origin.chatId}`
+    label = origin.chatName
+  } else if (origin.kind === 'group') {
+    threadKey = groupThreadKey(origin.chatId)
+    label = origin.chatName
+  } else {
+    return
+  }
+  await ensureThread(userId, threadKey, label)
   await docPut(userId, 'subscription', `${threadKey}:${taskId}`, {
     threadKey, taskId, kind: 'origin', chatId: origin.chatId, chatName: origin.chatName, createdAt: Date.now(),
   })

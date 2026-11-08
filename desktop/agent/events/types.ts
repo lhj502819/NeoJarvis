@@ -5,7 +5,7 @@
  * 都归一成这个形状再进 router,router 不感知来源细节。
  */
 
-export type EventSourceId = 'cron' | 'jdsme'
+export type EventSourceId = 'cron' | 'jdsme' | 'xingyun'
 
 export interface JarvisEvent {
   id: string

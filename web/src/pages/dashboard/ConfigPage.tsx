@@ -801,6 +801,7 @@ function SourcesSection({
       {kinds.map(kind => (
         <SourceCard key={kind.id} kind={kind} initial={instances[kind.id] ?? {}} onSaved={onSaved} />
       ))}
+      <ApprovalQueue onSaved={onSaved} />
       {kinds.length === 0 && <div className="cfg-card cfg-block">暂无可用事件源。</div>}
     </>
   )
@@ -886,6 +887,80 @@ function SourceCard({
       <div className="cfg-actions">
         <button className="j-btn j-btn-primary" onClick={save}>保存</button>
       </div>
+    </div>
+  )
+}
+
+interface ApprovalRecord {
+  id: string
+  kind: string
+  cardId: string
+  title: string
+  url: string
+  creator: string
+  status: 'pending' | 'approved' | 'rejected'
+  at: number
+  decidedAt?: number
+  note?: string
+  policyVersion: string
+}
+
+function ApprovalQueue({ onSaved }: { onSaved: (msg: string) => void }) {
+  const [approvals, setApprovals] = useState<ApprovalRecord[]>([])
+  const [busy, setBusy] = useState('')
+
+  const load = () => {
+    fetchJSON<{ approvals: ApprovalRecord[] }>('/api/approvals').then(r => setApprovals(r.approvals ?? [])).catch(() => {})
+  }
+  useEffect(load, [])
+
+  const decide = async (id: string, action: 'approve' | 'reject') => {
+    setBusy(id)
+    try {
+      await postJSON(`/api/approvals/${encodeURIComponent(id)}/decide`, { action })
+      onSaved(action === 'approve' ? `已批准 ${id},任务开始派发` : `已驳回 ${id}`)
+      load()
+    } catch {
+      onSaved('审批操作失败')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const pending = approvals.filter(a => a.status === 'pending')
+  const decided = approvals.filter(a => a.status !== 'pending').slice(0, 8)
+
+  return (
+    <div className="cfg-card cfg-block">
+      <div className="cfg-section">
+        审批队列
+        <span className="cfg-hint">需 Sir 授权的工作单元(行云需求卡等)。批准即以审批单为授权依据派工。</span>
+        <span className="cfg-badge" data-on={pending.length > 0}>{pending.length} 待审批</span>
+      </div>
+      {pending.length === 0 && <div className="cfg-hint">队列为空。</div>}
+      {pending.map(a => (
+        <div key={a.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', margin: '8px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 600, fontSize: 13 }}>{a.title}</span>
+            <span className="cfg-hint">{a.id} · {a.creator} · policy {a.policyVersion}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            {a.url && <a className="j-btn j-btn-ghost" href={a.url} target="_blank" rel="noreferrer">查看需求卡</a>}
+            <button className="j-btn j-btn-primary" disabled={busy === a.id} onClick={() => decide(a.id, 'approve')}>批准</button>
+            <button className="j-btn j-btn-ghost" disabled={busy === a.id} onClick={() => decide(a.id, 'reject')}>驳回</button>
+          </div>
+        </div>
+      ))}
+      {decided.length > 0 && (
+        <>
+          <div className="cfg-section" style={{ marginTop: 12 }}>最近已处理</div>
+          {decided.map(a => (
+            <div key={a.id} className="cfg-hint" style={{ margin: '4px 0' }}>
+              {a.status === 'approved' ? '✓' : '✗'} {a.title}({a.id}){a.note ? ` — ${a.note}` : ''}
+            </div>
+          ))}
+        </>
+      )}
     </div>
   )
 }
