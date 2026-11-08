@@ -1,5 +1,4 @@
 import { redactSecrets } from '../shared/redact.js'
-import { addMemory } from '../memory/everos.js'
 import { serverGet, serverPost } from '../shared/server-client.js'
 import type { ChatImage } from '../shared/types.js'
 
@@ -64,19 +63,8 @@ export async function getRecentConversation(userId: string): Promise<string> {
     .join('\n')
 }
 
-export async function saveConversation(userId: string, userMessage: string, jarvisResponse: string) {
-  // Unchanged from the old data layer: this function never touched PostgreSQL — it only pushes the
-  // exchange to EverOS long-term memory. Both messages are already persisted to the DB via the
-  // addToBuffer → /api/conversation/messages calls in orchestrator.ts (user) and brain.ts (jarvis),
-  // so we deliberately do NOT also POST /api/conversation here — that endpoint writes the pair to
-  // the DB and would duplicate those two messages.
-  const sessionId = `jarvis-${userId}`
-  const now = Date.now()
-  addMemory(userId, sessionId, [
-    { role: 'user', timestamp: now, content: redactSecrets(userMessage) },
-    { role: 'assistant', timestamp: now + 100, content: redactSecrets(jarvisResponse) },
-  ]).catch(() => {})
-}
+// 长期记忆(自建,规划中):原 saveConversation 只是把对话双写进 EverOS,EverOS 移除后无操作。
+// 消息本身的持久化在 addToBuffer → Java/PG,不经过这里。
 
 export async function saveArtifact(userId: string, artifact: { type: string; title: string; content: string; language?: string }, taskId?: string): Promise<string> {
   // POST /api/artifacts → { id } (server assigns the id + created_at + version default).

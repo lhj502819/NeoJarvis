@@ -1,7 +1,7 @@
 import { createTask, updateTask, addSubTask, getTask, getTaskSummary, listTasks, updateSubTask, getActiveTasks, cleanupStaleTasks } from '../task/manager.js'
 import { scheduleAllRunnable, handleSubTaskComplete, handleSubTaskFailed, checkTaskCompletion } from '../task/scheduler.js'
 import { listRecipes, getRecipe, incrementUsage } from '../team/registry.js'
-import { dispatchToAgent, interruptAgent, takeWrittenFiles } from '../a2a/client.js'
+import { dispatchToAgent, interruptAgent, sendToAgent, takeWrittenFiles } from '../a2a/client.js'
 import { listAdhocAgents } from '../a2a/adhoc.js'
 import { registerRunningTask, unregisterRunningTask, getRunningSubtasksForTask, updateRunningTaskProgress } from '../a2a/registry.js'
 import { bus } from '../a2a/bus.js'
@@ -16,6 +16,10 @@ import { onShutdown } from './lifecycle.js'
 import { readFileSync, statSync } from 'fs'
 import { extname, basename } from 'path'
 import type { PendingArtifact } from './tools.js'
+import { appendComms } from './timeline-store.js'
+import { getTaskOrigin, clearTaskOrigin } from './task-origin.js'
+import { sendJdMe } from '../events/sources/jdsme.js'
+import type { Task } from '../shared/types.js'
 
 // 成品文件扩展名 → 预览类型。只挑"可展示的成品",不含中间代码文件。
 const PREVIEW_EXT: Record<string, PendingArtifact['type']> = {
@@ -72,11 +76,45 @@ async function buildPromoteNote(
 
   const list = ready.map(a => `「${a.domain}」(已干 ${a.taskCount} 次)`).join('、')
   return `\n\n【主动推荐转正】本次涉及的 ${list} 领域,临时工已累计达转正线。` +
-    `请在汇报末尾自然地顺带向 Sir 推荐把他转正为正式小弟 —— 按 promote-agent skill 的做法,` +
+    `请在汇报末尾自然地顺带向 Sir 推荐把他转正为正式小弟 —— 按 promote_agent 工具描述执行,` +
     `简短说明理由 + 给他起个拟人昵称和 emoji,让 Sir 一句话决定。别生硬,像同事间顺口提一嘴。`
 }
 
 const taskAbortControllers: Map<string, AbortController> = new Map()
+
+/** 把主任务背景拼进小弟的输入；子任务描述里已包含主描述时不重复。 */
+export function buildDispatchDescription(parentDescription: string | undefined, subtaskDescription: string): string {
+  const parent = parentDescription?.trim() ?? ''
+  const capped = parent.length > 12_000
+    ? `${parent.slice(0, 12_000)}\n\n[...主任务描述已截断]`
+    : parent
+  return capped && !subtaskDescription.includes(capped)
+    ? `## 主任务背景（来自 Jarvis）\n${capped}\n\n## 你负责的子任务\n${subtaskDescription}`
+    : subtaskDescription
+}
+
+/**
+ * 解析 create_task 的 dependsOn：支持前置子任务名或 1-based 序号。
+ * 只能依赖已经创建过的子任务；解析不了的返回给调用方广播警告。
+ */
+export function resolveSubtaskDependsOn(
+  deps: string[] | undefined,
+  idByKey: Map<string, string>,
+  createdIds: string[],
+): { ids: string[]; unresolved: string[] } {
+  const ids: string[] = []
+  const unresolved: string[] = []
+  for (const raw of deps ?? []) {
+    const key = String(raw ?? '').trim()
+    if (!key) continue
+    const byName = idByKey.get(key)
+    const byIndex = /^\d+$/.test(key) ? createdIds[Number(key) - 1] : undefined
+    const dep = byName || byIndex
+    if (dep) ids.push(dep)
+    else unresolved.push(key)
+  }
+  return { ids: [...new Set(ids)], unresolved }
+}
 
 export function abortTask(taskId: string) {
   // 取消不走小弟的正常完成流程,得主动收尾两件事,否则前端和 DB 都留残影:
@@ -152,6 +190,10 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
 
   registerRunningTask(userId, taskId, subtaskId, agentId, description, recipe ? 'permanent' : 'adhoc', recipe?.name || assignee)
   const startedAtMs = Date.now()
+  // 小弟只拿到子任务描述；把主任务描述一起注入，避免子任务里写“见主任务描述”但小弟看不到。
+  // 这是 9b72d37a 暴露的问题：业务边界/仓库清单只存在主任务描述里，小弟实际收不到。
+  const parentTask = await getTask(userId, taskId)
+  const dispatchDescription = buildDispatchDescription(parentTask?.description, description)
   // 启动即广播一条 running 事件,让前端监控卡立刻出现 —— 否则第一条 subtask 事件要等
   // onProgress(小弟首个 assistant 消息)才发,而 extended thinking 的首 token 常要几十秒到
   // 几分钟,导致卡片迟迟不弹、非刷新不可见。MonitorPanel 按 subtaskId 合并,后续 onProgress
@@ -166,7 +208,7 @@ async function executeSubTask(userId: string, taskId: string, subtaskId: string,
     startedAt: startedAtMs,
   })), userId)
   try {
-    const result = await dispatchToAgent(assignee, description, {
+    const result = await dispatchToAgent(assignee, dispatchDescription, {
       userId,
       taskId,
       subtaskId,
@@ -226,6 +268,19 @@ export async function finalizeAndReport(userId: string, taskId: string): Promise
     ? `\n\n【已自动预览】团队产出的成品「${autoArtifact.title}」已推送到右侧预览面板,汇报时可以自然提一句"已在右侧预览"。`
     : ''
 
+  // 任务收尾检查：小弟是否还有未读的中途修正。有就必须在汇报里说明，
+  // 不能让 Sir 以为所有指令都执行了（9b72d37a 的 one-workbench 修正就是这样丢的）。
+  const unreadCorrections = finalTask.subtasks.flatMap(st => {
+    const messages = [...bus.peekInbox(st.id), ...bus.peekOfflineInbox(st.id)]
+    return messages.map(m => {
+      const text = m.parts.find(p => p.kind === 'text')?.text ?? ''
+      return `${st.name}: ${text.slice(0, 300)}`
+    })
+  })
+  const unreadNote = unreadCorrections.length > 0
+    ? `\n\n【未读修正】以下子任务完成时仍有未读消息，可能没有被执行。汇报时必须明确告诉 Sir，不要包装成已完成：\n${unreadCorrections.map(t => `- ${t}`).join('\n')}`
+    : ''
+
   // 主动推荐转正:本次任务涉及的领域里,若有临时工累计达线(≥3 次且未转正),
   // 把推荐指令拼进汇报 prompt —— Jarvis 汇报完顺口提一句,不用 Sir 开口问。
   // 只看本任务干过的 domain(刚干完活、顺势推荐的自然时机),不翻无关历史候选。
@@ -239,15 +294,26 @@ export async function finalizeAndReport(userId: string, taskId: string): Promise
     ? `- 如实说明哪些环节没成、卡在哪,别粉饰;能补救就给下一步建议\n`
     : ''
 
-  const reportPrompt = `你是 Jarvis，一个有幽默感的私人管家。称呼用户为 Sir。\n` +
+  let reportPrompt = `你是 Jarvis，一个有幽默感的私人管家。称呼用户为 Sir。\n` +
     `${intro}\n\n${finalTask.result}\n\n` +
     `请向 Sir 汇报结果。要求：\n` +
     `- 直接输出汇报内容，不要输出 JSON\n` +
-    `- 保留关键信息，去掉冗余\n` +
+    `- 短!先一句结论(办成了/没办成+卡在哪),再最多 3-5 行关键细节;超过就砍,细节等 Sir 问\n` +
+    `- 不用列表/表格/小标题堆结构,两三句自然段说完\n` +
     extraReq +
-    `- 用清晰的结构（列表、表格都行）\n` +
-    `- 语气像管家汇报，不是写文档\n` +
-    `- 太长就给精华摘要，说一句"详细版随时可以展开"${previewNote}${promoteNote}`
+    `- 语气像管家顺口一提,不是写文档;俏皮话至多一句\n` +
+    `- Sir 想要细节会自己追问,到时再展开${previewNote}${unreadNote}${promoteNote}`
+
+  // 京ME 同步短讯:这个任务若是从京ME 群/私聊派来的,完成情况要同步回那个聊天。
+  // 同一次 LLM 调用顺带产出(标记分隔,解析出来),失败不影响主汇报。
+  const origin = await getTaskOrigin(taskId).catch(() => null)
+  if (origin) {
+    reportPrompt += `\n\n【额外任务】这个任务是从京ME ${origin.kind === 'group' ? `群「${origin.chatName}」` : `私聊「${origin.chatName}」`}里派下来的，群里的人还在等结果。` +
+      `请在汇报正文之后，另起一行输出分隔标记 =====JDME===== ，然后写一条直接发到该${origin.kind === 'group' ? '群' : '私聊'}的同步短讯：\n` +
+      `- 3 行以内,说清:办没办成 + 关键结果一句话\n` +
+      `- 不要 markdown 符号(群里显示不了),不要"详细版"字样,细节等对方追问\n` +
+      `- 如果任务失败,如实说卡在哪,给下一步一句话建议`
+  }
 
   // 汇报的 LLM 调用套超时 + 可中断。背景:任务结算瞬间常有多个 claude 并发 spawn(小弟结尾的
   // message_jarvis 回复 + 这条汇报),实测出现过汇报 rawLlmCall 起了头就永不返回、日志冻结数小时。
@@ -272,8 +338,42 @@ export async function finalizeAndReport(userId: string, taskId: string): Promise
   // 兜底:LLM 空/失败也必定有内容发出。退回 finalTask.result(已聚合各子任务产出,Fix A 保证非空),
   // 并点明"自动汇报生成失败" —— 宁可给原始结果,也绝不静默。
   const report = summary.trim()
-    || `Sir，任务「${finalTask.name}」已${failed ? '结束（部分环节未成）' : '完成'}。自动汇报这步没生成出来，先把团队交回的原始结果原样给您：\n\n${finalTask.result}`
+    || `Sir，任务「${finalTask.name}」已${failed ? '结束（部分环节未成）' : '完成'}。自动汇报这步没生成出来，先把团队交回的原始结果原样给您：\n\n${finalTask.result}${unreadNote}`
   console.log(`[perf] report done, task=${taskId} llm=${summary.trim() ? 'ok' : 'fallback'} len=${report.length}`)
+
+  // 解析京ME 同步短讯(=====JDME===== 之后的段落),发回来源聊天。
+  // 短讯里若又出现分隔标记(模型复读),取第一段;没有标记或为空就跳过,不硬凑。
+  if (origin && report.includes('=====JDME=====')) {
+    const [mainReport, ...rest] = report.split('=====JDME=====')
+    const jdmeNote = rest.join('').split('=====JDME=====')[0].trim()
+    if (jdmeNote) {
+      try {
+        const ok = await sendJdMe(origin.kind, origin.chatId, `【${failed ? '任务未成' : '任务完成'}】「${finalTask.name}」\n${jdmeNote}`)
+        console.log(`[perf] report jdme-sync task=${taskId} → ${ok ? `已同步到${origin.kind === 'group' ? '群' : '私聊'}「${origin.chatName}」` : '京ME未启用,跳过'}`)
+      } catch (err) {
+        console.log(`[perf] report jdme-sync task=${taskId} 发送失败: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    // 网页汇报只留正文,不展示内部短讯
+    if (rest.length > 0) {
+      await deliverReport(userId, taskId, finalTask, failed, mainReport.trim(), autoArtifact)
+      await clearTaskOrigin(taskId).catch(() => {})
+      return
+    }
+  }
+  await deliverReport(userId, taskId, finalTask, failed, report, autoArtifact)
+  if (origin) await clearTaskOrigin(taskId).catch(() => {})
+}
+
+/** 汇报落库 + SSE(原 finalizeAndReport 尾段抽出;artifact 逻辑不变)。 */
+async function deliverReport(
+  userId: string,
+  taskId: string,
+  finalTask: Task,
+  failed: boolean,
+  report: string,
+  autoArtifact: PendingArtifact | null,
+): Promise<void> {
 
   // 落库是唯一持久化路径(broadcast 仅 SSE、页面不在就丢)。整段保护:任一步抛也要保证 addToBuffer 执行到,
   // 只要走进 finalizeAndReport,聊天里必有一条 jarvis 汇报。
@@ -339,7 +439,7 @@ export async function recoverInterruptedTasks(userId: string): Promise<void> {
   }
 }
 
-export function executeTaskInBackground(userId: string, taskId: string, subtasks: Array<{ name: string; description: string; assignee?: string; resumeSubtaskId?: string; domain?: string; cwd?: string; skills?: string[] }>) {
+export function executeTaskInBackground(userId: string, taskId: string, subtasks: Array<{ name: string; description: string; assignee?: string; resumeSubtaskId?: string; domain?: string; cwd?: string; skills?: string[]; dependsOn?: string[] }>) {
   ;(async () => {
     const task = await getTask(userId, taskId)
     if (!task) return
@@ -351,7 +451,11 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
     const domainMap = new Map<string, string>()
     const cwdMap = new Map<string, string>()
     const skillsMap = new Map<string, string[]>()
-    for (const st of subtasks) {
+    // dependsOn 解析：支持「前置子任务名」或「1-based 序号」；只能依赖前面已创建的子任务。
+    const createdIds: string[] = []
+    const idByKey = new Map<string, string>()
+    for (let index = 0; index < subtasks.length; index++) {
+      const st = subtasks[index]
       const assignee = st.assignee || 'general'
       // 防线:Jarvis 可能幻觉出不存在的 cwd(如错误用户名 /Users/hh/...)。
       // 校验后不存在的路径丢弃,广播提示,避免 spawn ENOENT 被 SDK 误包装成 libc 错误。
@@ -359,7 +463,23 @@ export function executeTaskInBackground(userId: string, taskId: string, subtasks
       if (st.cwd && !safeCwd) {
         broadcast('progress', `⚠️ 忽略无效 cwd "${st.cwd}"(路径不存在),小弟改到用户工作区执行`, userId)
       }
-      const sub = await addSubTask(userId, taskId, { name: st.name, description: st.description, assignee, domain: st.domain, cwd: safeCwd })
+
+      const depResult = resolveSubtaskDependsOn(st.dependsOn, idByKey, createdIds)
+      for (const key of depResult.unresolved) {
+        broadcast('progress', `⚠️ 子任务「${st.name}」依赖「${key}」无法解析(只能依赖前面的子任务),已忽略`, userId)
+      }
+
+      const sub = await addSubTask(userId, taskId, {
+        name: st.name,
+        description: st.description,
+        assignee,
+        domain: st.domain,
+        cwd: safeCwd,
+        dependsOn: depResult.ids.length ? depResult.ids : undefined,
+      })
+      idByKey.set(st.name, sub.id)
+      idByKey.set(String(index + 1), sub.id)
+      createdIds.push(sub.id)
       if (st.resumeSubtaskId) {
         resumeMap.set(sub.id, st.resumeSubtaskId)
       }
@@ -513,14 +633,19 @@ export async function dispatchAction(
 
     case 'send_message': {
       const { subtaskId, message: msg } = action.data as { subtaskId: string; message: string }
-      // 无论 agent 是否在线,都持久化消息(前端可展示、agent 恢复时可读)
-      bus.notify(userId, 'jarvis', subtaskId, subtaskId, msg)
-      if (bus.isRegistered(subtaskId)) {
-        response = `已把消息发给 agent (${subtaskId.slice(0, 6)})：「${msg.slice(0, 40)}」`
-      } else {
-        response = `消息已记录(agent 当前不在线,下次恢复时可读)：「${msg.slice(0, 40)}」`
-      }
-      broadcast('progress', `💬 Jarvis → Agent: ${msg.slice(0, 40)}`, userId)
+      // 优先即时注入；不在线才落离线收件箱。两条路都记录消息（前端可展示）。
+      const delivered = await sendToAgent(subtaskId, msg)
+      if (delivered) await bus.record(userId, 'jarvis', subtaskId, subtaskId, msg)
+      else await bus.notify(userId, 'jarvis', subtaskId, subtaskId, msg)
+      // 对话流 UI:Jarvis → 小弟 的沟通,结构化广播(前端渲染成沟通卡片)+ 沟通日志落盘
+      broadcast('jarvis_msg', JSON.stringify({
+        to: subtaskId,
+        content: msg.slice(0, 600),
+      }), userId, 'event-reply')
+      appendComms(userId, { at: Date.now(), dir: 'to_worker', agentName: subtaskId, type: 'jarvis', content: msg.slice(0, 600) })
+      response = delivered
+        ? `已即时送达 agent (${subtaskId.slice(0, 6)})：「${msg.slice(0, 40)}」`
+        : `agent 当前不在线，消息已放入离线收件箱，下次恢复 / check_inbox 时可读：「${msg.slice(0, 40)}」`
       break
     }
 

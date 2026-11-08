@@ -24,7 +24,7 @@ describe('MessageBus inbox/drain 语义（Jarvis → 小弟 中途注入）', ()
 
   beforeEach(() => {
     posted.length = 0
-    bus.unregister(AGENT)
+    bus.clear(AGENT)
   })
 
   it('notify 把消息放进已注册 agent 的 inbox（进得去，不丢）', async () => {
@@ -73,14 +73,26 @@ describe('MessageBus inbox/drain 语义（Jarvis → 小弟 中途注入）', ()
     expect(drained.length).toBe(3)
   })
 
-  it('未注册（已完成/未运行）的 agent：isRegistered=false，notify 不进 inbox', async () => {
-    // 不 register —— 模拟小弟已完成被 unregister
+  it('未注册的 agent：notify 进离线收件箱，register 后回灌', async () => {
+    // 不 register —— 模拟小弟暂时不在线 / 尚未启动
     expect(bus.isRegistered(AGENT)).toBe(false)
 
-    await bus.notify(U, 'jarvis', AGENT, AGENT, '发给已完成的小弟')
+    await bus.notify(U, 'jarvis', AGENT, AGENT, '发给离线小弟')
 
-    // 没有 AgentNode，消息无处可放（send_message 分支会因 isRegistered=false 直接报"发送失败"）
     expect(bus.peekInbox(AGENT).length).toBe(0)
+    expect(bus.peekOfflineInbox(AGENT).length).toBe(1)
+
+    // 小弟启动/恢复后注册，离线消息回灌到在线 inbox，check_inbox 可读
+    bus.register(AGENT, 'TestAgent', async () => null)
+    const drained = bus.drainInbox(AGENT)
+    expect(drained.map(m => m.parts[0].text)).toEqual(['发给离线小弟'])
+  })
+
+  it('record 只落库、不投递（避免 steer 后 check_inbox 重复读）', async () => {
+    bus.register(AGENT, 'TestAgent', async () => null)
+    await bus.record(U, 'jarvis', AGENT, AGENT, '已经 steer 过的消息')
+    expect(bus.peekInbox(AGENT).length).toBe(0)
+    expect(posted.length).toBe(1)
   })
 
   it('小弟主动 send → 同步拿到 Jarvis handler 的回复（实时双向）', async () => {

@@ -4,6 +4,8 @@ import { addSSEClient } from '../sse.js'
 import { getChatImage } from '../conversation.js'
 import { serverGet, serverPost } from '../../shared/server-client.js'
 import { listAllRunningTasks } from '../../a2a/registry.js'
+import { getOriginsFor } from '../message-origin.js'
+import type { TaskOrigin } from '../task-origin.js'
 
 /** Java 404 (NotFoundException) — server-client throws with the status in the message. */
 function isNotFound(err: unknown): boolean {
@@ -81,7 +83,12 @@ export function chatRoutes(): Router {
     // Java GET /api/conversation returns the latest session's messages oldest-first, already
     // shaped as { role, content, timestamp, artifact?, imageIds? } — the exact response the
     // old inline PG query produced, so this is a straight pass-through.
-    res.json(await serverGet(req.userId!, '/api/conversation'))
+    const turns = await serverGet<Array<Record<string, unknown>>>(req.userId!, '/api/conversation')
+    // 京ME来源标记富化:落盘的 message-origins 按 messageId 挂回(失败降级为不带标记,
+    // 历史展示不受影响)。有标记的消息前端渲染京ME图标。
+    let origins: Record<string, TaskOrigin> = {}
+    try { origins = await getOriginsFor(req.userId!) } catch { /* 标记读不到就不标 */ }
+    res.json(turns.map(t => ({ ...t, origin: origins[String(t.id)] })))
   })
 
   // 清空记忆:真删后端对话 + 执行痕迹(保留团队小弟/制品/凭证/配置)。破坏性、不可逆。

@@ -59,13 +59,29 @@ interface AgentNode {
 
 class MessageBus {
   private agents = new Map<string, AgentNode>()
+  /** 目标不在线时的离线收件箱；register 时回灌，避免“下次恢复可读”变成空话。 */
+  private offlineInbox = new Map<string, A2AMessage[]>()
 
   register(id: string, name: string, handler: MessageHandler): void {
-    this.agents.set(id, { id, name, handler, inbox: [] })
+    const pending = this.offlineInbox.get(id) ?? []
+    this.offlineInbox.delete(id)
+    this.agents.set(id, { id, name, handler, inbox: [...pending] })
   }
 
   unregister(id: string): void {
+    const node = this.agents.get(id)
+    // 会话结束时把未读消息退回离线收件箱：同一子任务若再次注册（重试/恢复）仍能读到。
+    if (node && node.inbox.length > 0) {
+      const pending = this.offlineInbox.get(id) ?? []
+      this.offlineInbox.set(id, [...node.inbox, ...pending])
+    }
     this.agents.delete(id)
+  }
+
+  /** 清空某个 agent 的在线/离线收件箱（测试隔离用）。 */
+  clear(id: string): void {
+    this.agents.delete(id)
+    this.offlineInbox.delete(id)
   }
 
   isRegistered(id: string): boolean {
@@ -97,7 +113,19 @@ class MessageBus {
     const target = this.agents.get(to)
     if (target) {
       target.inbox.push(msg)
+    } else {
+      const pending = this.offlineInbox.get(to) ?? []
+      pending.push(msg)
+      this.offlineInbox.set(to, pending)
     }
+  }
+
+  // 只落库、不投递：消息已经通过 sendToAgent 即时注入时用它记录历史，
+  // 避免 worker 在 steer 收到后又从 check_inbox 里读到同一条。
+  async record(userId: string, from: string, to: string, contextId: string, content: string, metadata?: Record<string, unknown>): Promise<A2AMessage> {
+    const msg = this.buildMessage(from, to, contextId, content, metadata)
+    await this.recordMessage(userId, msg)
+    return msg
   }
 
   async broadcast(userId: string, from: string, contextId: string, content: string): Promise<void> {
@@ -121,6 +149,22 @@ class MessageBus {
 
   peekInbox(agentId: string): A2AMessage[] {
     return this.agents.get(agentId)?.inbox || []
+  }
+
+  peekOfflineInbox(agentId: string): A2AMessage[] {
+    return this.offlineInbox.get(agentId) || []
+  }
+
+  /** 取出并清空离线收件箱：小弟启动时把这些补充指令直接拼进初始 prompt。 */
+  drainOfflineInbox(agentId: string): A2AMessage[] {
+    const messages = this.offlineInbox.get(agentId) ?? []
+    this.offlineInbox.delete(agentId)
+    return messages
+  }
+
+  /** 在线 inbox + 离线队列的总未读数，任务收尾时用来发现“还有修正没被读”。 */
+  pendingCount(agentId: string): number {
+    return (this.agents.get(agentId)?.inbox.length || 0) + (this.offlineInbox.get(agentId)?.length || 0)
   }
 
   // ─── History ───

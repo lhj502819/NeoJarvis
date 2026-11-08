@@ -1,5 +1,8 @@
-const EVEROS_BASE = 'https://api.evermind.ai/api/v1'
-const EVEROS_API_KEY = process.env.EVEROS_API_KEY || 'd66c8be1-7f5c-400e-ab37-beba229bf028'
+// 自托管 EverOS(开源版 1.5.1,Apache-2.0):本地 Memory API v2。
+// 启动:~/.everos-venv/bin/everos server start --root ~/.everos(健康检查 /health)。
+// 托管云(api.evermind.ai)的 v1 路径在自托管版不存在,这里统一走 v2 契约;
+// 记忆的用户作用域由 messages[].sender_id 决定(= jarvis userId,按用户隔离)。
+const EVEROS_BASE = process.env.EVEROS_BASE || 'http://127.0.0.1:8000/api/v2/memory'
 
 interface MemoryMessage {
   role: 'user' | 'assistant'
@@ -17,7 +20,6 @@ async function everosFetch(path: string, body: Record<string, unknown>): Promise
   const res = await fetch(`${EVEROS_BASE}${path}`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${EVEROS_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
@@ -30,12 +32,10 @@ async function everosFetch(path: string, body: Record<string, unknown>): Promise
 }
 
 export async function addMemory(userId: string, sessionId: string, messages: MemoryMessage[]): Promise<void> {
-  if (!EVEROS_API_KEY) return
-
-  await everosFetch('/memories', {
-    user_id: userId,
+  await everosFetch('/add', {
     session_id: sessionId,
     messages: messages.map(m => ({
+      sender_id: userId,   // v2:用户作用域由 sender_id 决定
       role: m.role,
       timestamp: m.timestamp,
       content: m.content,
@@ -44,20 +44,15 @@ export async function addMemory(userId: string, sessionId: string, messages: Mem
 }
 
 export async function flushMemory(userId: string, sessionId: string): Promise<void> {
-  if (!EVEROS_API_KEY) return
-
-  await everosFetch('/memories/flush', {
-    user_id: userId,
+  await everosFetch('/flush', {
     session_id: sessionId,
   })
 }
 
 export async function searchMemory(userId: string, query: string, topK = 5): Promise<string> {
-  if (!EVEROS_API_KEY) return ''
-
   try {
-    const result = await everosFetch('/memories/search', {
-      filters: { user_id: userId },
+    const result = await everosFetch('/search', {
+      user_id: userId,
       query,
       method: 'hybrid',
       top_k: topK,
@@ -77,30 +72,4 @@ export async function searchMemory(userId: string, query: string, topK = 5): Pro
   } catch {
     return ''
   }
-}
-
-export async function getMemories(userId: string): Promise<string> {
-  if (!EVEROS_API_KEY) return ''
-
-  try {
-    const result = await everosFetch('/memories/get', {
-      filters: { user_id: userId },
-      memory_type: 'episodic_memory',
-    }) as { data?: { episodes?: Array<{ episode?: string }> } }
-
-    const episodes = result.data?.episodes
-    if (!episodes || episodes.length === 0) return ''
-
-    return episodes
-      .slice(0, 10)
-      .map(ep => ep.episode || '')
-      .filter(Boolean)
-      .join('\n')
-  } catch {
-    return ''
-  }
-}
-
-export function isMemoryConfigured(): boolean {
-  return !!EVEROS_API_KEY
 }

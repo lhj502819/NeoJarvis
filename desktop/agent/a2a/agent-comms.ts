@@ -3,6 +3,7 @@ import { Type } from 'typebox'
 import { bus } from './bus.js'
 import { getPeerAgents } from './registry.js'
 import { broadcast } from '../jarvis/sse.js'
+import { appendComms } from '../jarvis/timeline-store.js'
 
 /**
  * 小弟之间的沟通工具集(Jarvis 之外,A2A agent 互相 + 向 Jarvis 汇报)。
@@ -18,13 +19,6 @@ import { broadcast } from '../jarvis/sse.js'
  *   - list_peers     : 列出当前任务的并行协作 agent
  */
 export function createAgentCommsTools(subtaskId: string, taskId: string, userId: string, agentName: string): ToolDefinition[] {
-  const typeLabel: Record<string, string> = {
-    progress: '进展',
-    question: '请示',
-    deliverable: '交付',
-    blocked: '受阻',
-  }
-
   return [
     defineTool({
       name: 'message_jarvis',
@@ -39,12 +33,21 @@ export function createAgentCommsTools(subtaskId: string, taskId: string, userId:
         ),
       }),
       execute: async (_toolCallId, params) => {
-        // 把小弟主动发的消息推到前端，让用户看到中途的回执/进展/请示/交付
-        const label = typeLabel[params.type] || params.type
-        broadcast('progress', `💬 ${agentName}[${label}]：${params.content.slice(0, 120)}`, userId)
+        // 对话流 UI:小弟 → Jarvis 的沟通,结构化广播(前端渲染成沟通卡片)+ 沟通日志落盘
+        broadcast('worker_msg', JSON.stringify({
+          subtaskId, taskId, agentName,
+          type: params.type,
+          content: params.content.slice(0, 600),
+        }), userId, 'event-reply')
+        appendComms(userId, { at: Date.now(), dir: 'to_jarvis', agentName, type: params.type, content: params.content.slice(0, 600) })
 
         const reply = await bus.send(userId, subtaskId, 'jarvis', taskId, `[${params.type}] ${params.content}`, { type: params.type })
         const replyText = reply?.parts.find(p => p.kind === 'text')?.text || '（Jarvis 暂无回复，继续执行）'
+        // Jarvis → 小弟 的决策:同样落盘 + 广播(这里才有真实 userId)
+        broadcast('jarvis_msg', JSON.stringify({
+          to: subtaskId, agentName, content: replyText.slice(0, 600),
+        }), userId, 'event-reply')
+        appendComms(userId, { at: Date.now(), dir: 'to_worker', agentName, type: 'jarvis', content: replyText.slice(0, 600) })
         return { content: [{ type: 'text', text: replyText }], details: {} }
       },
     }),

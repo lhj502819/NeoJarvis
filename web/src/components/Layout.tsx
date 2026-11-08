@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
-import { useChat, useSSE } from '../api/hooks'
+import { useChat, useSSE, parseSubtaskEvent } from '../api/hooks'
 import { checkAuth, logout, type AuthUser } from '../api/auth'
 import { ChatPanel, type Artifact } from './ChatPanel'
 import { MonitorPanel } from './MonitorPanel'
@@ -10,11 +10,12 @@ import { TeamPage } from '../pages/dashboard/TeamPage'
 import { ArtifactsPage } from '../pages/dashboard/ArtifactsPage'
 import { SkillsPage } from '../pages/dashboard/SkillsPage'
 import { McpPage } from '../pages/dashboard/McpPage'
+import { ConfigPage } from '../pages/dashboard/ConfigPage'
 import { CredentialsModal } from './CredentialsModal'
 import '../pages/dashboard/dashboard.css'
 import './Layout.css'
 
-type View = 'chat' | 'tasks' | 'team' | 'artifacts' | 'skills' | 'mcp'
+type View = 'chat' | 'tasks' | 'team' | 'artifacts' | 'skills' | 'mcp' | 'config'
 
 /* ── Codex 式 16px 线性图标(stroke 跟随 currentColor)── */
 const Icon = {
@@ -79,6 +80,7 @@ const WORKBENCH_ITEMS: Array<{ view: View; label: string; icon: ReactNode }> = [
   { view: 'team', label: '团队', icon: <Icon.folder /> },
   { view: 'artifacts', label: '制品库', icon: <Icon.folder /> },
   { view: 'skills', label: '技能', icon: <Icon.folder /> },
+  { view: 'config', label: '配置', icon: <Icon.gear /> },
 ]
 
 export default function Layout() {
@@ -203,8 +205,9 @@ function MainArea({ view, user, newTaskSignal }: { view: View; user: AuthUser; n
   const lastSeqRef = useRef(0)
   const [modal, setModal] = useState<{ taskId: string; subtaskId: string } | null>(null)
   const [pinnedArtifact, setPinnedArtifact] = useState<Artifact | null>(null)
-  // 执行监控抽屉(Codex 无常驻右栏;顶栏开关唤出,功能不变)
+  // 执行监控抽屉(Codex 式抽屉;有小弟跑起来自动唤起,手动关闭后同任务不反复弹)
   const [monitorOpen, setMonitorOpen] = useState(false)
+  const knownRunningRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     if (newTaskSignal > 0) clear()
@@ -216,6 +219,15 @@ function MainArea({ view, user, newTaskSignal }: { view: View; user: AuthUser; n
       const seq = evt._seq ?? 0
       if (seq <= lastSeqRef.current) continue
       lastSeqRef.current = seq
+
+      // 新子任务进入 running → 自动展开监控抽屉(京ME/后台派活也生效)
+      if (evt.type === 'subtask') {
+        const p = parseSubtaskEvent(evt.content)
+        if (p?.status === 'running' && !knownRunningRef.current.has(p.subtaskId)) {
+          knownRunningRef.current.add(p.subtaskId)
+          setMonitorOpen(true)
+        }
+      }
 
       if (evt.type === 'artifact_pinned') {
         try {
@@ -258,6 +270,7 @@ function MainArea({ view, user, newTaskSignal }: { view: View; user: AuthUser; n
         {view === 'artifacts' && <div className="main-page-wrap"><ArtifactsPage /></div>}
         {view === 'skills' && <div className="main-page-wrap"><SkillsPage /></div>}
         {view === 'mcp' && <div className="main-page-wrap"><McpPage /></div>}
+        {view === 'config' && <div className="main-page-wrap"><ConfigPage /></div>}
       </div>
       {view !== 'tasks' && monitorOpen && <MonitorPanel onOpen={(taskId, subtaskId) => setModal({ taskId, subtaskId })} />}
       {modal && <ExecutionModal taskId={modal.taskId} subtaskId={modal.subtaskId} onClose={() => setModal(null)} />}

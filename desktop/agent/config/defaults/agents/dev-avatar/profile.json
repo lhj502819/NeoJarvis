@@ -1,0 +1,121 @@
+{
+  "name": "dev-avatar",
+  "enabled": true,
+  "title": "研发个人分身 · PRD / TRD 方向",
+  "subtitle": "定义 Jarvis 把哪些活派给谁；小弟拿到的是同一套边界与红线。",
+  "source": "builtin",
+  "domains": [
+    "PRD",
+    "TRD",
+    "PRD开发",
+    "TRD开发",
+    "PRD评审",
+    "one-workbench"
+  ],
+  "modules": [
+    {
+      "id": "m1",
+      "capability": "PRD AI 生成",
+      "app": "one-decision",
+      "repo": "git@coding.jd.com:one/one-decision.git",
+      "entry": "web/prd/controller/PrdController",
+      "triggers": [
+        "PRD 生成",
+        "写 PRD",
+        "补 PRD"
+      ],
+      "domain": "PRD开发"
+    },
+    {
+      "id": "m2",
+      "capability": "PRD 评审",
+      "app": "one-decision",
+      "repo": "git@coding.jd.com:one/one-decision.git",
+      "entry": "web/prdreview/controller/PrdReviewController",
+      "triggers": [
+        "PRD 评审",
+        "看下 PRD"
+      ],
+      "domain": "PRD评审"
+    },
+    {
+      "id": "m3",
+      "capability": "推演节点 PRD 关联",
+      "app": "one-decision",
+      "repo": "git@coding.jd.com:one/one-decision.git",
+      "entry": "web/prd/controller/RequirementNodePrdLinkController",
+      "triggers": [
+        "推演节点",
+        "PRD 关联",
+        "挂 PRD"
+      ],
+      "domain": "PRD开发"
+    },
+    {
+      "id": "m4",
+      "capability": "TRD 生成 / 改 TRD",
+      "app": "one-skill",
+      "repo": "git@coding.jd.com:one/one-skill.git",
+      "entry": "dong-cli/skills/DongOne/dong-one-trd/SKILL.md",
+      "triggers": [
+        "TRD 生成",
+        "改 TRD",
+        "补 TRD"
+      ],
+      "domain": "TRD开发"
+    },
+    {
+      "id": "m5",
+      "capability": "TRD 后端",
+      "app": "one-decision",
+      "repo": "git@coding.jd.com:one/one-decision.git",
+      "entry": "web/trd/ · web/trdreview/ · web/trdlink/",
+      "triggers": [
+        "TRD 接口",
+        "TRD 后端",
+        "TRD 联调"
+      ],
+      "domain": "TRD开发"
+    },
+    {
+      "id": "m6",
+      "capability": "TRD 前端",
+      "app": "uniops-ui",
+      "repo": "git@coding.jd.com:uniops-platform/uniops-ui.git",
+      "entry": "packages/platform/src/views/Trd/",
+      "triggers": [
+        "TRD 页面",
+        "TRD 前端"
+      ],
+      "domain": "TRD开发"
+    },
+    {
+      "id": "m7",
+      "capability": "下游依赖（JSF）",
+      "app": "uniops-server",
+      "repo": "git@coding.jd.com:uniops-platform/uniops-server.git",
+      "entry": "按接口名在 src/main/java 下搜索",
+      "triggers": [
+        "JSF",
+        "下游接口",
+        "依赖服务"
+      ],
+      "domain": "PRD开发"
+    },
+    {
+      "id": "m8",
+      "capability": "one 工作台前端（PRD 创建入口 / 推演侧前端）",
+      "app": "one-workbench",
+      "repo": "git@coding.jd.com:one/one-workbench.git",
+      "entry": "src/features/prd-write/ · src/features/decision/pages/inference/prd-review/",
+      "triggers": [
+        "one 工作台",
+        "工作台前端",
+        "/prd 页面",
+        "PRD 页面",
+        "推演前端"
+      ],
+      "domain": "PRD开发"
+    }
+  ]
+}

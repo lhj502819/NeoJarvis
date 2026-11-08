@@ -1,0 +1,21 @@
+{
+  "watchdog": {
+    "intervalMin": 5,
+    "idleMin": 10,
+    "maxMin": 30,
+    "retryFailCount": 2
+  },
+  "quietHours": {
+    "startHour": 23,
+    "endHour": 8
+  },
+  "proactive": {
+    "hourlyCap": 3
+  },
+  "morningReport": {
+    "at": "09:00"
+  },
+  "events": {
+    "jdsmeGroups": []
+  }
+}

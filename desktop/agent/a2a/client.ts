@@ -1,4 +1,4 @@
-import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager, getAgentDir, type ToolDefinition, type AgentSession } from '@earendil-works/pi-coding-agent'
+import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager, getAgentDir, loadSkillsFromDir, type ToolDefinition, type AgentSession, type Skill } from '@earendil-works/pi-coding-agent'
 import { getModelRuntime, getJarvisModel } from '../shared/pi-models.js'
 import { getPeerAgents } from './registry.js'
 import { getRecipe } from '../team/registry.js'
@@ -11,7 +11,8 @@ import { getUserWorkspace } from '../shared/user-workspace.js'
 import { buildUserMcpServers } from '../shared/user-mcp.js'
 import { createAgentCommsTools } from './agent-comms.js'
 import { getSubtaskHistoryForPrompt } from './subtask-history-context.js'
-import { getDisabledSkills, getEnabledHubSkills } from '../jarvis/skill-prefs.js'
+import { getDisabledSkills } from '../jarvis/skill-prefs.js'
+import { DEFAULT_AGENT_NAME, isAgentRelevant, materializeAgentSkill, renderWorkerConstraints } from '../jarvis/agent-profile.js'
 import {
   recordToolTrace,
   flattenResultText,
@@ -184,7 +185,7 @@ message_peer 发出去不用等,继续干;对方回了,下一轮 check_inbox 看
 - 和其他小弟说话,你们是并肩干活的搭子,可以随意点、有点性子:该催就催,该吐槽就吐槽,该夸就夸。别端着。
 - 有情绪、有判断就带出来:"这需求有点怪""我觉得这样更顺""这个我拿不准"。别把自己写成没有温度的执行器。
 - 这只是**说话的语气**;干活的专业、严谨、结果该怎样还怎样,不打折。`
-  const systemPrompt = (recipe?.systemPrompt || adhocPrompt) + talkLikeHuman
+  const baseSystemPrompt = recipe?.systemPrompt || adhocPrompt
   // Pi 内置工具名是小写:read/bash/edit/write/grep/find/ls。recipe.tools 存的是 Claude 大写名。
   // 映射:大写 → 小写;未知工具名原样透传(Pi 会忽略不存在的)。
   const toolNameMap: Record<string, string> = {
@@ -218,8 +219,26 @@ message_peer 发出去不用等,继续干;对方回了,下一轮 check_inbox 看
   if (reuseSubtaskId && reuseSubtaskId !== subtaskId) {
     const history = await getSubtaskHistoryForPrompt(userId, reuseSubtaskId).catch(() => '')
     if (history) {
+      // 上次的工作现场提示:小弟常在用户工作区自建目录(如 prd-xxx-0212/仓库)。
+      // traces 里有 mkdir/git clone 的 args,但没有这句引导,小弟倾向重新 clone 一份(真实事故)。
+      // 工作区根目录大概率还在,先提醒复用、不存在再新建。
       enrichedDescription += `\n\n${history}`
+      enrichedDescription += `\n\n【接续提醒】上次任务的工作目录很可能还在用户工作区下(见上面记忆里的 mkdir/git clone 路径)。` +
+        `开工先 ls 确认它是否还在:在,直接进那个目录接着干(代码/分支/改动都还在);不在,再重新 clone。不要默认重新 clone。`
       debug('history injected from subtask', reuseSubtaskId.slice(0, 8), `(${history.length} chars)`)
+    }
+  }
+
+  // 启动前已进入离线收件箱的补充指令：直接拼进初始 prompt，别等小弟主动 check_inbox。
+  const pendingAtStart = bus.drainOfflineInbox(subtaskId)
+  if (pendingAtStart.length > 0) {
+    const extra = pendingAtStart
+      .map(m => m.parts.find(p => p.kind === 'text')?.text || '')
+      .filter(Boolean)
+      .join('\n\n')
+    if (extra) {
+      enrichedDescription += `\n\n## 启动前收到的补充指令\n${extra}`
+      debug('offline inbox injected:', pendingAtStart.length, 'messages')
     }
   }
 
@@ -232,7 +251,21 @@ message_peer 发出去不用等,继续干;对方回了,下一轮 check_inbox 看
   const disabledSkills = await getDisabledSkills(userId)
   const explicit = [...new Set([...(recipe?.skills || []), ...(context?.skills || [])])]
     .filter(name => !disabledSkills.has(name))
-  const agentSkills = explicit.length ? explicit : await getEnabledHubSkills(userId)
+
+  // 动态组合小弟 system prompt（方案 A）：
+  //   基础身份（recipe / adhoc）+ 当前业务分工的硬约束 + 说人话段。
+  // 长流程 / wiki 走 materializeAgentSkill() 生成的 SKILL.md，不塞进 system prompt。
+  const relevant = isAgentRelevant({
+    domain,
+    recipeDomain: typeof recipe?.context?.domain === 'string' ? recipe.context.domain : '',
+    description: taskDescription,
+    skills: explicit,
+    agentName,
+  })
+  const agentSkillDir = relevant ? materializeAgentSkill(DEFAULT_AGENT_NAME) : null
+  const systemPrompt = baseSystemPrompt
+    + (relevant ? `\n\n${renderWorkerConstraints(DEFAULT_AGENT_NAME)}` : '')
+    + talkLikeHuman
 
   const MAX_RETRIES = 2
   const RETRY_DELAYS = [3000, 8000]
@@ -291,6 +324,20 @@ message_peer 发出去不用等,继续干;对方回了,下一轮 check_inbox 看
       cwd: workDir,
       agentDir: getAgentDir(),
       systemPromptOverride: () => systemPrompt,
+      // 相关任务：用配置页当前生效的 SKILL.md 替换全局同名 skill，保证改配置立即生效。
+      // 不相关任务：保持全局 skill 原样。
+      skillsOverride: agentSkillDir
+        ? (base) => {
+            let ours: Skill[] = []
+            try {
+              ours = loadSkillsFromDir({ dir: agentSkillDir, source: 'user' }).skills
+            } catch { /* 物化失败就退回全局 skill */ }
+            return {
+              skills: [...base.skills.filter(s => s.name !== DEFAULT_AGENT_NAME), ...ours],
+              diagnostics: base.diagnostics,
+            }
+          }
+        : undefined,
     })
     await loader.reload()
 

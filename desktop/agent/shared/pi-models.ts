@@ -107,8 +107,11 @@ function syncBridgeModels(): string | null {
 
   // .env 指定了模型 → 网关只注册这一个;否则按 claude 标准别名注册(代理自行映射)
   const local = localOverrideModel()
+  // 本地网关模型默认按多模态注册（DeepSeek-V4.1-Flash-A 支持图像）。
+  // 若某个网关只支持文本，可设 JARVIS_LLM_VISION=0 关闭，避免发送图像块。
+  const vision = process.env.JARVIS_LLM_VISION !== '0'
   const models: Array<{ id: string; name: string; contextWindow: number; maxTokens: number; input: string[] }> = local
-    ? [{ id: local, name: local, contextWindow: 128000, maxTokens: 16384, input: ['text'] }]
+    ? [{ id: local, name: local, contextWindow: 128000, maxTokens: 16384, input: vision ? ['text', 'image'] : ['text'] }]
     : [
         { id: 'claude-sonnet-4-5', name: 'Sonnet (bridge)', contextWindow: 200000, maxTokens: 16384, input: ['text', 'image'] },
         { id: 'claude-opus-4-6', name: 'Opus (bridge)', contextWindow: 200000, maxTokens: 16384, input: ['text', 'image'] },

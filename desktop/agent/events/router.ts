@@ -4,7 +4,7 @@ import { pushProactiveMessage } from '../jarvis/proactive.js'
 import { generateMorningReport } from './reports.js'
 import { createEventWriter } from './writer.js'
 import { triageMessage } from './triage.js'
-import { jdsmeSink, initJdMeSource } from './sources/jdsme.js'
+import { jdsmeSink, initJdMeSource, getJdMeOwnerErp } from './sources/jdsme.js'
 import { createCronSource } from './sources/cron.js'
 import type { EventSink, EventSourceDef } from './types.js'
 
@@ -41,8 +41,18 @@ async function handleEvent(ev: JarvisEvent): Promise<void> {
       // 走 Jarvis 完整 think():它按岗位纪律直接回话或 create_task;
       // 拿不准会反问——反问文本经 EventWriter 回到京ME,同时 web 聊天可见
       const writer = createEventWriter(ev.userId, ev, sinks)
-      const labeled = `【京ME ${payload.kind === 'group' ? '群' : '私聊'}「${payload.chatName}」· ${payload.sender}】\n${payload.text}`
-      enqueueBackgroundMessage(ev.userId, labeled, writer)
+      // 身份标注(权限纪律用):京ME 消息的 sender 与配置的 ownerErp 比对,
+      // 结果作为可信标注写进消息前缀 —— 模型不靠自称判身份。
+      const isOwner = !!getJdMeOwnerErp() && payload.sender === getJdMeOwnerErp()
+      const who = isOwner ? 'Sir(唯一主人)' : `其他人(${payload.sender},非主人)`
+      const labeled = `【京ME ${payload.kind === 'group' ? '群' : '私聊'}「${payload.chatName}」· ${who}】\n${payload.text}\n\n(此消息来自京ME${payload.kind === 'group' ? '群聊' : '私聊'},发消息的是${who}。回复会送回该聊天,请按京ME 信道习惯说话——短平快,两三句说完,不用 markdown,先结论后细节。按「权限与拒绝纪律」判定此人可以要求什么。)`
+      // 登记对话来源:本次 think 期间 Jarvis create_task 时会把它挂到任务上,
+      // 任务完成后的复盘汇报会同步回这个群/私聊。来源随消息入队、开跑时生效、
+      // 收尾时清空 —— 排队期间不会串台。
+      enqueueBackgroundMessage(ev.userId, labeled, writer, {
+        kind: payload.kind, chatId: payload.chatId, chatName: payload.chatName,
+        sender: payload.sender, isOwner,
+      })
       break
     }
 

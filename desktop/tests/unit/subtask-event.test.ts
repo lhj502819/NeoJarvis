@@ -5,13 +5,13 @@ describe('buildSubtaskEvent', () => {
   it('running 事件带 turnCount 与 currentTool', () => {
     const evt = buildSubtaskEvent({
       subtaskId: 'st-1', taskId: 't-1',
-      agentName: '差旅出行专家', taskName: '清迈攻略',
+      agentName: '差旅出行专家', agentType: 'adhoc', taskName: '清迈攻略',
       status: 'running', turnCount: 14,
       currentAction: '正在核对交通费用', currentTool: 'semble',
     })
     expect(evt).toEqual({
       subtaskId: 'st-1', taskId: 't-1',
-      agentName: '差旅出行专家', taskName: '清迈攻略',
+      agentName: '差旅出行专家', agentType: 'adhoc', taskName: '清迈攻略',
       status: 'running', turnCount: 14,
       currentAction: '正在核对交通费用', currentTool: 'semble',
     })

@@ -1,6 +1,8 @@
 import { think, addToBuffer } from './brain.js'
 import { saveChatImages } from './conversation.js'
 import { broadcast } from './sse.js'
+import { setCurrentOrigin, type TaskOrigin } from './task-origin.js'
+import { setMessageOrigin } from './message-origin.js'
 import type { ChatImage } from '../shared/types.js'
 
 const BUFFER_WINDOW_MS = 1500
@@ -109,22 +111,32 @@ export async function enqueueMessage(userId: string, text: string, writer: SSEWr
 // ─── 后台事件入队(事件驱动,docs/superagent-design.md §3)───
 // 事件(晨报/京ME 消息)走 Jarvis 的完整 think(),但**绝不打断** Sir 正在进行的对话:
 // idle → 直接开跑;否则排队,等当前思考结束(resetSession)后自动续跑。
-const pendingBackground = new Map<string, Array<{ text: string; writer: SSEWriter }>>()
+// origin:事件来源聊天(京ME 群/私聊)。开跑时 setCurrentOrigin,think 期间
+// create_task 读它登记任务来源;收尾清空。web 路径不传。
+const pendingBackground = new Map<string, Array<{ text: string; writer: SSEWriter; origin?: TaskOrigin }>>()
 
-export function enqueueBackgroundMessage(userId: string, text: string, writer: SSEWriter): void {
+export function enqueueBackgroundMessage(userId: string, text: string, writer: SSEWriter, origin?: TaskOrigin): void {
   const session = getSession(userId)
   if (session.state === 'idle') {
     console.log(`[orchestrator] background flush(now): "${text.slice(0, 40)}"`)
-    startBackgroundThink(userId, session, text, writer)
+    startBackgroundThink(userId, session, text, writer, origin)
     return
   }
   const q = pendingBackground.get(userId) ?? []
-  q.push({ text, writer })
+  q.push({ text, writer, origin })
   pendingBackground.set(userId, q)
   console.log(`[orchestrator] background queued(${q.length}): "${text.slice(0, 40)}"`)
 }
 
-function startBackgroundThink(userId: string, session: UserSession, text: string, writer: SSEWriter): void {
+/** 该用户是否有后台消息在排队或正在 think(事件路径用于决定何时清 currentOrigin)。 */
+export function hasQueuedOrRunningBackground(userId: string): boolean {
+  const q = pendingBackground.get(userId)
+  if (q && q.length > 0) return true
+  const session = sessions.get(userId)
+  return !!session && session.state === 'thinking'
+}
+
+function startBackgroundThink(userId: string, session: UserSession, text: string, writer: SSEWriter, origin?: TaskOrigin): void {
   // 借用 thinking 状态机;writer 是事件侧虚拟 writer,无 /chat 连接语义
   session.state = 'thinking'
   session.writers.push(writer)
@@ -132,23 +144,32 @@ function startBackgroundThink(userId: string, session: UserSession, text: string
 
   const emit = (type: string, content: string) => {
     if (!writer.closed) writer.send(type, content)
+    // web 聊天实时刷新:事件触发的往来以 source='event-reply' 广播到 /events,
+    // 前端按独立气泡处理(isBackgroundReport 集合),不与当前对话的流式气泡纠缠
+    if (type === 'user_message' || type === 'response' || type === 'thought_delta' || type === 'tool_use' || type === 'tool_done') {
+      broadcast(type, content, userId, 'event-reply')
+    }
   }
-  emit('thinking', '正在思考...')
 
   const run = async () => {
+    setCurrentOrigin(origin ?? null)
     try {
+      emit('user_message', JSON.stringify({ text, origin: origin ?? undefined }))  // 让 Sir 在聊天里看到这条京ME来件(origin 供前端渲染京ME图标)
       // 落库 user 消息(事件来源文本,带【来源】标签)→ think()
-      await addToBuffer(userId, 'user', text)
+      // 来源随消息登记落盘:刷新后 /api/conversation 富化,历史气泡仍显示京ME图标
+      const userMsgId = await addToBuffer(userId, 'user', text)
+      if (origin) await setMessageOrigin(userId, userMsgId, origin)
       const result = await think(userId, text, (progress) => emit('progress', progress), (delta) => {
         session.liveContent += delta
         emit('delta', delta)
-      })
+      }, undefined, undefined, { onEvent: emit })
       session.liveContent = result.response
       emit('response', result.response)
       if (result.artifact) emit('artifact', JSON.stringify(result.artifact))
     } catch (err) {
       emit('response', `[错误] ${err instanceof Error ? err.message : String(err)}`)
     } finally {
+      setCurrentOrigin(null)
       writer.end()
       session.thinkPromise = null
       session.state = 'idle'
@@ -159,8 +180,8 @@ function startBackgroundThink(userId: string, session: UserSession, text: string
         const next = q.shift()!
         setTimeout(() => {
           const s = sessions.get(userId)
-          if (s && s.state === 'idle') startBackgroundThink(userId, s, next.text, next.writer)
-          else enqueueBackgroundMessage(userId, next.text, next.writer)
+          if (s && s.state === 'idle') startBackgroundThink(userId, s, next.text, next.writer, next.origin)
+          else enqueueBackgroundMessage(userId, next.text, next.writer, next.origin)
         }, 500)
       }
     }
@@ -267,10 +288,12 @@ async function executeThink(userId: string, session: UserSession, mergedMessage:
 
   // 同时发本次 /chat 连接(低延迟)与全局 /events(刷新后其他页面可 catch-up)。
   // source='live-reply' 告诉前端:这是当前对话回复,允许直接更新 thinking 气泡。
+  // onEvent:think() 内部的思考增量/工具调用事件也走同一条通道(对话流 UI 的折叠步骤)。
   const emit = (type: string, content: string) => {
     broadcastToWriters(activeWriters, type, content)
     broadcast(type, content, userId, 'live-reply')
   }
+  const onEvent = (type: string, content: string) => emit(type, content)
 
   if (activeWriters.length > 1) {
     emit('merged', JSON.stringify({ count: activeWriters.length }))
@@ -296,7 +319,7 @@ async function executeThink(userId: string, session: UserSession, mergedMessage:
         if (!gotFirstDelta) { gotFirstDelta = true; clearInterval(heartbeat) }
         session.liveContent += delta
         emit('delta', delta)
-      }, ac.signal, images)
+      }, ac.signal, images, { onEvent })
 
       if (ac.signal.aborted) return
 

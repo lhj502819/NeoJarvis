@@ -6,7 +6,6 @@ export interface Config {
   jarvisPort: number
   agentBasePort: number
   model: string
-  everosApiKey: string
 }
 
 export const config: Config = {
@@ -14,7 +13,6 @@ export const config: Config = {
   jarvisPort: Number(process.env.JARVIS_PORT) || 3000,
   agentBasePort: Number(process.env.AGENT_BASE_PORT) || 3001,
   model: 'sonnet',
-  everosApiKey: process.env.EVEROS_API_KEY || '',
 }
 
 function loadClaudeSettingsEnv(): Record<string, string> {

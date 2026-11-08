@@ -1,7 +1,11 @@
 const BASE = ''
 
 export interface ChatEvent {
-  type: 'thinking' | 'progress' | 'delta' | 'response' | 'artifact' | 'buffering' | 'merged' | 'interrupted'
+  type:
+    | 'thinking' | 'progress' | 'delta'
+    | 'thought_delta' | 'tool_use' | 'tool_done'
+    | 'response' | 'artifact' | 'buffering' | 'merged' | 'interrupted'
+    | 'user_message' | 'worker_msg' | 'jarvis_msg' | 'watchdog'
   content: string
 }
 
@@ -58,6 +62,21 @@ export async function postJSON<T>(path: string, body: Record<string, unknown>): 
     credentials: 'include',
     body: JSON.stringify(body),
   })
+  return res.json()
+}
+
+export async function putJSON<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  })
+  return res.json()
+}
+
+export async function deleteJSON<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, { method: 'DELETE', credentials: 'include' })
   return res.json()
 }
 

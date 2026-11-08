@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clusterByDomain, dominantCwd, type DomainCluster } from '../../agent/team/promoter.js'
+import { dominantCwd, type DomainCluster } from '../../agent/team/promoter.js'
 import type { AgentSession } from '../../agent/a2a/history.js'
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
@@ -15,47 +15,6 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
     ...overrides,
   }
 }
-
-describe('clusterByDomain', () => {
-  it('groups sessions by domain', () => {
-    const sessions = [
-      makeSession({ domain: '技术调研', taskCount: 1 }),
-      makeSession({ domain: '技术调研', taskCount: 2 }),
-      makeSession({ domain: 'jarvis开发', taskCount: 1 }),
-    ]
-    const clusters = clusterByDomain(sessions)
-    expect(clusters.size).toBe(2)
-    expect(clusters.get('技术调研')?.taskCount).toBe(3)
-    expect(clusters.get('jarvis开发')?.taskCount).toBe(1)
-  })
-
-  it('skips sessions with empty domain', () => {
-    const sessions = [
-      makeSession({ domain: '', taskCount: 1 }),
-      makeSession({ domain: '技术调研', taskCount: 1 }),
-    ]
-    const clusters = clusterByDomain(sessions)
-    expect(clusters.size).toBe(1)
-    expect(clusters.has('')).toBe(false)
-  })
-
-  it('accumulates topics with dedup', () => {
-    const sessions = [
-      makeSession({ domain: 'X', topics: ['a', 'b'] }),
-      makeSession({ domain: 'X', topics: ['b', 'c'] }),
-    ]
-    const clusters = clusterByDomain(sessions)
-    expect(clusters.get('X')?.topics).toEqual(['a', 'b', 'c'])
-  })
-
-  it('caps topics at 20', () => {
-    const sessions = Array.from({ length: 25 }, (_, i) =>
-      makeSession({ domain: 'X', topics: [`topic-${i}`] })
-    )
-    const clusters = clusterByDomain(sessions)
-    expect(clusters.get('X')!.topics.length).toBeLessThanOrEqual(20)
-  })
-})
 
 describe('dominantCwd', () => {
   it('returns the most frequent cwd', () => {

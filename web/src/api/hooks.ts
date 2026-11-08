@@ -9,13 +9,53 @@ export interface MessageArtifact {
   language?: string
 }
 
+export interface MsgStep {
+  name: string
+  args?: string
+  status: 'running' | 'ok' | 'error'
+}
+
+/** 对话流时间线条目:思考段 / 工具调用,按发生顺序交错(ZCode 式) */
+export interface MsgTimelineEntry {
+  type: 'thought' | 'tool'
+  /** thought: 累积的思考文本 */
+  text?: string
+  /** tool: 工具名 + 参数预览 */
+  name?: string
+  args?: string
+  status: 'running' | 'ok' | 'error'
+  startedAt: number
+  endedAt?: number
+}
+
+/** 消息来源(京ME 群/私聊):前端据此在气泡上渲染京ME图标 */
+export interface MessageOrigin {
+  kind: 'group' | 'dm'
+  chatId: string
+  chatName: string
+  /** 京ME发件人 ERP(非主人来件展示用) */
+  sender?: string
+  isOwner?: boolean
+}
+
 export interface Message {
   id: string
+  serverId?: number   // 服务端消息 id(时间线/轨迹按它关联)
+  ts?: number         // 服务端时间戳(沟通卡片按它归位)
   role: 'user' | 'jarvis' | 'system'
   content: string
   status?: 'thinking' | 'streaming' | 'done'
   artifact?: MessageArtifact
   imageUrls?: string[]   // 用户消息附带的图片(展示用 URL:刚发的用 data URL,历史用 /api/chat-image/id)
+  /** 思考/工具时间线(流式累积,仅本次会话内存中可见) */
+  timeline?: MsgTimelineEntry[]
+  /** 沟通卡片:小弟 ↔ Jarvis 的结构化往来 */
+  kind?: 'comms'
+  commsDir?: 'to_jarvis' | 'to_worker'
+  commsType?: string
+  agentName?: string
+  /** 来源标记:京ME 群/私聊进来的消息与同步回去的回复 */
+  origin?: MessageOrigin
 }
 
 // 找最后一条 jarvis 消息的下标(artifact 事件总在 response 后到达,需挂到已 done 的消息上)
@@ -24,6 +64,46 @@ function findLastJarvisIndex(msgs: Message[]): number {
     if (msgs[i].role === 'jarvis') return i
   }
   return -1
+}
+
+// ── 时间线维护(纯函数,不可变更新)—— 对话流的思考/工具交错行(ZCode 式)──
+
+const tlCloseThought = (tl: MsgTimelineEntry[], now: number): MsgTimelineEntry[] => {
+  const last = tl[tl.length - 1]
+  if (last && last.type === 'thought' && last.status === 'running') {
+    return [...tl.slice(0, -1), { ...last, status: 'ok', endedAt: now }]
+  }
+  return tl
+}
+
+const tlApplyThought = (tl: MsgTimelineEntry[], delta: string, now: number): MsgTimelineEntry[] => {
+  const last = tl[tl.length - 1]
+  if (last && last.type === 'thought' && last.status === 'running') {
+    return [...tl.slice(0, -1), { ...last, text: (last.text ?? '') + delta }]
+  }
+  return [...tl, { type: 'thought', text: delta, status: 'running', startedAt: now }]
+}
+
+const tlApplyToolUse = (tl: MsgTimelineEntry[], name: string, args: string | undefined, now: number): MsgTimelineEntry[] => {
+  const closed = tlCloseThought(tl, now)
+  return [...closed, { type: 'tool', name, args, status: 'running', startedAt: now }]
+}
+
+const tlApplyToolDone = (tl: MsgTimelineEntry[], name: string, isError: boolean, now: number): MsgTimelineEntry[] => {
+  const next = [...tl]
+  for (let k = next.length - 1; k >= 0; k--) {
+    const e = next[k]
+    if (e.type === 'tool' && e.name === name && e.status === 'running') {
+      next[k] = { ...e, status: isError ? 'error' : 'ok', endedAt: now }
+      break
+    }
+  }
+  return next
+}
+
+const tlCloseAllRunning = (tl: MsgTimelineEntry[], now: number): MsgTimelineEntry[] => {
+  const closed = tlCloseThought(tl, now)
+  return closed.map(e => e.status === 'running' ? { ...e, status: 'ok', endedAt: e.endedAt ?? now } : e)
 }
 
 export function useChat() {
@@ -46,21 +126,59 @@ export function useChat() {
     // 串行:先铺历史(整体替换),再追加进行中的思考气泡,避免两次 setMessages 竞态覆盖
     ;(async () => {
       try {
-        const turns = await fetchJSON<Array<{ role: string; content: string; timestamp: number; artifact?: { id: string; type: string; title: string }; imageIds?: string[] }>>('/api/conversation')
+        const turns = await fetchJSON<Array<{ id: number; role: string; content: string; timestamp: number; artifact?: { id: string; type: string; title: string }; imageIds?: string[]; origin?: MessageOrigin }>>('/api/conversation')
         if (turns.length > 0) {
           const msgs: Message[] = turns.map((t, i) => ({
             id: `h-${t.timestamp}-${i}`,
+            serverId: t.id,
+            ts: t.timestamp,
             role: t.role === 'user' ? 'user' as const : 'jarvis' as const,
             content: t.content,
             status: 'done' as const,
             artifact: t.artifact ? { type: t.artifact.type as MessageArtifact['type'], title: t.artifact.title, content: '', id: t.artifact.id } : undefined,
             imageUrls: t.imageIds?.map(id => `/api/chat-image/${id}`),
+            origin: t.origin,
           }))
           // 保留 /events 可能已抢先追加的进行中气泡,避免整体替换把它冲掉
           setMessages(prev => {
             const live = prev.filter(m => m.role === 'jarvis' && (m.status === 'thinking' || m.status === 'streaming'))
             return [...msgs, ...live]
           })
+
+          // 时间线(思考/工具)+ 沟通日志:随历史还原对话流(失败不阻塞历史展示)
+          try {
+            const [tlAll, commsRes] = await Promise.all([
+              fetchJSON<{ timelines: Array<{ messageId: number; timeline: MsgTimelineEntry[] }> }>('/api/timeline/all'),
+              fetchJSON<{ comms: Array<{ at: number; dir: 'to_jarvis' | 'to_worker'; agentName: string; type?: string; content: string }> }>('/api/comms'),
+            ])
+            const tlMap = new Map(tlAll.timelines.map(t => [t.messageId, t.timeline]))
+            const withTl = msgs.map(m => ({ ...m, timeline: tlMap.get(m.serverId ?? -1) }))
+            const commsMsgs: Message[] = commsRes.comms.map((c, i) => ({
+              id: `c-h-${c.at}-${i}`,
+              role: 'jarvis' as const,
+              kind: 'comms' as const,
+              commsDir: c.dir,
+              commsType: c.type,
+              agentName: c.agentName,
+              content: c.content,
+              status: 'done' as const,
+              ts: c.at,
+            }))
+            // 沟通卡片按时间戳归位到消息流中
+            const merged: Message[] = []
+            let ci = 0
+            for (const m of withTl) {
+              const mTs = m.ts ?? Number.MAX_SAFE_INTEGER
+              while (ci < commsMsgs.length && (commsMsgs[ci].ts ?? 0) <= mTs) merged.push(commsMsgs[ci++])
+              merged.push(m)
+            }
+            while (ci < commsMsgs.length) merged.push(commsMsgs[ci++])
+
+            setMessages(prev => {
+              const live = prev.filter(m => m.role === 'jarvis' && (m.status === 'thinking' || m.status === 'streaming'))
+              return [...merged, ...live]
+            })
+          } catch { /* 时间线/沟通日志拉取失败不阻塞历史 */ }
         }
       } catch { /* ignore */ }
 
@@ -91,8 +209,9 @@ export function useChat() {
     const step = () => {
       idx += chunkSize
       if (idx >= fullText.length) {
+        const now = Date.now()
         setMessages(prev => prev.map((m, i) =>
-          i === prev.length - 1 ? { ...m, content: fullText, status: 'done' as const } : m
+          i === prev.length - 1 ? { ...m, content: fullText, status: 'done' as const, timeline: tlCloseAllRunning(m.timeline ?? [], now) } : m
         ))
         setIsLoading(false)
         typingRef.current = null
@@ -148,17 +267,37 @@ export function useChat() {
             return msgs.map((m, i) => i === msgs.length - 1 ? { ...m, content: event.content, status: 'thinking' as const } : m)
           }
           if (event.type === 'delta') {
+            const now = Date.now()
             return msgs.map((m, i) => {
               if (i !== msgs.length - 1) return m
               const base = m.status === 'thinking' ? '' : m.content
-              return { ...m, content: base + event.content, status: 'streaming' as const }
+              return { ...m, content: base + event.content, status: 'streaming' as const, timeline: tlCloseThought(m.timeline ?? [], now) }
             })
+          }
+          if (event.type === 'thought_delta') {
+            const now = Date.now()
+            return msgs.map((m, i) => i !== msgs.length - 1 ? m : { ...m, timeline: tlApplyThought(m.timeline ?? [], event.content, now) })
+          }
+          if (event.type === 'tool_use') {
+            try {
+              const d = JSON.parse(event.content) as { name: string; args?: string }
+              const now = Date.now()
+              return msgs.map((m, i) => i !== msgs.length - 1 ? m : { ...m, timeline: tlApplyToolUse(m.timeline ?? [], d.name, d.args, now) })
+            } catch { return msgs }
+          }
+          if (event.type === 'tool_done') {
+            try {
+              const d = JSON.parse(event.content) as { name: string; isError?: boolean }
+              const now = Date.now()
+              return msgs.map((m, i) => i !== msgs.length - 1 ? m : { ...m, timeline: tlApplyToolDone(m.timeline ?? [], d.name, !!d.isError, now) })
+            } catch { return msgs }
           }
           if (event.type === 'response') {
             const lastMsg = msgs[msgs.length - 1]
             if (lastMsg?.content && lastMsg.content.length > 0 && lastMsg.status === 'streaming') {
               setIsLoading(false)
-              return msgs.map((m, i) => i === msgs.length - 1 ? { ...m, content: event.content, status: 'done' as const } : m)
+              const now = Date.now()
+              return msgs.map((m, i) => i === msgs.length - 1 ? { ...m, content: event.content, status: 'done' as const, timeline: tlCloseAllRunning(m.timeline ?? [], now) } : m)
             }
             typewriterEffect(event.content)
             return msgs
@@ -207,9 +346,10 @@ export function useChat() {
   // 处理全局 /events 流的实时事件(刷新恢复 / 多标签页 / 后台任务报告)。
   // 发起方(本页 send 进行中,abortRef 非空)靠 /chat 流,忽略 /events 避免重复 ——
   // 但只忽略 live-reply(当前对话的实时回复);后台任务的独立汇报(task-report/task-error)
-  // 是异步产物,不是 /chat 流的重复,必须放行,否则边等汇报边发新消息会把汇报吞掉。
+  // 与事件驱动的往来(event-reply:京ME 等来源触发 Jarvis 的应答)是异步产物,
+  // 不是 /chat 流的重复,必须放行,否则边等汇报边发新消息会把汇报吞掉。
   const applyLiveEvent = useCallback((event: SSEEvent) => {
-    const isBackgroundReport = event.source === 'task-report' || event.source === 'task-error'
+    const isBackgroundReport = event.source === 'task-report' || event.source === 'task-error' || event.source === 'event-reply'
     if (abortRef.current && !isBackgroundReport) return  // 本页是发起方,/chat 已在处理 live-reply
 
     // response 去重:判断在 setMessages updater 之外做(纯 ref,避免 React 严格模式 updater 重入污染)
@@ -241,9 +381,55 @@ export function useChat() {
           // 只有 live-reply(当前对话的实时回复)才能就地更新 thinking 气泡;
           // task-report/task-error 是后台子任务的独立汇报,必须新气泡追加,否则会
           // 把用户刚发出/恢复出的 thinking 气泡当成自己的位置盖掉。
-          const isLive = !event.source || event.source === 'live-reply'
-          if (isLive && isLiveJarvis) return updateLast({ content: event.content, status: 'done' })
+          const isLive = !event.source || event.source === 'live-reply' || (event.source === 'event-reply' && isLiveJarvis)
+          if (isLive && isLiveJarvis) return updateLast({ content: event.content, status: 'done', timeline: tlCloseAllRunning(last.timeline ?? [], Date.now()) })
           return [...prev, { id: `j-live-${Date.now()}`, role: 'jarvis', content: event.content, status: 'done' }]
+        }
+        case 'user_message': {
+          // 事件驱动:京ME 等来源触发的往来,把来件作为用户气泡补进聊天流
+          try {
+            const d = JSON.parse(event.content) as { text?: string; origin?: MessageOrigin }
+            if (d?.text) return [...prev, { id: `u-ev-${Date.now()}`, role: 'user', content: d.text, status: 'done' as const, origin: d.origin }]
+          } catch { /* ignore */ }
+          return prev
+        }
+        case 'thought_delta': {
+          const now = Date.now()
+          if (!isLiveJarvis) return prev
+          return updateLast({ timeline: tlApplyThought(last.timeline ?? [], event.content, now) })
+        }
+        case 'tool_use': {
+          if (!isLiveJarvis) return prev
+          try {
+            const d = JSON.parse(event.content) as { name: string; args?: string }
+            const now = Date.now()
+            return updateLast({ timeline: tlApplyToolUse(last.timeline ?? [], d.name, d.args, now) })
+          } catch { return prev }
+        }
+        case 'tool_done': {
+          if (!isLiveJarvis) return prev
+          try {
+            const d = JSON.parse(event.content) as { name: string; isError?: boolean }
+            const now = Date.now()
+            return updateLast({ timeline: tlApplyToolDone(last.timeline ?? [], d.name, !!d.isError, now) })
+          } catch { return prev }
+        }
+        case 'worker_msg':
+        case 'jarvis_msg': {
+          // 小弟 ↔ Jarvis 的结构化沟通卡片(独立气泡,不打断当前流)
+          try {
+            const d = JSON.parse(event.content) as { to?: string; subtaskId?: string; agentName?: string; type?: string; content: string }
+            return [...prev, {
+              id: `c-${Date.now()}`,
+              role: 'jarvis' as const,
+              kind: 'comms' as const,
+              commsDir: event.type === 'worker_msg' ? 'to_jarvis' as const : 'to_worker' as const,
+              commsType: d.type,
+              agentName: d.agentName ?? d.to ?? '小弟',
+              content: d.content,
+              status: 'done' as const,
+            }]
+          } catch { return prev }
         }
         case 'artifact': {
           try {

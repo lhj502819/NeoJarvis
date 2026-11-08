@@ -15,12 +15,15 @@ import { config } from '../shared/config.js'
 import { think } from './brain.js'
 import { broadcast } from './sse.js'
 import { startWatchdog } from './watchdog.js'
+import { startPromotionWatch } from './promotion-watch.js'
 import { startEventSystem } from '../events/router.js'
 import { authRouter } from '../auth/auth.js'
 import { authMiddleware } from '../auth/middleware.js'
 import { chatRoutes } from './routes/chat.js'
 import { dashboardRoutes } from './routes/dashboard.js'
 import { agentRoutes } from './routes/agent.js'
+import { configRoutes } from './routes/config.js'
+import { timelineRoutes } from './routes/timeline.js'
 import './lifecycle.js'
 
 export { broadcast } from './sse.js'
@@ -127,12 +130,15 @@ export function startJarvisServer(): express.Express {
   app.use(chatRoutes())
   app.use(dashboardRoutes())
   app.use(agentRoutes())
+  app.use(configRoutes())
+  app.use(timelineRoutes())
 
   app.listen(config.jarvisPort, () => {
     console.log(`  Jarvis A2A Server: http://localhost:${config.jarvisPort}`)
     console.log(`  Chat API: http://localhost:${config.jarvisPort}/chat`)
     // Watchdog(定时巡检 running 任务)+ 事件系统(cron 晨报 / 京ME 源)—— HTTP 就绪后拉起
     try { startWatchdog() } catch (err) { console.error('[watchdog] 启动失败:', err) }
+    try { startPromotionWatch() } catch (err) { console.error('[promotion-watch] 启动失败:', err) }
     startEventSystem().catch(err => console.error('[events] 启动失败:', err))
   })
 

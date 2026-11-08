@@ -1,7 +1,9 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { loadJdMeConfig, JdMeClient, type JdMeConfig } from './jdsme-client.js'
+import { isGroupAllowed } from './jdsme-filter.js'
 import { listUsers } from '../../auth/users.js'
+import { getSettings } from '../../jarvis/persona.js'
 import type { EventSink, EventSourceDef, JarvisEvent } from '../types.js'
 
 /**
@@ -9,7 +11,7 @@ import type { EventSink, EventSourceDef, JarvisEvent } from '../types.js'
  *
  * 产品规则(已与 Sir 确认):
  *   - 私聊:一律处理(等同对话)
- *   - 群聊:必须 @机器人,且群在白名单(data/jarvis-events.json 的 groups)里,否则完全静默
+ *   - 群聊:必须 @机器人；配置了群白名单时只放行白名单群，未配置则放行全部群
  *   - 噪音分诊在 router 的 slowPath 做;这里只做白名单 / 去重 / @检测 / 游标
  *
  * 无凭证(找不到 task-hud 的 jdsme.json)时自动停用,不报错。凭证与 task-hud 共用一份。
@@ -27,6 +29,7 @@ interface SourceState {
 }
 
 let client: JdMeClient | null = null
+let ownerErp = ''
 let config: JdMeConfig | null = null
 let ownerId = 'system'
 let stopped = false
@@ -62,14 +65,25 @@ async function persistState(): Promise<void> {
 }
 
 async function loadWhitelist(): Promise<void> {
+  // 优先配置界面(data/persona/settings.json 的 events.jdsmeGroups);没配则回退旧版 jarvis-events.json。
+  try {
+    const groups = getSettings().events.jdsmeGroups
+    if (groups.length > 0) {
+      whitelistedGroups = groups
+      console.log(`[jdsme] 群白名单 ${groups.length} 个;仅放行这些群`)
+      return
+    }
+  } catch { /* settings 读失败走旧文件 */ }
   try {
     const parsed = JSON.parse(await readFile(whitelistPath, 'utf8'))
     whitelistedGroups = Array.isArray(parsed?.groups) ? parsed.groups.map(String) : []
   } catch {
     whitelistedGroups = []
   }
-  if (whitelistedGroups.length === 0) {
-    console.log('[jdsme] 群白名单为空(data/jarvis-events.json → {"groups":["群号"]});群聊将全部静默,私聊正常')
+  if (whitelistedGroups.length > 0) {
+    console.log(`[jdsme] 群白名单 ${whitelistedGroups.length} 个(来自 jarvis-events.json);仅放行这些群`)
+  } else {
+    console.log('[jdsme] 未配置群白名单 → 放行全部群(仍要求 @机器人);私聊正常')
   }
 }
 
@@ -92,8 +106,8 @@ function normalize(event: any): JarvisEvent | null {
     kind = 'group'
     chatId = groupId
     chatName = String(body.groupName ?? body.groupTitle ?? '').trim() || `群 ${groupId}`
-    // 群聊双重门槛:白名单 + @机器人(atUsers 优先,正文 "@昵称" 兜底——移植 task-hud 逻辑)
-    if (!whitelistedGroups.includes(groupId)) return null
+    // 群聊双重门槛:@机器人 + 白名单(白名单为空 = 不筛选，放行全部群)
+    if (!isGroupAllowed(groupId, whitelistedGroups)) return null
     const inner = body.body ?? {}
     const atUsers = Array.isArray(inner.atUsers) ? inner.atUsers : []
     const botName = config.bot?.displayName ?? ''
@@ -146,16 +160,21 @@ function stripMention(text: string, payload: any): string {
   return output.replace(/^\s*@[^\s ]+[\s ]+/, '').trim()
 }
 
+/** 京ME 信道规范:短平快、纯文本、去 markdown 符号、按 maxLen 截断(sink/工具/任务同步共用) */
+export function jdmePlain(text: string, maxLen = 500): string {
+  return String(text ?? '')
+    .replace(/[*_`#>]/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .slice(0, maxLen)
+}
+
 /** 京ME 回复 sink:京ME 信道规范 —— 短平快、纯文本、去 markdown 符号 */
 export const jdsmeSink: EventSink = {
   id: 'jdsme',
   async reply(_userId: string, ev: JarvisEvent, text: string): Promise<void> {
     if (!client) return
     const payload = ev.payload as { kind: 'group' | 'dm'; chatId: string; chatName: string }
-    const plain = text
-      .replace(/[*_`#>]/g, '')
-      .replace(/\n{3,}/g, '\n\n')
-      .slice(0, 500)
+    const plain = jdmePlain(text)
     console.log(`[jdsme] 回复 ${payload.kind === 'group' ? '群' : '私聊'}「${payload.chatName}」: ${plain.slice(0, 80)}`)
     if (payload.kind === 'group') await client.sendGroup(payload.chatId, plain)
     else await client.sendPersonal(payload.chatId, plain)
@@ -163,8 +182,30 @@ export const jdsmeSink: EventSink = {
 }
 
 /**
+ * 主动发京ME 消息(工具 send_jdme 用)。事件源未启用(无凭证)时返回 false。
+ * chatId:群号(群聊)或对方 erp(私聊),与事件 payload 同一套标识。
+ */
+export async function sendJdMe(
+  kind: 'group' | 'dm',
+  chatId: string,
+  text: string,
+): Promise<boolean> {
+  if (!client) return false
+  const plain = jdmePlain(text)
+  if (kind === 'group') await client.sendGroup(chatId, plain)
+  else await client.sendPersonal(chatId, plain)
+  console.log(`[jdsme] 主动发送 → ${kind === 'group' ? '群' : '私聊'}「${chatId}」: ${plain.slice(0, 80)}`)
+  return true
+}
+
+/**
  * 初始化并返回京ME事件源;无凭证返回 null(事件系统跳过它)。
  */
+/** 主人 ERP(router 判定消息说话人身份用);事件源未启用/未配置时为空串。 */
+export function getJdMeOwnerErp(): string {
+  return ownerErp
+}
+
 export async function initJdMeSource(): Promise<EventSourceDef | null> {
   config = await loadJdMeConfig()
   if (!config) {
@@ -176,20 +217,30 @@ export async function initJdMeSource(): Promise<EventSourceDef | null> {
   await loadState()
   await loadWhitelist()
 
+  /** 主人 ERP(router 判定消息说话人身份用);未配置 ownerErp 时为空。 */
+  ownerErp = String(config.ownerErp ?? '').trim()
+
   return {
     id: 'jdsme',
     start(ctx) {
       void (async () => {
         if (!client || !config) return
-        // 首次接入:游标对齐服务端最新,历史消息不回放
-        if (fresh) {
-          try {
-            state.cursor = await client.fetchLastSeq()
+        // 游标对齐:首次接入对到服务端最新,历史不回放;另外检测「游标超前」——
+        // 京ME 服务换代(如迁到新域名)后 seq 从 0 重计,旧游标会让长轮询永远返回空,
+        // 静默收不到消息。此时重置到服务端水位,只向前对齐(修法同 task-hud 4c77648)。
+        try {
+          const serverLastSeq = await client.fetchLastSeq()
+          if (fresh) {
+            state.cursor = serverLastSeq
             fresh = false
             await persistState()
-          } catch { /* 下轮再对 */ }
-        }
-        console.log(`[jdsme] 事件源已启动(profile=${config.profile},游标=${state.cursor},白名单群 ${whitelistedGroups.length} 个)`)
+          } else if (state.cursor > serverLastSeq) {
+            console.log(`[jdsme] 本地游标 ${state.cursor} 超前于服务端水位 ${serverLastSeq},判定为 server 换代/游标失配,重置游标`)
+            state.cursor = serverLastSeq
+            await persistState()
+          }
+        } catch { /* 下轮再对 */ }
+        console.log(`[jdsme] 事件源已启动(profile=${config.profile},游标=${state.cursor},${whitelistedGroups.length > 0 ? `白名单群 ${whitelistedGroups.length} 个` : '未设白名单 → 放行全部群'})`)
 
         let lastError = ''
         while (!stopped) {

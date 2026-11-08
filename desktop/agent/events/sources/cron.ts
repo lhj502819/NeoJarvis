@@ -1,8 +1,9 @@
 import { listUsers } from '../../auth/users.js'
+import { getSettings } from '../../jarvis/persona.js'
 import type { EventSourceDef, JarvisEvent } from '../types.js'
 
 /**
- * Cron 源(M2c):定时晨报。默认每日 09:00,env JARVIS_MORNING_REPORT_AT 可改("HH:MM",留空停用)。
+ * Cron 源(M2c):定时晨报。默认每日 09:00(data/persona/settings.json 或 env 可改,留空停用)。
  * 无外部依赖 —— 事件框架的第一个真实数据源,验证 emit → router → 落地全链路。
  */
 export function createCronSource(): EventSourceDef {
@@ -10,9 +11,9 @@ export function createCronSource(): EventSourceDef {
   return {
     id: 'cron',
     start(ctx) {
-      const at = process.env.JARVIS_MORNING_REPORT_AT ?? '09:00'
+      const at = getSettings().morningReport.at
       if (!at.trim()) {
-        console.log('[events] cron 源:JARVIS_MORNING_REPORT_AT 为空,晨报停用')
+        console.log('[events] cron 源:晨报时间配置为空,停用')
         return
       }
       const schedule = () => {

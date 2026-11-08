@@ -14,7 +14,8 @@ import { broadcast } from './sse.js'
 import { buildUserEnv } from '../shared/user-env.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
 import { buildUserMcpServers } from '../shared/user-mcp.js'
-import { getEnabledHubSkills, PIPELINE_SKILLS } from './skill-prefs.js'
+import { DEFAULT_AGENT_NAME } from './agent-profile.js'
+import { toImageContents } from './image-content.js'
 import {
   flattenResultText,
   type ToolTraceInput,
@@ -47,12 +48,13 @@ export async function llmCall(
   abortController?: AbortController,
   images?: ChatImage[],
   toolTraces?: Array<Omit<ToolTraceInput, 'scope' | 'messageId'>>,
+  opts?: { onEvent?: (type: string, content: string) => void },
 ): Promise<string> {
   const systemPrompt = await buildSystemPrompt(userId)
   const jarvisTools = createJarvisTools(userId)
   const userMcpTools = await buildUserMcpServers(userId)
   const customTools: ToolDefinition[] = [...jarvisTools, ...userMcpTools]
-  return rawLlmCall(userId, systemPrompt, prompt, onDelta, customTools, abortController, images, toolTraces)
+  return rawLlmCall(userId, systemPrompt, prompt, onDelta, customTools, abortController, images, toolTraces, opts)
 }
 
 /**
@@ -74,6 +76,7 @@ export async function rawLlmCall(
   abortController?: AbortController,
   images?: ChatImage[],
   toolTraces?: Array<Omit<ToolTraceInput, 'scope' | 'messageId'>>,
+  opts?: { onEvent?: (type: string, content: string) => void },
 ): Promise<string> {
   const t0 = Date.now()
   debug('rawLlmCall start, prompt length:', prompt.length, images?.length ? `+${images.length} images` : '')
@@ -88,23 +91,24 @@ export async function rawLlmCall(
 
   // 用 DefaultResourceLoader 注入 systemPrompt + skills,关闭 extensions 发现(避免加载
   // 全局 ~/.pi/agent/extensions 干扰)。customTools 直接传 createAgentSession。
-  const enabledSkills = [...PIPELINE_SKILLS, ...(await getEnabledHubSkills(userId))]
+  //
+  // dev-avatar 由 buildSystemPrompt 全文注入，这里把它从 skill 索引里过滤掉：
+  // 同一份内容不再既占正文又占索引；禁用时也不会被模型从索引里重新捡起来。
+  // 其余全局 skill(~/.pi/agent/skills)保持原样可用。
   const loader = new DefaultResourceLoader({
     cwd,
     agentDir: getAgentDir(),
     systemPromptOverride: () => systemPrompt,
-    // 把启用 skills 注入 loader(供 prompt 拼接)。注意 Pi 的 skill 发现走文件系统,
-    // 这里用 skillsOverride 合并用户启用的 hub skills。
+    skillsOverride: (base) => ({
+      skills: base.skills.filter(s => s.name !== DEFAULT_AGENT_NAME),
+      diagnostics: base.diagnostics,
+    }),
   })
   await loader.reload()
 
-  // 构造图片 content(若有)
-  const imageContents = images && images.length > 0
-    ? images.map(img => ({
-        type: 'image' as const,
-        source: { type: 'base64' as const, media_type: img.mediaType as any, data: img.data },
-      }))
-    : undefined
+  // 构造图片 content(若有)。Pi 的 ImageContent 形状是 { type, data, mimeType }，
+  // 不是 Anthropic SDK 的 { source: { type:'base64', media_type, data } }。
+  const imageContents = toImageContents(images)
 
   let finalResult = ''
   let firstTokenTime = 0
@@ -127,6 +131,10 @@ export async function rawLlmCall(
   })
 
   // 事件订阅:把 Pi 的 AgentSessionEvent 翻译成旧的 onDelta / broadcast / toolTraces
+  // onEvent(对话流 UI):思考增量 + 工具调用起止,由调用方决定怎么送到前端
+  const briefArgs = (args: unknown): string => {
+    try { return JSON.stringify(args ?? {}).slice(0, 200) } catch { return '{}' }
+  }
   const unsub = session.subscribe((event) => {
     switch (event.type) {
       case 'message_update': {
@@ -136,6 +144,7 @@ export async function rawLlmCall(
             firstTokenTime = Date.now()
             console.log(`[perf] first thinking token: ${firstTokenTime - t0}ms`)
           }
+          if (ae.delta) opts?.onEvent?.('thought_delta', ae.delta)
         }
         if (ae.type === 'text_delta' && ae.delta) {
           if (!firstTokenTime) {
@@ -150,7 +159,8 @@ export async function rawLlmCall(
         const toolName = event.toolName
         const toolCallId = event.toolCallId
         debug('tool_use:', toolName)
-        broadcast('progress', `🔧 Jarvis 正在使用 ${toolName}...`, userId)
+        // 工具调用的可见性已由 onEvent 的 timeline 行承载(对话流),不再发 🔧 progress
+        opts?.onEvent?.('tool_use', JSON.stringify({ name: toolName, args: briefArgs(event.args) }))
         if (toolTraces) {
           pendingCalls.set(toolCallId, {
             toolName,
@@ -162,6 +172,7 @@ export async function rawLlmCall(
         break
       }
       case 'tool_execution_end': {
+        opts?.onEvent?.('tool_done', JSON.stringify({ name: event.toolName, isError: !!event.isError }))
         if (toolTraces) {
           const pending = pendingCalls.get(event.toolCallId)
           if (pending) {
@@ -220,7 +231,7 @@ export async function rawLlmCall(
     }
 
     try {
-      await session.prompt(prompt, imageContents ? { images: imageContents as any } : undefined)
+      await session.prompt(prompt, imageContents ? { images: imageContents } : undefined)
     } finally {
       if (onAbort && ac) ac.signal.removeEventListener('abort', onAbort)
     }

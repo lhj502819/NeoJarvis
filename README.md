@@ -211,7 +211,7 @@ cd desktop && npm run build
 | `DATABASE_URL` / `DATABASE_USER` / `DATABASE_PASSWORD` | Java 数据源 | 本地 jarvis 库 |
 | `JARVIS_AUTH_DEV_BYPASS` | Java 单机免登录模式 | `true` |
 
-> 京ME 群白名单写在 `data/jarvis-events.json`：`{"groups":["群号"]}`。私聊默认放行，群聊必须 @机器人 且群在白名单。
+> 京ME 群白名单写在 `data/persona/settings.json` 的 `events.jdsmeGroups`（或旧版 `data/jarvis-events.json` 的 `groups`）。私聊默认放行；群聊必须 @机器人。白名单为空 = 不筛选、放行全部群；填了则只放行列出的群。
 
 ---
 

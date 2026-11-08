@@ -3,6 +3,7 @@ import { getActiveTasks, getSubtaskTurns } from '../task/manager.js'
 import { bus } from '../a2a/bus.js'
 import { broadcast } from './sse.js'
 import { pushProactiveMessage } from './proactive.js'
+import { getSettings } from './persona.js'
 
 /**
  * Watchdog —— 值班经理(docs/superagent-design.md §2)。
@@ -15,14 +16,11 @@ import { pushProactiveMessage } from './proactive.js'
  *   idle        超过阈值没有任何新回合/工具调用
  *   overtime    总时长超过上限
  *   repeat_fail 同一子任务累计重试 ≥ 2 次
+ *
+ * 阈值来源:data/persona/settings.json(热改即生效)> env > 内置默认,见 persona.ts
  */
 
-// 阈值(env 可调)
-const IDLE_MIN = Number(process.env.JARVIS_WATCHDOG_IDLE_MIN ?? 10)
-const MAXRUN_MIN = Number(process.env.JARVIS_WATCHDOG_MAX_MIN ?? 30)
-const INTERVAL_MIN = Number(process.env.JARVIS_WATCHDOG_INTERVAL_MIN ?? 5)
 const ZOMBIE_GRACE_MIN = 2   // 派单后小弟注册前有个空窗,别误报
-const RETRY_FAIL_COUNT = 2
 
 export type WatchdogSignalKind = 'zombie' | 'idle' | 'overtime' | 'repeat_fail'
 
@@ -46,8 +44,9 @@ export interface SubtaskWatchInput {
 export function evaluateSubtaskRisk(
   input: SubtaskWatchInput,
   now: Date,
-  thresholds: { idleMin: number; maxMin: number } = { idleMin: IDLE_MIN, maxMin: MAXRUN_MIN },
+  thresholds?: { idleMin: number; maxMin: number },
 ): WatchdogSignal | null {
+  const t = thresholds ?? (() => { const w = getSettings().watchdog; return { idleMin: w.idleMin, maxMin: w.maxMin } })()
   if (input.status !== 'running') return null
 
   const startedMs = Date.parse(input.startedAt)
@@ -63,18 +62,18 @@ export function evaluateSubtaskRisk(
   const activityMs = Date.parse(activityAt)
   if (Number.isFinite(activityMs)) {
     const idleMin = (now.getTime() - activityMs) / 60_000
-    if (idleMin > thresholds.idleMin) {
+    if (idleMin > t.idleMin) {
       return { kind: 'idle', detail: `${Math.floor(idleMin)} 分钟没有新进展` }
     }
   }
 
   // 跑太久
-  if (runMin > thresholds.maxMin) {
+  if (runMin > t.maxMin) {
     return { kind: 'overtime', detail: `已经跑了 ${Math.floor(runMin)} 分钟` }
   }
 
   // 连环失败
-  if (input.retryCount >= RETRY_FAIL_COUNT) {
+  if (input.retryCount >= getSettings().watchdog.retryFailCount) {
     return { kind: 'repeat_fail', detail: `已重试 ${input.retryCount} 次` }
   }
 
@@ -149,10 +148,11 @@ let timer: NodeJS.Timeout | null = null
 
 export function startWatchdog(): void {
   if (timer) return
+  const { intervalMin, idleMin, maxMin } = getSettings().watchdog
   timer = setInterval(() => {
     checkAllUsers().catch(err => console.error('[watchdog] 巡检失败:', err instanceof Error ? err.message : err))
-  }, INTERVAL_MIN * 60_000)
-  console.log(`[watchdog] 已启动:每 ${INTERVAL_MIN} 分钟巡检,无动静 ${IDLE_MIN}min / 超时 ${MAXRUN_MIN}min 报告(L1 只提醒)`)
+  }, intervalMin * 60_000)
+  console.log(`[watchdog] 已启动:每 ${intervalMin} 分钟巡检,无动静 ${idleMin}min / 超时 ${maxMin}min 报告(L1 只提醒)`)
 }
 
 export function stopWatchdog(): void {

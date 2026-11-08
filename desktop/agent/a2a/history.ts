@@ -1,4 +1,5 @@
 import { serverGet, serverPost } from '../shared/server-client.js'
+import { getRecipe } from '../team/registry.js'
 
 export interface AgentSession {
   sessionId: string
@@ -143,6 +144,11 @@ interface SubtaskSummary {
  * 两者都能直接查 GET /api/recipe/{assignee}/subtasks。拿到 subtask_id 后,上层用
  * getSubtaskHistoryForPrompt 拉全历史(turns/traces/comms 都按 subtask_id 存)。
  *
+ * assignee 形态陷阱:Jarvis 派单时允许填描述性角色名,所以即使有同名 recipe,
+ * subtask.assignee 也可能存的是「小谱」而不是 recipe id。这里把 assignee 当
+ * recipe id 查一次、再把它的 recipe.name 当 assignee 查一次,合并去重——
+ * 否则名字派单的历史继承整个失效(真实事故:PRD 修复任务没吃到排查任务的现场)。
+ *
  * 打分:completed + domain 过滤后,复用 extractKeywords + 关键词重叠(≥0.3 取最高分);
  * assignee 本身已是强信号,无匹配则退回最近一条 completed。找不到返回 undefined。
  */
@@ -153,13 +159,21 @@ export async function findLastSubtaskForReuse(
   description: string,
 ): Promise<string | undefined> {
   if (!assignee) return undefined
-  let list: SubtaskSummary[]
-  try {
-    list = await serverGet<SubtaskSummary[]>(userId, `/api/recipe/${encodeURIComponent(assignee)}/subtasks`)
-  } catch {
-    return undefined
-  }
-  // 端点已按 created_at DESC;只留 completed,有 domain 再按 domain 过滤
+  // 同一 assignee 的两种形态:recipe id 命中 list[0];名字派单命中 list[1](若有)
+  const [byId, byName] = await Promise.all([
+    serverGet<SubtaskSummary[]>(userId, `/api/recipe/${encodeURIComponent(assignee)}/subtasks`).catch(() => [] as SubtaskSummary[]),
+    getRecipe(userId, assignee)
+      .then(r => r?.name && r.name !== assignee
+        ? serverGet<SubtaskSummary[]>(userId, `/api/recipe/${encodeURIComponent(r.name)}/subtasks`)
+        : [] as SubtaskSummary[])
+      .catch(() => [] as SubtaskSummary[]),
+  ])
+  // 端点各自按 created_at DESC;合并去重(名字=别的 recipe id 的极端情形不会串:同 user 下名字不与 id 重合)
+  const seen = new Set<string>()
+  const list = [...byId, ...byName].filter(s => (seen.has(s.id) ? false : (seen.add(s.id), true)))
+  if (list.length === 0) return undefined
+
+  // 只留 completed,有 domain 再按 domain 过滤
   let candidates = list.filter(s => s.status === 'completed')
   if (domain) candidates = candidates.filter(s => s.domain === domain)
   if (candidates.length === 0) return undefined
@@ -179,6 +193,6 @@ export async function findLastSubtaskForReuse(
     }
     if (best) return best
   }
-  // assignee 已是强信号,无关键词命中就取最近一条 completed
-  return candidates[0].id
+  // assignee 已是强信号,无关键词命中就取最近一条 completed(合并列表已按时间 DESC)
+  return [...byId, ...byName].filter(s => s.status === 'completed' && (!domain || s.domain === domain))[0]?.id
 }

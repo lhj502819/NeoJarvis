@@ -8,7 +8,7 @@ vi.mock('../../agent/shared/server-client.js', () => ({
   serverGet: async (_userId: string, path: string) => {
     const domain = new URLSearchParams(path.split('?')[1] || '').get('domain')
     if (domain === '技术调研') {
-      return [{ sessionId: 'real-sess-openspec', recipeId: 'adhoc-x', domain: '技术调研', cwd: '', topics: ['openspec', '调研', '工具'], lastTaskDescription: '调研 openspec 工具', completedAt: NOW, taskCount: 1 }]
+      return [{ sessionId: 'real-sess-openspec', recipeId: 'adhoc-x', domain: '技术调研', cwd: '', topics: ['openspec', '继续', '调研', '用法'], lastTaskDescription: '调研 openspec 工具', completedAt: NOW, taskCount: 1 }]
     }
     if (domain === '差旅') {
       return [{ sessionId: 'auto-999', recipeId: 'adhoc-y', domain: '差旅', cwd: '', topics: ['机票', '差旅'], lastTaskDescription: '订机票', completedAt: NOW, taskCount: 1 }]
