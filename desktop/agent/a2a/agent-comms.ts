@@ -6,6 +6,7 @@ import { broadcast } from '../jarvis/sse.js'
 import { appendComms } from '../jarvis/timeline-store.js'
 import { readResource } from '../jarvis/context-resources.js'
 import { docGet, docPut } from '../shared/docs.js'
+import { createJoyDoc } from '../events/sources/jdsme.js'
 
 /**
  * 小弟之间的沟通工具集(Jarvis 之外,A2A agent 互相 + 向 Jarvis 汇报)。
@@ -16,6 +17,7 @@ import { docGet, docPut } from '../shared/docs.js'
  *
  * 工具清单(与旧版逐一对齐):
  *   - read_context   : 按资源指针读详情(受限:仅自己任务/共享制品,其余拒绝)
+ *   - joydoc_create  : 交付物推成 JoySpace 在线文档(重内容出口,链接可交 Jarvis 发群)
  *   - handback       : 把来源群的追问退回 Jarvis 重判(与手头任务无关时用)
  *   - message_jarvis : 向 Jarvis 捎话(progress/question/deliverable/blocked)
  *   - message_peer   : 给并行协作的其他小弟发消息(异步,发完不等)
@@ -24,6 +26,30 @@ import { docGet, docPut } from '../shared/docs.js'
  */
 export function createAgentCommsTools(subtaskId: string, taskId: string, userId: string, agentName: string): ToolDefinition[] {
   return [
+    defineTool({
+      name: 'joydoc_create',
+      label: 'JoyDoc Create',
+      description: '把一份 markdown 交付物(方案/报告/说明文档等超过两屏的内容)建成 JoySpace 在线文档,返回链接。' +
+        '京ME 发不了文件,重内容走这里:建完把链接写进汇报或 message_jarvis,由 Jarvis 转发到京ME。需要京ME事件源已配置。',
+      parameters: Type.Object({
+        title: Type.String({ description: '文档标题' }),
+        markdown: Type.String({ description: '文档正文(markdown)' }),
+        folderName: Type.Optional(Type.String({ description: 'JoySpace 目录名(默认同标题)' })),
+        members: Type.Optional(Type.Array(Type.String({ description: '分享给哪些人(erp 列表,可选)' }))),
+      }),
+      execute: async (_toolCallId, params) => {
+        try {
+          const doc = await createJoyDoc({
+            title: params.title.trim(), folderName: params.folderName,
+            markdown: params.markdown, members: params.members,
+          })
+          return { content: [{ type: 'text', text: `文档已创建:${doc.url}(把链接写进你的汇报或 message_jarvis 转发。)` }], details: {} }
+        } catch (err) {
+          return { content: [{ type: 'text', text: `建文档失败:${err instanceof Error ? err.message : String(err)}` }], details: {} }
+        }
+      },
+    }),
+
     defineTool({
       name: 'handback',
       label: 'Handback',
