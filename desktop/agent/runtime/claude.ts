@@ -1,4 +1,15 @@
 import { query, createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
+
+/**
+ * claude 可执行文件路径:SDK 自带的平台二进制在本机可能缺包/不兼容(legacy 安装),
+ * 仅 env CLAUDE_CODE_EXECUTABLE 显式覆盖;默认用 SDK 自带平台二进制(版本严格配套)。
+ */
+let claudeExecCache: string | undefined
+export function getClaudeExecutable(): string | undefined {
+  if (claudeExecCache !== undefined) return claudeExecCache
+  claudeExecCache = process.env.CLAUDE_CODE_EXECUTABLE || undefined
+  return claudeExecCache
+}
 import { z } from 'zod'
 import type { RuntimeTool, RuntimeTurnOpts, RuntimeTurnResult, RuntimeToolCall } from '../shared/agent-runtime.js'
 
@@ -27,7 +38,7 @@ interface SdkMessage {
 }
 
 /** JSON Schema(顶层对象)→ Zod shape。只覆盖 jarvis 工具用到的子集,未知类型 z.any()。 */
-function jsonSchemaToZodShape(schema: Record<string, unknown> | undefined): Record<string, any> {
+export function jsonSchemaToZodShape(schema: Record<string, unknown> | undefined): Record<string, any> {
   const shape: Record<string, any> = {}
   const props = (schema?.properties ?? {}) as Record<string, any>
   const required = new Set<string>((schema?.required ?? []) as string[])
@@ -106,6 +117,7 @@ export async function claudeRunTurn(
       permissionMode: 'bypassPermissions',
       includePartialMessages: true,        // stream_event(thinking/text delta)
       abortController,
+      ...(getClaudeExecutable() ? { pathToClaudeCodeExecutable: getClaudeExecutable() } : {}),
     },
   })
 

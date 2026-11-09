@@ -9,6 +9,8 @@ import { bus } from './bus.js'
 import { buildUserEnv } from '../shared/user-env.js'
 import { getUserWorkspace } from '../shared/user-workspace.js'
 import { buildUserMcpServers } from '../shared/user-mcp.js'
+import { getRuntimeId } from '../shared/agent-runtime.js'
+import { runClaudeWorker } from '../runtime/claude-worker.js'
 import { createAgentCommsTools } from './agent-comms.js'
 import { getSubtaskHistoryForPrompt } from './subtask-history-context.js'
 import { getDisabledSkills } from '../jarvis/skill-prefs.js'
@@ -266,6 +268,34 @@ message_peer 发出去不用等,继续干;对方回了,下一轮 check_inbox 看
   const systemPrompt = baseSystemPrompt
     + (relevant ? `\n\n${renderWorkerConstraints(DEFAULT_AGENT_NAME)}` : '')
     + talkLikeHuman
+
+  // ── 双运行时(P6 Phase B):claude 运行时走独立 worker 实现(resume 语义),Pi 走下方原路径 ──
+  if (getRuntimeId() === 'claude') {
+    const claudeResult = await runClaudeWorker({
+      userId, subtaskId, taskId, agentName, recipeId, domain,
+      enrichedDescription, systemPrompt, agentSkillDir, workDir,
+      customTools, context, recordedCwd,
+    })
+    await finalizeSubtaskMeta(subtaskId, {
+      turnCount: claudeResult.totalTurns,
+      retryCount: claudeResult.retriesUsed,
+      tokensInput: claudeResult.tokensInput,
+      tokensOutput: claudeResult.tokensOutput,
+    }).catch(() => {})
+    if (claudeResult.writtenFiles.length) writtenFilesMap.set(subtaskId, claudeResult.writtenFiles)
+    const sid = claudeResult.sessionId || `auto-${Date.now()}`
+    await recordAgentSession(userId, sid, recipeId, taskDescription, domain, recordedCwd)
+    if (!recipe && domain) {
+      await upsertAdhocAgent(userId, {
+        domain,
+        taskDescription,
+        cwd: recordedCwd || undefined,
+        sessionId: claudeResult.sessionId,
+        topics: extractKeywords(taskDescription),
+      }).catch(() => {})
+    }
+    return claudeResult.result
+  }
 
   const MAX_RETRIES = 2
   const RETRY_DELAYS = [3000, 8000]

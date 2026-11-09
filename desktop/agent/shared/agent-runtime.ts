@@ -53,6 +53,27 @@ export interface RuntimeTurnResult {
   sessionId?: string
 }
 
+/** Pi ToolDefinition → 中立 RuntimeTool(execute 摊平 content 为文本)。 */
+export function piToolDefToRuntime(def: {
+  name: string
+  description: string
+  parameters?: unknown
+  execute: (...a: any[]) => Promise<any>
+}): RuntimeTool {
+  return {
+    name: def.name,
+    description: def.description,
+    jsonSchema: (def.parameters ?? { type: 'object', properties: {} }) as Record<string, unknown>,
+    execute: async (args: Record<string, unknown>) => {
+      const r = await def.execute(`rt-${Date.now()}`, args ?? {})
+      const text = Array.isArray(r?.content)
+        ? r.content.map((c: any) => c?.text ?? '').join('\n')
+        : String(r ?? '')
+      return { text }
+    },
+  }
+}
+
 export function getRuntimeId(): RuntimeId {
   const fromEnv = process.env.JARVIS_RUNTIME
   if (fromEnv === 'claude' || fromEnv === 'pi') return fromEnv

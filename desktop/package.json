@@ -31,7 +31,10 @@
       {
         "from": "./agent",
         "to": "app/desktop/agent",
-        "filter": ["**/*", "!**/*.test.ts"]
+        "filter": [
+          "**/*",
+          "!**/*.test.ts"
+        ]
       },
       {
         "from": "../web/dist",
@@ -54,7 +57,13 @@
       "category": "public.app-category.productivity",
       "icon": "build/icon.icns",
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "hardenedRuntime": false,
       "gatekeeperAssess": false
@@ -62,5 +71,8 @@
     "dmg": {
       "title": "J.A.R.V.I.S ${version}"
     }
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/claude-agent-sdk-darwin-arm64": "^0.3.318"
   }
 }
