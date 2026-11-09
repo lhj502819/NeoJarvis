@@ -157,7 +157,11 @@ worker 读边界 redact 补全（跨任务/决策不可见）；`conversation` �
 - **双运行时已上线**(f4d8aad7):AgentRuntime 中立契约(RuntimeTool JSON Schema +
   onDelta/onEvent 语义对齐),llm.rawLlmCall 按 settings.runtime / env JARVIS_RUNTIME
   分发 pi|claude。claude.ts:query() + createSdkMcpServer(Zod 转换)+ stream_event 映射 +
-  settingSources=[] 隔离;冒烟实测网关+工具往返 11.2s。**Phase B 待办**:小弟会话
-  (dispatchToAgent)同走接口,Claude 侧 resume;安装用 --legacy-peer-deps(zod3 冲突)。
+  settingSources=[] 隔离;冒烟实测网关+工具往返 11.2s。
+  **Phase B 已完成**(f37d3960):小弟会话 dispatchToAgent 按 runtime 分发,
+  claude-worker.ts 同契约(progress/轨迹/回合/写文件/重试/abort),跟进消息
+  收件箱+resume 续跑(不中断在跑 query);skill 软链 workDir/.claude/skills。
+  实战坑:平台二进制需显式装(legacy-peer-deps 跳过 optional dep)、
+  PATH 旧 CLI 版本握手不匹配、cwd 不存在报误导性 failed to launch(先 mkdir)。
 - **【待办】队列面板**(Dashboard 侧栏,MonitorPanel 同级):①运行中任务 + 排队的后台消息(orchestrator 暴露 GET /api/queue);②待审批前 3 条(复用 /api/approvals);③事件源心跳(上次轮询/游标/放行与过滤计数,记 source-instance 或 health 文档)。用户已确认要做,排在功能验证之后。
 - 行云轮询默认关闭(enabled+sprintId 需在配置页→事件源里开启);审批模式默认 approval。
