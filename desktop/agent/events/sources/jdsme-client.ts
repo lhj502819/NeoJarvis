@@ -15,6 +15,17 @@ export const DEFAULT_JDSME_CONFIG_PATH = join(
   homedir(), 'Library', 'Application Support', 'Task HUD', 'jdsme.json',
 )
 
+export interface JdMeBotConfig {
+  apiBase: string
+  appKey: string
+  appSecret: string
+  openTeamId: string
+  robotId: string | number
+  robotPin?: string
+  displayName?: string
+  tenantId?: string
+}
+
 export interface JdMeConfig {
   server: string
   profile: string
@@ -22,16 +33,9 @@ export interface JdMeConfig {
   ownerErp?: string
   ownerNickname?: string
   pollSeconds?: number
-  bot: {
-    apiBase: string
-    appKey: string
-    appSecret: string
-    openTeamId: string
-    robotId: string | number
-    robotPin?: string
-    displayName?: string
-    tenantId?: string
-  }
+  bot: JdMeBotConfig
+  /** 建群用公共账号(task-hud 同款);缺省时退回 bot 本身 */
+  groupBot?: JdMeBotConfig
 }
 
 export async function loadJdMeConfig(configPath = process.env.JARVIS_JDSME_CONFIG || DEFAULT_JDSME_CONFIG_PATH): Promise<JdMeConfig | null> {
@@ -66,10 +70,10 @@ export interface JdMeEvent {
 }
 
 export class JdMeClient {
-  private appToken: string | null = null
-  private appTokenExpiresAt = 0
-  private teamToken: string | null = null
-  private teamTokenExpiresAt = 0
+  // token 按 appKey 缓存:分身(bot)与建群公共账号(groupBot)是两套凭证(appId/secret 不同),
+  // 共用单槽会在两者之间来回失效。
+  private appTokens = new Map<string, { token: string; expiresAt: number }>()
+  private teamTokens = new Map<string, { token: string; expiresAt: number }>()
 
   constructor(private config: JdMeConfig, private fetchImpl: typeof fetch = globalThis.fetch) {}
 
@@ -121,10 +125,14 @@ export class JdMeClient {
   }
 
   // ---- JoySpace 文档(重内容出口:markdown → 在线文档,返回 url 发群) ----
-  /** 调 one-ai-native 的 /chat/me/joyspace/create,把 markdown 建成 JoySpace 在线文档并分享给 members。 */
+  /**
+   * 调事件服务的 /joyspace/create,把 markdown 建成 JoySpace 在线文档并分享给 members。
+   * 路由注意:是根路径 /joyspace/create(msg-proxy 的 me_callback 路由表),
+   * 不是 /chat/me/joyspace/create —— 后者会 404(之前 send_joydoc 反复报 not found 的根因)。
+   */
   async createJoyDoc(input: { title: string; folderName?: string; markdown: string; members?: string[] }): Promise<{ url: string; folderName?: string; pageId?: string; sharedTo?: number }> {
     const base = this.config.server.replace(/\/$/, '')
-    const data = await this.requestJson(`${base}/chat/me/joyspace/create?profile=${encodeURIComponent(this.config.profile)}`, {
+    const data = await this.requestJson(`${base}/joyspace/create?profile=${encodeURIComponent(this.config.profile)}`, {
       method: 'POST',
       headers: { 'X-Agent-Token': this.config.agentToken },
       body: {
@@ -140,32 +148,32 @@ export class JdMeClient {
   }
 
   // ---- 开放平台(机器人发消息) ----
-  private async getAppToken(force = false): Promise<string> {
-    if (!force && this.appToken && Date.now() < this.appTokenExpiresAt) return this.appToken
-    const bot = this.config.bot
+  private async getAppToken(force = false, bot: JdMeBotConfig = this.config.bot): Promise<string> {
+    const key = `${bot.appKey}|${bot.apiBase}`
+    const hit = this.appTokens.get(key)
+    if (!force && hit && Date.now() < hit.expiresAt) return hit.token
     const data = await this.requestJson(`${bot.apiBase.replace(/\/$/, '')}/open-api/auth/v1/app_access_token`, {
       method: 'POST',
       body: { appKey: bot.appKey, appSecret: bot.appSecret },
     })
     const token = data?.data?.appAccessToken
     if (!token) throw new Error(`换取 app token 失败:${JSON.stringify(data).slice(0, 200)}`)
-    this.appToken = token
-    this.appTokenExpiresAt = Date.now() + Math.max(60, Number(data?.data?.expireIn ?? 1800) - 120) * 1000
+    this.appTokens.set(key, { token, expiresAt: Date.now() + Math.max(60, Number(data?.data?.expireIn ?? 1800) - 120) * 1000 })
     return token
   }
 
-  private async getTeamToken(force = false): Promise<string> {
-    if (!force && this.teamToken && Date.now() < this.teamTokenExpiresAt) return this.teamToken
-    const bot = this.config.bot
-    const appToken = await this.getAppToken(force)
+  private async getTeamToken(force = false, bot: JdMeBotConfig = this.config.bot): Promise<string> {
+    const key = `${bot.appKey}|${bot.openTeamId}`
+    const hit = this.teamTokens.get(key)
+    if (!force && hit && Date.now() < hit.expiresAt) return hit.token
+    const appToken = await this.getAppToken(force, bot)
     const data = await this.requestJson(`${bot.apiBase.replace(/\/$/, '')}/open-api/auth/v1/team_access_token`, {
       method: 'POST',
       body: { appAccessToken: appToken, openTeamId: bot.openTeamId },
     })
     const token = data?.data?.teamAccessToken
     if (!token) throw new Error(`换取 team token 失败:${JSON.stringify(data).slice(0, 200)}`)
-    this.teamToken = token
-    this.teamTokenExpiresAt = Date.now() + Math.max(60, Number(data?.data?.expireIn ?? 1800) - 120) * 1000
+    this.teamTokens.set(key, { token, expiresAt: Date.now() + Math.max(60, Number(data?.data?.expireIn ?? 1800) - 120) * 1000 })
     return token
   }
 
@@ -203,6 +211,69 @@ export class JdMeClient {
 
   sendGroup(groupId: string, content: string, atUsers: Array<{ app: string; pin: string; nickname?: string }> = []) {
     return this.sendRobotMessage({ groupId, content, atUsers })
+  }
+
+  /**
+   * 建群(移植自 task-hud createGroup,同一套开放平台接口)。
+   * 两个踩坑点:顶层必须带 robotId(少了会报「无此群主创群权限」);
+   * 拉群账号(groupBot)和回消息账号(bot)都要作为 robot.dd 成员进群。
+   * uniqueKey 绑业务对象 → 重复调用是幂等的,不会建出第二个群。
+   */
+  async createGroup(input: {
+    name: string
+    ownerErp: string
+    members?: string[]
+    intro?: string
+    notice?: string
+    uniqueKey?: string
+  }): Promise<{ groupId: string; invalidMembers: unknown[] }> {
+    if (!input.name) throw new Error('群名称不能为空')
+    const groupBot = this.config.groupBot ?? this.config.bot
+    const avatarBot = this.config.bot
+
+    const pins = [input.ownerErp, ...(input.members ?? [])].filter(Boolean)
+    const entries: Array<{ app: string; pin: string }> = []
+    for (const pin of [...new Set(pins)]) entries.push({ app: 'ee', pin })
+    if (avatarBot.robotPin && !pins.includes(avatarBot.robotPin)) {
+      entries.push({ app: 'robot.dd', pin: avatarBot.robotPin })
+    }
+    if (groupBot.robotPin && !pins.includes(groupBot.robotPin)) {
+      entries.push({ app: 'robot.dd', pin: groupBot.robotPin })
+    }
+
+    const payload = {
+      appId: groupBot.appKey,
+      erp: input.ownerErp,
+      tenantId: String(groupBot.tenantId || this.config.bot.tenantId),
+      robotId: String(groupBot.robotId),
+      requestId: `jarvis-group-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      dateTime: Date.now(),
+      params: {
+        name: input.name,
+        intro: input.intro ?? '',
+        notice: input.notice ?? '',
+        owner: { app: 'ee', pin: input.ownerErp },
+        members: entries,
+        uniqueKey: input.uniqueKey || `jarvis-${Date.now()}`,
+      },
+    }
+    const token = await this.getTeamToken(false, groupBot)
+    const data = await this.requestJson(`${groupBot.apiBase.replace(/\/$/, '')}/open-api/suite/v1/timline/createGroup`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: payload,
+    })
+    if (Number(data?.code) !== 0) {
+      const message = data?.msg || JSON.stringify(data).slice(0, 200)
+      const hint = /无权限|没有权限|permission/i.test(message)
+        ? '(开放平台 → 开发配置 → 权限管理 → 服务端API → 群组,开通后重新「上线发布」)'
+        : ''
+      throw new Error(`建群失败:${message}${Number.isFinite(Number(data?.code)) ? ` · code ${data.code}` : ''}${hint}`)
+    }
+    return {
+      groupId: String(data?.data?.groupId ?? ''),
+      invalidMembers: Array.isArray(data?.data?.invalidMembers) ? data.data.invalidMembers : [],
+    }
   }
 
   sendPersonal(erp: string, content: string) {

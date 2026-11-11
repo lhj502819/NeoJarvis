@@ -34,6 +34,7 @@ interface SourceState {
 
 let client: JdMeClient | null = null
 let ownerErp = ''
+let ownerNickname = ''
 let config: JdMeConfig | null = null
 let ownerId = 'system'
 let stopped = false
@@ -269,6 +270,36 @@ export function getJdMeOwnerErp(): string {
   return ownerErp
 }
 
+/** 主人昵称(建群开场白用);未配置时退回 ERP。 */
+export function getJdMeOwnerNickname(): string {
+  return ownerNickname || ownerErp
+}
+
+/**
+ * 建京ME 群(行云需求卡批准后自动拉群,对齐 task-hud 行为)。
+ * 事件源未启用(无凭证)时抛错,由调用方降级为不拉群。
+ */
+export async function createJdMeGroup(input: {
+  name: string
+  ownerErp: string
+  members?: string[]
+  intro?: string
+  uniqueKey?: string
+}): Promise<{ groupId: string; invalidMembers: unknown[] }> {
+  if (!client) throw new Error('京ME 事件源未启用(无凭证),无法建群')
+  return client.createGroup(input)
+}
+
+/** 往群里发消息(可 @ 人);信道规范同 sendJdMe(纯文本、去 markdown)。 */
+export async function sendJdMeGroup(
+  groupId: string,
+  text: string,
+  atUsers: Array<{ app: string; pin: string; nickname?: string }> = [],
+): Promise<void> {
+  if (!client) throw new Error('京ME 事件源未启用(无凭证),无法发群消息')
+  await client.sendGroup(groupId, jdmePlain(text, 1200), atUsers)
+}
+
 /** 运行信息(事件源心跳):运行面板 /api/heartbeat 用 */
 export function getJdMeRuntimeInfo(): { running: boolean; lastPollAt: number; cursor: number; admission: string; whitelistGroups: number } {
   return { running: runningFlag && !stopped, lastPollAt, cursor: state.cursor, admission, whitelistGroups: whitelistedGroups.length }
@@ -302,6 +333,7 @@ export async function initJdMeSource(): Promise<EventSourceDef | null> {
 
   /** 主人 ERP(router 判定消息说话人身份用);未配置 ownerErp 时为空。 */
   ownerErp = String(config.ownerErp ?? '').trim()
+  ownerNickname = String(config.ownerNickname ?? '').trim()
 
   return {
     id: 'jdsme',

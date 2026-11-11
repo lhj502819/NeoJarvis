@@ -106,9 +106,9 @@ export function RunningPage() {
 
   const pendingApprovals = approvals.filter(a => a.status === 'pending')
 
-  const decide = async (id: string, action: 'approve' | 'reject') => {
+  const decide = async (id: string, action: 'approve' | 'reject', withGroup = false) => {
     try {
-      await postJSON(`/api/approvals/${encodeURIComponent(id)}/decide`, { action })
+      await postJSON(`/api/approvals/${encodeURIComponent(id)}/decide`, { action, withGroup })
       load()
     } catch { /* 静默,列表刷新见分晓 */ }
   }
@@ -201,7 +201,8 @@ export function RunningPage() {
             <div key={a.id} className="run-approval">
               <div>{a.title} <span className="run-hint">{a.id} · policy {a.policyVersion}</span></div>
               <div className="run-actions">
-                <button className="run-btn primary" onClick={() => decide(a.id, 'approve')}>批准</button>
+                <button className="run-btn primary" onClick={() => decide(a.id, 'approve', true)} title="建京ME 对接群并拉创建人,完成后汇报回群">批准并拉群</button>
+                <button className="run-btn" onClick={() => decide(a.id, 'approve')}>仅批准</button>
                 <button className="run-btn" onClick={() => decide(a.id, 'reject')}>驳回</button>
               </div>
             </div>

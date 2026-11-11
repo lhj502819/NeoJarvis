@@ -30,6 +30,17 @@ function cardUrl(cardId: string, sprintId: string, workitemType?: string): strin
   return `${path}?sprintId=${encodeURIComponent(sprintId)}&cardId=${encodeURIComponent(cardId)}`
 }
 
+/** 看板卡上的相关人员(负责人/协作者/关注人),归属过滤第一层。 */
+function peopleFrom(card: any): string[] {
+  const out = new Set<string>()
+  const push = (p: any) => { const erp = String(p?.erp ?? '').trim(); if (erp) out.add(erp) }
+  push(card?.owner)
+  for (const key of ['cooperators', 'followers']) {
+    for (const p of Array.isArray(card?.[key]) ? card[key] : []) push(p)
+  }
+  return [...out]
+}
+
 async function readFirstCookieFile(paths: string[]): Promise<string | null> {
   for (const filePath of paths) {
     try {
@@ -52,6 +63,8 @@ export interface XingyunCard {
   creatorName: string
   description: string
   url: string
+  /** 看板列表能直接拿到的相关人员 ERP(负责人/协作者/关注人)——归属过滤用 */
+  people: string[]
 }
 
 export class XingyunClient {
@@ -115,7 +128,21 @@ export class XingyunClient {
       creatorName: String(card.creator?.name ?? '').trim(),
       description: String(card.description ?? '').trim(),
       url: cardUrl(String(card.id), String(sprintId), card.workitemType?.code),
+      people: peopleFrom(card),
     }))
+  }
+
+  /** 卡片详情里的人员(测试主责/受理人/评审人等在列表接口拿不到,归属过滤补查用) */
+  async cardPeople(cardId: string): Promise<string[]> {
+    const d = await this.request<any>('GET', `/bizSpaceCard/cardDetail?id=${encodeURIComponent(cardId)}`)
+    const out = new Set<string>()
+    const push = (p: any) => { const erp = String(p?.erp ?? '').trim(); if (erp) out.add(erp) }
+    push(d?.owner)
+    if (String(d?.processorErp ?? '').trim()) out.add(String(d.processorErp).trim())
+    for (const key of ['testOwners', 'followers', 'cooperators', 'receivers', 'approvers']) {
+      for (const p of Array.isArray(d?.[key]) ? d[key] : []) push(p)
+    }
+    return [...out]
   }
 
   /** 卡片详情(需求正文)——建任务时注入 mandate 用 */

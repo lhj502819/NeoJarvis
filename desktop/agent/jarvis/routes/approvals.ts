@@ -4,7 +4,8 @@ import { listApprovals, decideApproval, getXingyunInstance } from '../../events/
 /**
  * 审批队列 API(superagent-v2 P5):行云需求卡等需要 Sir 授权的工作单元。
  * GET  ?status=pending  审批列表(前端"事件源"分区渲染)
- * POST /:id/decide      {action:'approve'|'reject', note?} —— 批准即以审批单为授权建任务
+ * POST /:id/decide      {action:'approve'|'reject', note?, withGroup?}
+ *                       批准即以审批单为授权建任务;withGroup=true 时同时建京ME 对接群拉创建人
  */
 export function approvalRoutes(): Router {
   const r = Router()
@@ -15,12 +16,14 @@ export function approvalRoutes(): Router {
   })
 
   r.post('/api/approvals/:id/decide', async (req, res) => {
-    const { action, note } = req.body ?? {}
+    const { action, note, withGroup } = req.body ?? {}
     if (action !== 'approve' && action !== 'reject') {
       res.status(400).json({ ok: false, error: "action 必须是 'approve' 或 'reject'" })
       return
     }
-    const rec = await decideApproval(req.userId!, req.params.id, action, typeof note === 'string' ? note : undefined)
+    const rec = await decideApproval(req.userId!, req.params.id, action, typeof note === 'string' ? note : undefined, {
+      withGroup: withGroup === true,
+    })
     if (!rec) { res.status(404).json({ ok: false, error: '审批单不存在' }); return }
     res.json({ ok: true, approval: rec })
   })

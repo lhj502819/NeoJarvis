@@ -927,11 +927,13 @@ function ApprovalQueue({ onSaved }: { onSaved: (msg: string) => void }) {
   }
   useEffect(load, [])
 
-  const decide = async (id: string, action: 'approve' | 'reject') => {
+  const decide = async (id: string, action: 'approve' | 'reject', withGroup = false) => {
     setBusy(id)
     try {
-      await postJSON(`/api/approvals/${encodeURIComponent(id)}/decide`, { action })
-      onSaved(action === 'approve' ? `已批准 ${id},任务开始派发` : `已驳回 ${id}`)
+      await postJSON(`/api/approvals/${encodeURIComponent(id)}/decide`, { action, withGroup })
+      onSaved(action === 'approve'
+        ? `已批准 ${id},任务开始派发${withGroup ? '(已建对接群)' : ''}`
+        : `已驳回 ${id}`)
       load()
     } catch {
       onSaved('审批操作失败')
@@ -959,7 +961,8 @@ function ApprovalQueue({ onSaved }: { onSaved: (msg: string) => void }) {
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             {a.url && <a className="j-btn j-btn-ghost" href={a.url} target="_blank" rel="noreferrer">查看需求卡</a>}
-            <button className="j-btn j-btn-primary" disabled={busy === a.id} onClick={() => decide(a.id, 'approve')}>批准</button>
+            <button className="j-btn j-btn-primary" disabled={busy === a.id} onClick={() => decide(a.id, 'approve', true)} title="建京ME 对接群并拉创建人,完成后汇报回群">批准并拉群</button>
+            <button className="j-btn j-btn-ghost" disabled={busy === a.id} onClick={() => decide(a.id, 'approve')}>仅批准</button>
             <button className="j-btn j-btn-ghost" disabled={busy === a.id} onClick={() => decide(a.id, 'reject')}>驳回</button>
           </div>
         </div>

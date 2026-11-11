@@ -305,9 +305,12 @@ export async function finalizeAndReport(userId: string, taskId: string): Promise
     `- Sir 想要细节会自己追问,到时再展开${previewNote}${unreadNote}${promoteNote}`
 
   // 京ME 同步短讯:这个任务若是从京ME 群/私聊派来的,完成情况要同步回那个聊天。
+  // 行云卡来源默认不回京ME(P5);但批准后自动拉了对接口群时,群就是协作信道
+  // (开场白承诺了"进展都在这个群里同步"),完成汇报要同步回群 —— 对齐 task-hud。
   // 同一次 LLM 调用顺带产出(标记分隔,解析出来),失败不影响主汇报。
   const origin = await getTaskOrigin(userId, taskId).catch(() => null)
-  if (origin && origin.channel !== 'xingyun') {
+  const canSyncJdme = !!origin && (origin.channel !== 'xingyun' || origin.kind === 'group')
+  if (origin && canSyncJdme) {
     reportPrompt += `\n\n【额外任务】这个任务是从京ME ${origin.kind === 'group' ? `群「${origin.chatName}」` : `私聊「${origin.chatName}」`}里派下来的，群里的人还在等结果。` +
       `请在汇报正文之后，另起一行输出分隔标记 =====JDME===== ，然后写一条直接发到该${origin.kind === 'group' ? '群' : '私聊'}的同步短讯：\n` +
       `- 3 行以内,说清:办没办成 + 关键结果一句话\n` +
