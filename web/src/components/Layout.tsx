@@ -16,7 +16,7 @@ import { CredentialsModal } from './CredentialsModal'
 import '../pages/dashboard/dashboard.css'
 import './Layout.css'
 
-type View = 'chat' | 'tasks' | 'team' | 'artifacts' | 'skills' | 'mcp' | 'config' | 'running'
+type View = 'chat' | 'tasks' | 'team' | 'artifacts' | 'skills' | 'mcp' | 'config' | 'running' | 'schedule'
 
 /* ── Codex 式 16px 线性图标(stroke 跟随 currentColor)── */
 const Icon = {
@@ -74,7 +74,7 @@ const PRIMARY_ACTIONS: Array<{ view: View; label: string; icon: ReactNode; newTa
   { view: 'chat', label: '新任务', icon: <Icon.newTask />, newTask: true },
   { view: 'tasks', label: '搜索', icon: <Icon.search />, noActive: true },
   { view: 'mcp', label: '插件', icon: <Icon.plugin /> },
-  { view: 'tasks', label: '定时任务', icon: <Icon.clock /> },
+  { view: 'schedule', label: '定时任务', icon: <Icon.clock /> },
 ]
 /* 工作台分区(原六个视图的去重收纳) */
 const WORKBENCH_ITEMS: Array<{ view: View; label: string; icon: ReactNode }> = [
@@ -273,6 +273,7 @@ function MainArea({ view, user, newTaskSignal }: { view: View; user: AuthUser; n
         {view === 'skills' && <div className="main-page-wrap"><SkillsPage /></div>}
         {view === 'mcp' && <div className="main-page-wrap"><McpPage /></div>}
         {view === 'config' && <div className="main-page-wrap"><ConfigPage /></div>}
+        {view === 'schedule' && <div className="main-page-wrap"><ConfigPage initialSection="schedule" /></div>}
         {view === 'running' && <div className="main-page-wrap"><RunningPage /></div>}
       </div>
       {view !== 'tasks' && monitorOpen && <MonitorPanel onOpen={(taskId, subtaskId) => setModal({ taskId, subtaskId })} />}

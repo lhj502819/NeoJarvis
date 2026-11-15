@@ -197,6 +197,7 @@ export function useChat() {
               role: 'jarvis',
               content: liveContent || '正在思考...',
               status: liveContent ? 'streaming' : 'thinking',
+              ts: Date.now(),
             }]
           })
         }
@@ -230,8 +231,8 @@ export function useChat() {
   const send = useCallback(async (text: string, images?: ChatImagePayload[]) => {
     // Don't abort previous — orchestrator handles buffering/merging server-side
     const imageUrls = images?.map(im => `data:${im.mediaType};base64,${im.data}`)
-    const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: text, status: 'done', imageUrls }
-    const jarvisMsg: Message = { id: `j-${Date.now()}`, role: 'jarvis', content: '', status: 'thinking' }
+    const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: text, status: 'done', imageUrls, ts: Date.now() }
+    const jarvisMsg: Message = { id: `j-${Date.now()}`, role: 'jarvis', content: '', status: 'thinking', ts: Date.now() }
 
     // 若前一条 jarvis 消息还处于 thinking/streaming(用户在快速追问),清掉它。
     // orchestrator 会把用户两条消息 merge 成一次 response,只保留最新那条 thinking 气泡。
@@ -371,13 +372,13 @@ export function useChat() {
       switch (event.type) {
         case 'progress':
           if (isLiveJarvis) return updateLast({ content: event.content, status: 'thinking' })
-          return [...prev, { id: `j-live-${Date.now()}`, role: 'jarvis', content: event.content, status: 'thinking' }]
+          return [...prev, { id: `j-live-${Date.now()}`, role: 'jarvis', content: event.content, status: 'thinking', ts: Date.now() }]
         case 'delta': {
           if (isLiveJarvis) {
             const base = last.status === 'thinking' ? '' : last.content
             return updateLast({ content: base + event.content, status: 'streaming' })
           }
-          return [...prev, { id: `j-live-${Date.now()}`, role: 'jarvis', content: event.content, status: 'streaming' }]
+          return [...prev, { id: `j-live-${Date.now()}`, role: 'jarvis', content: event.content, status: 'streaming', ts: Date.now() }]
         }
         case 'response': {
           // 只有 live-reply(当前对话的实时回复)才能就地更新 thinking 气泡;
@@ -385,13 +386,13 @@ export function useChat() {
           // 把用户刚发出/恢复出的 thinking 气泡当成自己的位置盖掉。
           const isLive = !event.source || event.source === 'live-reply' || (event.source === 'event-reply' && isLiveJarvis)
           if (isLive && isLiveJarvis) return updateLast({ content: event.content, status: 'done', timeline: tlCloseAllRunning(last.timeline ?? [], Date.now()) })
-          return [...prev, { id: `j-live-${Date.now()}`, role: 'jarvis', content: event.content, status: 'done' }]
+          return [...prev, { id: `j-live-${Date.now()}`, role: 'jarvis', content: event.content, status: 'done', ts: Date.now() }]
         }
         case 'user_message': {
           // 事件驱动:京ME 等来源触发的往来,把来件作为用户气泡补进聊天流
           try {
             const d = JSON.parse(event.content) as { text?: string; origin?: MessageOrigin }
-            if (d?.text) return [...prev, { id: `u-ev-${Date.now()}`, role: 'user', content: d.text, status: 'done' as const, origin: d.origin }]
+            if (d?.text) return [...prev, { id: `u-ev-${Date.now()}`, role: 'user', content: d.text, status: 'done' as const, origin: d.origin, ts: Date.now() }]
           } catch { /* ignore */ }
           return prev
         }
@@ -451,7 +452,7 @@ export function useChat() {
   }, [])
 
   const pushJarvisMessage = useCallback((content: string) => {
-    setMessages(prev => [...prev, { id: `j-bg-${Date.now()}`, role: 'jarvis', content, status: 'done' }])
+    setMessages(prev => [...prev, { id: `j-bg-${Date.now()}`, role: 'jarvis', content, status: 'done', ts: Date.now() }])
     setIsLoading(false)
   }, [])
 

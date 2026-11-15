@@ -25,6 +25,15 @@ import { sendJdMe, createJoyDoc } from '../events/sources/jdsme.js'
 import { peekCurrentOrigin, setTaskOrigin } from './task-origin.js'
 import { readResource, RESOURCE_GRAMMAR } from './context-resources.js'
 import { subscribeTask, unsubscribeTaskEverywhere } from '../a2a/threads.js'
+import {
+  listScheduleTasks,
+  getBuiltinMorningTask,
+  createScheduleTask,
+  updateScheduleTask,
+  deleteScheduleTask,
+  type ScheduleTask,
+} from './schedule.js'
+import { reloadCronSchedule } from '../events/sources/cron.js'
 
 /**
  * Artifact detail as returned by the Java server (GET/PATCH /api/artifact/{id}).
@@ -760,6 +769,75 @@ export function createJarvisTools(userId: string): ToolDefinition[] {
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
             return { content: [{ type: 'text', text: `建文档失败:${msg}` }], details: {} }
+          }
+      },
+    }),
+
+    defineTool({
+      name: 'schedule_task',
+      label: 'Schedule Task',
+      description: '管理定时任务(与配置页「定时任务」同一份数据)。Sir 说"每天早上/每周X点做某事"时用 create 建任务:' +
+        'name 用简短名称,time 用 24 小时制 HH:mm,freq=每日 daily 或每周 weekly(days 传 0-6,0=周日),' +
+        'cmd 写成到点后你要执行的一句话指令(如"检查行云迭代里有没有新的待审批需求卡,有就提醒我处理,没有就别打扰")。' +
+        '到点系统会把 cmd 原样发给你执行。list 查看现有任务(含内置晨报),update 可改名/改时间/改指令/启停,delete 删除。' +
+        '任务模型只有"每天/每周几 + 时间",不支持 cron 表达式;内置晨报不可删,只能启停(update 传 builtin-id 会被拒绝)。',
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal('list'), Type.Literal('create'), Type.Literal('update'), Type.Literal('delete')], {
+          description: 'list 查看 / create 新建 / update 修改 / delete 删除',
+        }),
+        id: Type.Optional(Type.String({ description: 'update/delete 时的任务 id(先用 list 查)' })),
+        name: Type.Optional(Type.String({ description: '任务名称(create 必填,可带频率关键词如"行云巡检")' })),
+        cmd: Type.Optional(Type.String({ description: '到点后执行的一句话指令(create 必填)' })),
+        freq: Type.Optional(Type.Union([Type.Literal('daily'), Type.Literal('weekly')], { description: '每天 / 每周' })),
+        days: Type.Optional(Type.Array(Type.Number(), { description: '每周几:0=周日,1..6=周一到周六;仅 weekly 用' })),
+        time: Type.Optional(Type.String({ description: '24 小时制 HH:mm,如 09:30' })),
+        enabled: Type.Optional(Type.Boolean({ description: '是否启用(默认 true)' })),
+      }),
+      execute: async (_toolCallId, params) => {
+          const whenText = (t: Pick<ScheduleTask, 'freq' | 'days' | 'time'>) => {
+            if (t.freq === 'daily') return `每天 ${t.time}`
+            const names = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+            const days = [...(t.days ?? [])].sort((a, b) => (a === 0 ? 7 : a) - (b === 0 ? 7 : b))
+            return days.length ? `每${days.map(d => names[d] ?? '').join('、')} ${t.time}` : `每周 ${t.time}`
+          }
+          try {
+            if (params.action === 'list') {
+              const [tasks, builtin] = await Promise.all([listScheduleTasks(userId), Promise.resolve(getBuiltinMorningTask())])
+              const all = [builtin, ...tasks]
+              const lines = all.map(t =>
+                `- ${t.name}${t.builtin ? '(内置)' : ''} | ${whenText(t)} | ${t.enabled ? '启用' : '停用'} | id=${t.id}` +
+                (t.last ? ` | 上次 ${t.last.at}${t.last.ok ? '' : ' · 失败'}` : ''),
+              )
+              return { content: [{ type: 'text', text: `当前定时任务 ${all.length} 个:\n${lines.join('\n')}` }], details: {} }
+            }
+            if (params.action === 'create') {
+              const task = await createScheduleTask(userId, {
+                name: params.name, cmd: params.cmd, freq: params.freq ?? 'daily',
+                days: params.days ?? [], time: params.time, enabled: params.enabled ?? true,
+              })
+              await reloadCronSchedule()
+              return { content: [{ type: 'text', text: `已创建定时任务「${task.name}」(${whenText(task)}),保存即生效。id=${task.id}` }], details: {} }
+            }
+            if (params.action === 'update') {
+              if (!params.id) throw new Error('update 需要 id(先用 list 查)')
+              const task = await updateScheduleTask(userId, params.id, {
+                ...(params.name !== undefined ? { name: params.name } : {}),
+                ...(params.cmd !== undefined ? { cmd: params.cmd } : {}),
+                ...(params.freq !== undefined ? { freq: params.freq } : {}),
+                ...(params.days !== undefined ? { days: params.days } : {}),
+                ...(params.time !== undefined ? { time: params.time } : {}),
+                ...(params.enabled !== undefined ? { enabled: params.enabled } : {}),
+              })
+              await reloadCronSchedule()
+              return { content: [{ type: 'text', text: `已更新「${task.name}」(${whenText(task)},${task.enabled ? '启用' : '停用'})。` }], details: {} }
+            }
+            if (!params.id) throw new Error('delete 需要 id(先用 list 查)')
+            const ok = await deleteScheduleTask(userId, params.id)
+            await reloadCronSchedule()
+            return { content: [{ type: 'text', text: ok ? '定时任务已删除。' : '没找到该任务;内置晨报不可删除,只能启停。' }], details: {} }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            return { content: [{ type: 'text', text: `定时任务操作失败:${msg}` }], details: {} }
           }
       },
     }),

@@ -24,6 +24,18 @@ import {
 } from '../agent-profile.js'
 import { SOURCE_KINDS, getSourceKind, getJdmeInstance, saveJdmeInstance } from '../../events/sources/registry.js'
 import { getXingyunInstance, saveXingyunInstance } from '../../events/sources/xingyun.js'
+import {
+  listScheduleTasks,
+  getBuiltinMorningTask,
+  getBuiltinPromotionTask,
+  setBuiltinPromotionConfig,
+  createScheduleTask,
+  updateScheduleTask,
+  deleteScheduleTask,
+  setBuiltinMorningEnabled,
+} from '../schedule.js'
+import { reloadCronSchedule } from '../../events/sources/cron.js'
+import { reloadPromotionWatch } from '../promotion-watch.js'
 
 /**
  * 配置界面 API(docs/superagent-design.md §persona 配置层)。
@@ -86,14 +98,73 @@ export function configRoutes(): Router {
       return
     }
     await saveUserSettingsRaw(user as Record<string, unknown>)
+    // 晨报时间/启停可能变了:重排调度器,保存即生效(不用重启)
+    await reloadCronSchedule().catch(() => {})
     res.json({ ok: true, user: getUserSettingsRaw(), effective: getSettings() })
   })
   r.delete('/api/config/settings', async (_req, res) => {
     await resetUserSettings()
+    await reloadCronSchedule().catch(() => {})
     res.json({ ok: true, user: null, effective: getSettings() })
   })
 
   // ── 事件源(P4):kind 元数据 + 实例配置(source-instance 文档表) ──
+  // ── 定时任务(配置页「定时任务」分区):用户任务存文档表,晨报为内置任务 ──
+  r.get('/api/config/schedules', async (req, res) => {
+    const tasks = await listScheduleTasks(req.userId!)
+    const builtins = [getBuiltinMorningTask(), getBuiltinPromotionTask()]
+    // builtin 字段保留旧前端兼容
+    res.json({ ok: true, builtin: builtins[0], builtins, tasks })
+  })
+  r.post('/api/config/schedules', async (req, res) => {
+    try {
+      const task = await createScheduleTask(req.userId!, req.body)
+      await reloadCronSchedule()
+      res.json({ ok: true, task })
+    } catch (err) {
+      res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+  // 内置转正巡检:启停 + 巡检间隔(保存即重载巡检定时器)
+  r.put('/api/config/schedules/builtin-promotion', async (req, res) => {
+    try {
+      const builtin = await setBuiltinPromotionConfig({
+        enabled: typeof req.body?.enabled === 'boolean' ? req.body.enabled : undefined,
+        everyMinutes: req.body?.everyMinutes === undefined ? undefined : Number(req.body.everyMinutes),
+      })
+      reloadPromotionWatch()
+      res.json({ ok: true, builtin })
+    } catch (err) {
+      res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+  // 内置晨报启停(写 settings 覆盖层,保留时间配置)
+  r.put('/api/config/schedules/builtin', async (req, res) => {
+    try {
+      const enabled = req.body?.enabled !== false
+      const builtin = await setBuiltinMorningEnabled(enabled)
+      await reloadCronSchedule()
+      res.json({ ok: true, builtin })
+    } catch (err) {
+      res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+  r.put('/api/config/schedules/:id', async (req, res) => {
+    try {
+      const task = await updateScheduleTask(req.userId!, req.params.id, req.body)
+      await reloadCronSchedule()
+      res.json({ ok: true, task })
+    } catch (err) {
+      res.status(400).json({ ok: false, error: err instanceof Error ? err.message : String(err) })
+    }
+  })
+  r.delete('/api/config/schedules/:id', async (req, res) => {
+    const ok = await deleteScheduleTask(req.userId!, req.params.id).catch(() => false)
+    if (!ok) { res.status(404).json({ ok: false, error: '任务不存在或不可删除' }); return }
+    await reloadCronSchedule()
+    res.json({ ok: true })
+  })
+
   r.get('/api/config/sources', async (req, res) => {
     const instances: Record<string, unknown> = {}
     for (const k of SOURCE_KINDS) {

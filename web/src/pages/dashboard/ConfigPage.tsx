@@ -8,7 +8,7 @@ import { fetchJSON, putJSON, deleteJSON, postJSON } from '../../api/client'
  * 所有修改写入数据库(persona-config 文档);读取走内存缓存,保存即热生效。
  */
 
-type SectionId = 'prompt' | 'skills' | 'skill-editor' | 'agent' | 'settings' | 'sources'
+type SectionId = 'prompt' | 'skills' | 'skill-editor' | 'agent' | 'settings' | 'sources' | 'schedule'
 type AgentBlock = 'modules' | 'role' | 'boundaries' | 'redlines' | 'workflow' | 'taboos'
 
 const SECTIONS: Array<{ id: SectionId; label: string; hint: string }> = [
@@ -17,6 +17,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; hint: string }> = [
   { id: 'skills', label: '内置 Skills', hint: '默认加载的决策规则' },
   { id: 'settings', label: '系统参数', hint: 'Watchdog / 免打扰 / 晨报' },
   { id: 'sources', label: '事件源', hint: '启停与准入模式' },
+  { id: 'schedule', label: '定时任务', hint: '按时间自动执行' },
 ]
 
 const AGENT_BLOCKS: Array<{ id: AgentBlock; label: string; hint: string }> = [
@@ -46,7 +47,7 @@ interface Settings {
   watchdog: { intervalMin: number; idleMin: number; maxMin: number; retryFailCount: number }
   quietHours: { startHour: number; endHour: number }
   proactive: { hourlyCap: number }
-  morningReport: { at: string }
+  morningReport: { at: string; enabled?: boolean }
   events: { jdsmeGroups: string[] }
   runtime?: 'pi' | 'claude'
 }
@@ -75,6 +76,25 @@ interface SkillView {
   icon?: string
   source: 'builtin' | 'personal'
   enabled: boolean
+}
+
+interface ScheduleTask {
+  id: string
+  name: string
+  builtin?: boolean
+  enabled: boolean
+  freq: 'daily' | 'weekly'
+  days: number[]
+  time: string
+  cmd: string
+  last?: { at: string; ok: boolean }
+  /** 间隔型内置任务(转正巡检):每 N 分钟 */
+  everyMinutes?: number
+}
+
+interface ScheduleData {
+  builtins: ScheduleTask[]
+  tasks: ScheduleTask[]
 }
 
 interface AgentModule {
@@ -114,8 +134,8 @@ interface AgentProfileResponse {
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T
 const num = (v: string, fallback: number) => (Number.isFinite(Number(v)) ? Number(v) : fallback)
 
-export function ConfigPage() {
-  const [section, setSection] = useState<SectionId>('agent')
+export function ConfigPage({ initialSection }: { initialSection?: SectionId } = {}) {
+  const [section, setSection] = useState<SectionId>(initialSection ?? 'agent')
   const [saved, setSaved] = useState('')
   const flash = (msg: string) => { setSaved(msg); window.setTimeout(() => setSaved(''), 2500) }
 
@@ -125,6 +145,8 @@ export function ConfigPage() {
 
   // 内置 skills
   const [skills, setSkills] = useState<SkillView[]>([])
+  // 定时任务(配置页)
+  const [schedules, setSchedules] = useState<ScheduleData | null>(null)
   // 管道 skill 在线编辑(与系统提示词同一套覆盖层机制)
   const [skillEd, setSkillEd] = useState<Editor | null>(null)
   const [skillEdName, setSkillEdName] = useState('')
@@ -155,6 +177,7 @@ export function ConfigPage() {
       setSettingsOverridden(!!r.user)
     }).catch(() => {})
     fetchJSON<SkillView[]>('/api/skills').then(setSkills).catch(() => {})
+    fetchJSON<ScheduleData & { builtin?: ScheduleTask }>('/api/config/schedules').then(r => setSchedules({ builtins: r.builtins ?? (r.builtin ? [r.builtin] : []), tasks: r.tasks })).catch(() => {})
     fetchJSON<{ kinds: SourceKindSpec[]; instances: Record<string, SourceInstance> }>('/api/config/sources').then(r => {
       setSourceKinds(r.kinds ?? [])
       setSourceInstances(r.instances ?? {})
@@ -386,6 +409,18 @@ export function ConfigPage() {
                 }).catch(() => {})
               }}
             />
+          )}
+          {section === 'schedule' && schedules && (
+            <ScheduleSection
+              data={schedules}
+              onSaved={msg => {
+                flash(msg)
+                fetchJSON<ScheduleData & { builtin?: ScheduleTask }>('/api/config/schedules').then(r => setSchedules({ builtins: r.builtins ?? (r.builtin ? [r.builtin] : []), tasks: r.tasks })).catch(() => {})
+              }}
+            />
+          )}
+          {section === 'schedule' && !schedules && (
+            <div className="cfg-card cfg-empty">定时任务加载中…</div>
           )}
           {section === 'settings' && settings && (
             <SettingsSection
@@ -749,7 +784,7 @@ function SettingsSection({
           <Field label="免打扰开始（时）"><input className="j-input" name="quiet-startHour" value={settings.quietHours.startHour} onChange={e => setNum('quietHours', 'startHour', e.target.value, 23)} /></Field>
           <Field label="免打扰结束（时）"><input className="j-input" name="quiet-endHour" value={settings.quietHours.endHour} onChange={e => setNum('quietHours', 'endHour', e.target.value, 8)} /></Field>
           <Field label="每小时上限"><input className="j-input" name="proactive-hourlyCap" value={settings.proactive.hourlyCap} onChange={e => setNum('proactive', 'hourlyCap', e.target.value, 3)} /></Field>
-          <Field label="晨报时间"><input className="j-input" name="morning-report-at" value={settings.morningReport.at} placeholder="09:00，留空停用" onChange={e => setSettings({ ...settings, morningReport: { at: e.target.value } })} /></Field>
+          <Field label="晨报时间"><input className="j-input" name="morning-report-at" value={settings.morningReport.at} placeholder="09:00，留空停用" onChange={e => setSettings({ ...settings, morningReport: { ...settings.morningReport, at: e.target.value } })} /></Field>
         </div>
 
         <div className="cfg-section">Agent 运行时 <span className="cfg-hint">pi = 进程内(默认);claude = Claude Agent SDK(能力强,spawn CLI 稍重)</span></div>
@@ -1028,5 +1063,303 @@ function SectionHead({ title, desc, right }: { title: string; desc: string; righ
       </div>
       {right && <div className="cfg-section-right">{right}</div>}
     </div>
+  )
+}
+
+/* ───────────────────────── 定时任务 ───────────────────────── */
+
+const SCHED_DAYS: Array<[number, string]> = [[1, '周一'], [2, '周二'], [3, '周三'], [4, '周四'], [5, '周五'], [6, '周六'], [0, '周日']]
+
+function scheduleWhenText(t: ScheduleTask): string {
+  if (t.everyMinutes) return `每 ${t.everyMinutes} 分钟`
+  if (t.freq === 'daily') return `每天 ${t.time}`
+  const days = [...t.days].sort((a, b) => (a === 0 ? 7 : a) - (b === 0 ? 7 : b))
+  if (days.length === 0) return `每周 ${t.time}`
+  if (days.length === 7) return `每天 ${t.time}`
+  if (days.length === 5 && [1, 2, 3, 4, 5].every(d => days.includes(d))) return `工作日 ${t.time}`
+  const names = days.map(d => SCHED_DAYS.find(([v]) => v === d)?.[1] ?? '').join('、')
+  return `每${names} ${t.time}`
+}
+
+interface ScheduleDraft {
+  id?: string
+  name: string
+  freq: 'daily' | 'weekly'
+  days: number[]
+  time: string
+  cmd: string
+  enabled: boolean
+}
+
+/**
+ * 定时任务分区(配置页)。列表 + 新建/编辑弹层 + 启停/删除。
+ * 晨报是内置任务:可启停、时间随系统参数,不可删除。
+ */
+function ScheduleSection({ data, onSaved }: { data: ScheduleData; onSaved: (msg: string) => void }) {
+  const [draft, setDraft] = useState<ScheduleDraft | null>(null)
+  const [errors, setErrors] = useState<{ name?: string; cmd?: string; time?: string; days?: string }>({})
+  const [busy, setBusy] = useState('')
+  const [pendingDelete, setPendingDelete] = useState('')
+
+  useEffect(() => {
+    if (!draft) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setDraft(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [draft])
+
+  const enabledCount = data.builtins.filter(t => t.enabled).length + data.tasks.filter(t => t.enabled).length
+  const total = data.builtins.length + data.tasks.length
+
+  const openNew = () => {
+    setErrors({})
+    setDraft({ name: '', freq: 'daily', days: [], time: '10:00', cmd: '', enabled: true })
+  }
+  const openEdit = (t: ScheduleTask) => {
+    setErrors({})
+    setDraft({ id: t.id, name: t.name, freq: t.freq, days: t.days, time: t.time, cmd: t.cmd, enabled: t.enabled })
+  }
+
+  const toggleTask = async (t: ScheduleTask) => {
+    setBusy(t.id)
+    try {
+      await putJSON(`/api/config/schedules/${encodeURIComponent(t.id)}`, { enabled: !t.enabled })
+      onSaved(`「${t.name}」已${t.enabled ? '停用' : '启用'}`)
+    } catch { onSaved('操作失败') } finally { setBusy('') }
+  }
+  const toggleBuiltin = async (t: ScheduleTask) => {
+    setBusy(t.id)
+    try {
+      const path = t.id === 'builtin-promotion' ? '/api/config/schedules/builtin-promotion' : '/api/config/schedules/builtin'
+      await putJSON(path, { enabled: !t.enabled })
+      onSaved(`「${t.name}」已${t.enabled ? '停用' : '启用'}`)
+    } catch { onSaved('操作失败') } finally { setBusy('') }
+  }
+
+  const savePromotionInterval = async (minutes: number) => {
+    setBusy('builtin-promotion')
+    try {
+      await putJSON('/api/config/schedules/builtin-promotion', { everyMinutes: minutes })
+      onSaved(`转正巡检已改为每 ${minutes} 分钟`)
+    } catch { onSaved('操作失败') } finally { setBusy('') }
+  }
+  const removeTask = async (t: ScheduleTask) => {
+    if (pendingDelete !== t.id) {
+      setPendingDelete(t.id)
+      window.setTimeout(() => setPendingDelete(p => (p === t.id ? '' : p)), 4000)
+      return
+    }
+    try {
+      await deleteJSON(`/api/config/schedules/${encodeURIComponent(t.id)}`)
+      setPendingDelete('')
+      onSaved(`已删除「${t.name}」`)
+    } catch { onSaved('删除失败') }
+  }
+
+  const save = async () => {
+    if (!draft) return
+    const errs: typeof errors = {}
+    if (!draft.name.trim()) errs.name = '给任务起个名字'
+    if (!draft.cmd.trim()) errs.cmd = '写一句到点时要做的事'
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.time)) errs.time = '时间格式应为 HH:mm'
+    if (draft.freq === 'weekly' && draft.days.length === 0) errs.days = '每周至少选一天'
+    setErrors(errs)
+    if (Object.keys(errs).length > 0) return
+    try {
+      if (draft.id) {
+        await putJSON(`/api/config/schedules/${encodeURIComponent(draft.id)}`, { ...draft, id: undefined })
+      } else {
+        await postJSON('/api/config/schedules', draft)
+      }
+      setDraft(null)
+      onSaved('已保存,即时生效')
+    } catch (err) {
+      onSaved(err instanceof Error ? err.message : '保存失败')
+    }
+  }
+
+  const rowActions = (t: ScheduleTask) => {
+    if (t.builtin) {
+      return (
+        <div className="sch-actions">
+          {t.id === 'builtin-promotion' ? (
+            <select
+              className="j-input sch-interval"
+              value={t.everyMinutes ?? 60}
+              disabled={busy === t.id}
+              aria-label="巡检间隔"
+              onChange={e => void savePromotionInterval(Number(e.target.value))}
+            >
+              {[30, 60, 120, 240].map(v => <option key={v} value={v}>每 {v} 分钟</option>)}
+            </select>
+          ) : (
+            <span className="cfg-badge">时间随系统参数</span>
+          )}
+          <span className="cfg-badge cfg-badge-blue">内置</span>
+        </div>
+      )
+    }
+    if (pendingDelete === t.id) {
+      return (
+        <div className="sch-actions sch-confirm">
+          <span>删除后不可恢复</span>
+          <button className="sch-btn-icon danger" type="button" onClick={() => void removeTask(t)}>确认删除</button>
+          <button className="sch-btn-icon" type="button" onClick={() => setPendingDelete('')}>取消</button>
+        </div>
+      )
+    }
+    return (
+      <div className="sch-actions">
+        <button className="sch-btn-icon" type="button" onClick={() => openEdit(t)}>编辑</button>
+        <button className="sch-btn-icon danger" type="button" onClick={() => void removeTask(t)}>删除</button>
+      </div>
+    )
+  }
+
+  const row = (t: ScheduleTask) => (
+    <div className="sch-row" key={t.id} data-disabled={String(t.enabled === false)} data-builtin={String(!!t.builtin)}>
+      <button
+        className={`cfg-toggle${t.enabled ? ' on' : ''}`}
+        type="button"
+        aria-pressed={t.enabled}
+        aria-label={`${t.enabled ? '停用' : '启用'} ${t.name}`}
+        disabled={t.builtin ? busy === 'builtin' : busy === t.id}
+        onClick={() => void (t.builtin ? toggleBuiltin(t) : toggleTask(t))}
+      />
+      <div className="sch-main">
+        <div className="sch-title">
+          <span className="sch-name">{t.name}</span>
+          <span className="sch-when">{scheduleWhenText(t)}</span>
+          {t.builtin && <span className="cfg-badge cfg-badge-blue">内置</span>}
+        </div>
+        <div className="sch-cmd">{t.cmd}</div>
+        {!t.builtin && (t.last
+          ? <div className="sch-last"><span className={`sch-dot ${t.last.ok ? 'ok' : 'warn'}`} />上次执行 {t.last.at}{t.last.ok ? '' : ' · 失败'}</div>
+          : <div className="sch-last"><span className="sch-dot idle" />尚未执行</div>)}
+      </div>
+      {rowActions(t)}
+    </div>
+  )
+
+  return (
+    <>
+      <SectionHead
+        title="定时任务"
+        desc="按固定时间唤 Jarvis 做一件事。到点后它按「指令」这句话执行——可以提醒你、检查某个来源、汇总并推送。保存即时生效,无需重启。"
+        right={
+          <>
+            <span className="cfg-badge" data-on={enabledCount > 0}>{enabledCount} / {total} 个启用</span>
+            <button className="j-btn j-btn-primary" onClick={openNew}>新建定时任务</button>
+          </>
+        }
+      />
+      <div className="cfg-card">
+        {data.builtins.map(row)}
+        {data.tasks.map(row)}
+        {data.tasks.length === 0 && (
+          <div className="sch-empty">
+            <strong>还没有自定义定时任务</strong>
+            点右上角「新建定时任务」,让 Jarvis 每天到点替你干活。
+          </div>
+        )}
+      </div>
+      <p className="cfg-hint" style={{ marginTop: 10, lineHeight: 1.8 }}>
+        提示:例行巡检类任务建议写成「检查……有变化才提醒」,避免每天收到固定噪音。内置晨报的时间在「系统参数」里调整。
+      </p>
+
+      {draft && (
+        <div className="sch-overlay" onMouseDown={e => { if (e.target === e.currentTarget) setDraft(null) }}>
+          <div className="sch-modal" role="dialog" aria-modal="true" aria-labelledby="sch-modal-title">
+            <div className="sch-modal-head">
+              <h4 id="sch-modal-title">{draft.id ? '编辑定时任务' : '新建定时任务'}</h4>
+              <button className="sch-modal-close" type="button" aria-label="关闭" onClick={() => setDraft(null)}>×</button>
+            </div>
+            <div className="sch-modal-body">
+              <div className={`sch-field${errors.name ? ' err' : ''}`}>
+                <label className="sch-label" htmlFor="sch-name">名称</label>
+                <input
+                  className="j-input"
+                  id="sch-name"
+                  value={draft.name}
+                  maxLength={30}
+                  placeholder="例如:行云待审批巡检"
+                  onChange={e => setDraft({ ...draft, name: e.target.value })}
+                />
+                {errors.name && <span className="sch-err">{errors.name}</span>}
+              </div>
+
+              <div className="sch-field">
+                <label className="sch-label">时间</label>
+                <div className="sch-inline">
+                  <div className="sch-seg" role="group" aria-label="频率">
+                    <button type="button" className={draft.freq === 'daily' ? 'active' : ''} onClick={() => setDraft({ ...draft, freq: 'daily' })}>每天</button>
+                    <button type="button" className={draft.freq === 'weekly' ? 'active' : ''} onClick={() => setDraft({ ...draft, freq: 'weekly' })}>每周</button>
+                  </div>
+                  <div className="sch-field time">
+                    <input
+                      className="j-input"
+                      type="time"
+                      value={draft.time}
+                      onChange={e => setDraft({ ...draft, time: e.target.value })}
+                    />
+                  </div>
+                </div>
+                {draft.freq === 'weekly' && (
+                  <div className="sch-days">
+                    {SCHED_DAYS.map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className={`sch-day${draft.days.includes(value) ? ' active' : ''}`}
+                        onClick={() => {
+                          const days = draft.days.includes(value)
+                            ? draft.days.filter(d => d !== value)
+                            : [...draft.days, value]
+                          setDraft({ ...draft, days })
+                        }}
+                      >{label}</button>
+                    ))}
+                  </div>
+                )}
+                <span className="sch-hint">{errors.days ? <span className="sch-err">{errors.days}</span> : scheduleWhenText({ ...draft, everyMinutes: undefined })}</span>
+              </div>
+
+              <div className={`sch-field${errors.cmd ? ' err' : ''}`}>
+                <label className="sch-label" htmlFor="sch-cmd">指令</label>
+                <textarea
+                  className="j-input"
+                  id="sch-cmd"
+                  rows={3}
+                  value={draft.cmd}
+                  maxLength={300}
+                  placeholder="到点后要对 Jarvis 说的话,例如:检查行云迭代里有没有新的待审批需求卡,有就提醒我处理,没有就别打扰。"
+                  onChange={e => setDraft({ ...draft, cmd: e.target.value })}
+                />
+                <span className="sch-hint">用一句自然语言描述就行,Jarvis 会按它判断该提醒、查数据还是派任务。</span>
+                {errors.cmd && <span className="sch-err">{errors.cmd}</span>}
+              </div>
+
+              <div className="sch-field">
+                <label className="sch-label">状态</label>
+                <button
+                  type="button"
+                  className={`cfg-toggle${draft.enabled ? ' on' : ''}`}
+                  aria-pressed={draft.enabled}
+                  aria-label="启用任务"
+                  style={{ marginTop: 0 }}
+                  onClick={() => setDraft({ ...draft, enabled: !draft.enabled })}
+                />
+                <span className="sch-hint">{draft.enabled ? '到点自动执行' : '保存后保持停用'}</span>
+              </div>
+            </div>
+            <div className="sch-modal-foot">
+              <span className="left-note">保存后下一次到点即生效</span>
+              <button className="j-btn j-btn-ghost" type="button" onClick={() => setDraft(null)}>取消</button>
+              <button className="j-btn j-btn-primary" type="button" onClick={() => void save()}>保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

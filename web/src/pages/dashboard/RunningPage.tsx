@@ -55,6 +55,7 @@ const CHANNEL_LABEL: Record<string, string> = {
   'jdsme-dm': '京ME私聊',
   'web': 'web',
   'xingyun': '行云',
+  'mcp': 'MCP',
 }
 
 const KNOWN_MECHS = [

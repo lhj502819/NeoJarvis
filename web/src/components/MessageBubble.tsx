@@ -116,6 +116,27 @@ function tail(text: string, max = 180): string {
   return clean.length > max ? `…${clean.slice(-max)}` : clean
 }
 
+/**
+ * 消息时间:当天只显示 HH:mm;跨天补 MM-DD;跨年补年份。
+ * ts 为毫秒时间戳(历史消息来自服务端 timestamp,实时消息在创建时落当前时间)。
+ */
+function fmtMsgTime(ts?: number): string {
+  if (!ts || !Number.isFinite(ts)) return ''
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ''
+  const now = new Date()
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  if (d.toDateString() === now.toDateString()) return hm
+  const md = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return d.getFullYear() === now.getFullYear() ? `${md} ${hm}` : `${d.getFullYear()}-${md} ${hm}`
+}
+
+function MsgTime({ ts, align = 'left' }: { ts?: number; align?: 'left' | 'right' }) {
+  const label = fmtMsgTime(ts)
+  if (!label) return null
+  return <div className="msg-time" data-align={align}>{label}</div>
+}
+
 /** 工具入参只展示最有信息量的那个字段，避免把整段 JSON 糊在行里。 */
 function formatToolArgs(raw?: string): string {
   if (!raw) return ''
@@ -310,6 +331,7 @@ function CommsCard({ message }: { message: Message }) {
         {message.commsType && (
           <span className="msg-comms-type">{STEP_LABEL[message.commsType] ?? message.commsType}</span>
         )}
+        {fmtMsgTime(message.ts) && <span className="msg-comms-time">{fmtMsgTime(message.ts)}</span>}
         <span className="msg-spacer" />
         {message.content.length > 120 && (
           <button className="msg-comms-toggle" onClick={() => setOpen(o => !o)} type="button">
@@ -405,6 +427,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onArtifactCl
           )}
           {display}
         </div>
+        <MsgTime ts={message.ts} align="right" />
       </div>
     )
   }
@@ -462,6 +485,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onArtifactCl
           <span style={{ opacity: 0.6, fontSize: 12 }}>→</span>
         </button>
       )}
+      {message.status !== 'thinking' && message.status !== 'streaming' && <MsgTime ts={message.ts} />}
     </div>
   )
 })

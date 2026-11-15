@@ -1,5 +1,5 @@
 import type { JarvisEvent } from './types.js'
-import { enqueueBackgroundMessage } from '../jarvis/orchestrator.js'
+import { enqueueBackgroundMessage, noopWriter } from '../jarvis/orchestrator.js'
 import { pushProactiveMessage } from '../jarvis/proactive.js'
 import { generateMorningReport } from './reports.js'
 import { createEventWriter } from './writer.js'
@@ -30,6 +30,15 @@ async function handleEvent(ev: JarvisEvent): Promise<void> {
       const text = await generateMorningReport(ev.userId)
       // 用户自己定的日程,force 推送(默认 9:00 也不在免打扰时段)
       await pushProactiveMessage(ev.userId, text, { force: true })
+      break
+    }
+
+    case 'scheduled_task': {
+      // 用户在配置页设的定时任务:把「一句话指令」原样交给 Jarvis 完整 think。
+      // 无事件 sink(不来自某个聊天),回复走 web 聊天流;要发京ME 由它在指令里自己用 send_jdme。
+      const p = ev.payload as { taskId: string; name: string; cmd: string }
+      const labeled = `【定时任务「${p.name}」】\n${p.cmd}\n\n(这是 Sir 在配置页设置的定时任务,到点自动触发。按指令执行;要告诉 Sir 的内容直接回复,会显示在聊天里。需要主动发京ME 时用 send_jdme。)`
+      enqueueBackgroundMessage(ev.userId, labeled, noopWriter)
       break
     }
 

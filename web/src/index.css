@@ -501,6 +501,21 @@ body::after {
 .msg-origin-chip[data-role="user"] { align-self: flex-end; }
 .msg-origin-chip[data-role="jarvis"] { align-self: flex-start; }
 
+/* 消息时间:每条消息下方的小字(HH:mm,跨天带日期) */
+.msg-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 5px;
+  line-height: 1.3;
+  user-select: none;
+}
+.msg-time[data-align="right"] { align-self: flex-end; }
+.msg-comms-time {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  user-select: none;
+}
+
 /* ═══ 时间线行(ZCode 式思考/工具交错)═══ */
 /* ── 对话流时间线：极简灰度行（参考 Claude Code / Codex） ── */
 .msg-tl {

@@ -13,7 +13,7 @@ import { docDelete, docList, docPut } from '../shared/docs.js'
  * 全局计数器(放行/过滤/寒暄/直通…)供事件源心跳读取,自启动起累计。
  */
 
-export type TraceChannel = 'jdsme-group' | 'jdsme-dm' | 'web' | 'xingyun'
+export type TraceChannel = 'jdsme-group' | 'jdsme-dm' | 'web' | 'xingyun' | 'mcp'
 
 export interface TraceStage {
   at: number

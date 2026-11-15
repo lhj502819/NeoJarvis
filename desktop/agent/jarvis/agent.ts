@@ -25,6 +25,9 @@ import { agentRoutes } from './routes/agent.js'
 import { configRoutes } from './routes/config.js'
 import { timelineRoutes } from './routes/timeline.js'
 import { approvalRoutes } from './routes/approvals.js'
+import { mcpBridgeRoutes } from './routes/mcp-bridge.js'
+import { getBridgeToken, BRIDGE_TOKEN_PATH } from '../mcp/bridge-token.js'
+import { listUsers } from '../auth/users.js'
 import { initPersonaCache } from './persona.js'
 import './lifecycle.js'
 
@@ -60,7 +63,11 @@ class JarvisExecutor implements AgentExecutor {
     }
     eventBus.publish(statusUpdate)
 
-    const thinkResult = await think('system', userText, (progress) => {
+    // 外部 A2A 调用归属真实主人(第一个注册用户),不要落到 'system' —— 否则外部
+    // agent 触发的任务/记忆和 Sir 的数据割裂(与 MCP 桥接同一身份语义)。
+    const users = await listUsers().catch(() => [])
+    const ownerId = users[0]?.id ?? 'system'
+    const thinkResult = await think(ownerId, userText, (progress) => {
       broadcast('progress', progress)
     })
 
@@ -88,6 +95,12 @@ class JarvisExecutor implements AgentExecutor {
 }
 
 export function startJarvisServer(): express.Express {
+  // 启动即确保 MCP 桥接令牌存在(外部 agent 的 MCP server 读同一份文件)
+  try {
+    getBridgeToken()
+    console.log(`  MCP 桥接: 令牌就绪 (${BRIDGE_TOKEN_PATH})`)
+  } catch { /* 令牌生成失败不阻塞启动 */ }
+
   const app = express()
   app.use(express.json({ limit: '15mb' }))  // 放大以容纳 base64 图片
   app.use(cookieParser())
@@ -109,6 +122,9 @@ export function startJarvisServer(): express.Express {
   app.use('/.well-known/agent-card.json', agentCardHandler({ agentCardProvider: requestHandler }))
   app.use('/a2a/jsonrpc', jsonRpcHandler({ requestHandler, userBuilder: UserBuilder.noAuthentication }))
   app.use('/a2a/rest', restHandler({ requestHandler, userBuilder: UserBuilder.noAuthentication }))
+
+  // MCP 桥接内部 API(本机令牌鉴权,挂在 authMiddleware 之前 —— 外部 agent 无浏览器登录态)
+  app.use(mcpBridgeRoutes())
 
   // 前端资源必须在 authMiddleware 之前 —— HTML/JS/CSS 是公开的,登录在 SPA 内部完成。
   // 否则未带 cookie 取 / 会被 auth 拦成 401,Electron 渲染出黑屏(prod 从 3000 取前端)。

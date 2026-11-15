@@ -114,7 +114,8 @@ export interface JarvisSettings {
   watchdog: { intervalMin: number; idleMin: number; maxMin: number; retryFailCount: number }
   quietHours: { startHour: number; endHour: number }
   proactive: { hourlyCap: number }
-  morningReport: { at: string }
+  morningReport: { at: string; enabled: boolean }
+  promotionWatch: { enabled: boolean; intervalMin: number }
   events: { jdsmeGroups: string[] }
   /** agent 运行时:pi(进程内,默认)| claude(Claude Agent SDK,agent 能力强) */
   runtime: 'pi' | 'claude'
@@ -124,7 +125,8 @@ const DEFAULT_SETTINGS: JarvisSettings = {
   watchdog: { intervalMin: 5, idleMin: 10, maxMin: 30, retryFailCount: 2 },
   quietHours: { startHour: 23, endHour: 8 },
   proactive: { hourlyCap: 3 },
-  morningReport: { at: '09:00' },
+  morningReport: { at: '09:00', enabled: true },
+  promotionWatch: { enabled: true, intervalMin: 60 },
   events: { jdsmeGroups: [] },
   runtime: 'pi',
 }
@@ -152,6 +154,11 @@ export function getSettings(): JarvisSettings {
       }
       if (user?.proactive) s.proactive = { hourlyCap: num(user.proactive.hourlyCap, s.proactive.hourlyCap) }
       if (typeof user?.morningReport?.at === 'string') s.morningReport.at = user.morningReport.at
+      if (typeof user?.morningReport?.enabled === 'boolean') s.morningReport.enabled = user.morningReport.enabled
+      if (user?.promotionWatch) s.promotionWatch = {
+        enabled: typeof user.promotionWatch.enabled === 'boolean' ? user.promotionWatch.enabled : s.promotionWatch.enabled,
+        intervalMin: num(user.promotionWatch.intervalMin, s.promotionWatch.intervalMin),
+      }
       if (Array.isArray(user?.events?.jdsmeGroups)) s.events.jdsmeGroups = user.events.jdsmeGroups.map(String)
       if (user?.runtime === 'claude' || user?.runtime === 'pi') s.runtime = user.runtime
     }
