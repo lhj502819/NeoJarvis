@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { fetchJSON, postJSON } from '../../api/client'
 import type { MessageOrigin } from '../../api/hooks'
 
@@ -190,7 +190,7 @@ export function RunningPage() {
         <div className="run-card">
           <div className="run-card-head"><span className="run-card-title green">队列</span></div>
           {runningTasks.map(t => (
-            <div key={t.taskId} className="run-kv"><span className="run-dot green" />{t.taskId} {t.name} — {t.agentName ?? ''} 执行中</div>
+            <div key={t.taskId} className="run-kv"><span className="run-dot green" />{t.taskId} {t.name} 执行中</div>
           ))}
           <div className="run-kv"><span className={`run-dot${queue?.pending ? ' amber' : ' slate'}`} />排队后台消息 {queue?.pending ?? 0}{queue?.thinking ? ' · think 进行中' : ''}</div>
           <div className="run-kv"><span className={`run-dot${pendingApprovals.length ? ' amber' : ' slate'}`} />审批队列 {pendingApprovals.length} 条</div>
@@ -322,6 +322,3 @@ function TraceDetail({ trace }: { trace: MessageTrace }) {
   )
 }
 
-function SectionHead({ children }: { children: ReactNode }) {
-  return <div className="run-sub-title">{children}</div>
-}

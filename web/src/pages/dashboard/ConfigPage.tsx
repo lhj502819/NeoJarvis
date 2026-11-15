@@ -1070,7 +1070,7 @@ function SectionHead({ title, desc, right }: { title: string; desc: string; righ
 
 const SCHED_DAYS: Array<[number, string]> = [[1, '周一'], [2, '周二'], [3, '周三'], [4, '周四'], [5, '周五'], [6, '周六'], [0, '周日']]
 
-function scheduleWhenText(t: ScheduleTask): string {
+function scheduleWhenText(t: { everyMinutes?: number; freq: 'daily' | 'weekly'; days: number[]; time: string }): string {
   if (t.everyMinutes) return `每 ${t.everyMinutes} 分钟`
   if (t.freq === 'daily') return `每天 ${t.time}`
   const days = [...t.days].sort((a, b) => (a === 0 ? 7 : a) - (b === 0 ? 7 : b))
@@ -1169,7 +1169,7 @@ function ScheduleSection({ data, onSaved }: { data: ScheduleData; onSaved: (msg:
       if (draft.id) {
         await putJSON(`/api/config/schedules/${encodeURIComponent(draft.id)}`, { ...draft, id: undefined })
       } else {
-        await postJSON('/api/config/schedules', draft)
+        await postJSON('/api/config/schedules', { ...draft })
       }
       setDraft(null)
       onSaved('已保存,即时生效')
